@@ -35,6 +35,8 @@ export interface LogEntry {
   modifiedRequestBody: unknown;
   responseStatus: number;
   responseBody: unknown;
+  /** 流式响应组装后的完整数据（仅流式响应有值） */
+  assembledResponseBody?: unknown;
   durationMs: number;
   error?: string;
 }

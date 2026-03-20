@@ -22,3 +22,5 @@ data/logs.json
 
 # OS
 .DS_Store
+
+.aone_copilot

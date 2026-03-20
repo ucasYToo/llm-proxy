@@ -1,6 +1,7 @@
 "use client";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Config, LogEntry } from "@/lib/types";
+import LogDetailModal from "./LogDetailModal";
 
 interface Props {
   config: Config;
@@ -11,7 +12,7 @@ export default function LogsTab({ config }: Props) {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [filterTarget, setFilterTarget] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const limit = 50;
 
   const fetchLogs = useCallback(async () => {
@@ -79,30 +80,22 @@ export default function LogsTab({ config }: Props) {
               </thead>
               <tbody>
                 {logs.map((log) => (
-                  <Fragment key={log.id}>
-                    <tr
-                      style={{ cursor: "pointer" }}
-                      onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
-                    >
-                      <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "#6b7280" }}>
-                        {new Date(log.timestamp).toLocaleString()}
-                      </td>
-                      <td>{log.targetName}</td>
-                      <td><span className="method-badge">{log.method}</span></td>
-                      <td style={{ fontFamily: "monospace", fontSize: 12 }}>{log.path}</td>
-                      <td className={statusClass(log.responseStatus)}>
-                        {log.responseStatus || (log.error ? "ERR" : "-")}
-                      </td>
-                      <td style={{ color: "#6b7280" }}>{log.durationMs}ms</td>
-                    </tr>
-                    {expandedId === log.id && (
-                      <tr>
-                        <td colSpan={6} style={{ padding: 0 }}>
-                          <LogDetail log={log} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
+                  <tr
+                    key={log.id}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSelectedLog(log)}
+                  >
+                    <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "#6b7280" }}>
+                      {new Date(log.timestamp).toLocaleString()}
+                    </td>
+                    <td>{log.targetName}</td>
+                    <td><span className="method-badge">{log.method}</span></td>
+                    <td style={{ fontFamily: "monospace", fontSize: 12 }}>{log.path}</td>
+                    <td className={statusClass(log.responseStatus)}>
+                      {log.responseStatus || (log.error ? "ERR" : "-")}
+                    </td>
+                    <td style={{ color: "#6b7280" }}>{log.durationMs}ms</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -129,49 +122,10 @@ export default function LogsTab({ config }: Props) {
           </div>
         </>
       )}
-    </div>
-  );
-}
 
-function LogDetail({ log }: { log: LogEntry }) {
-  return (
-    <div className="log-detail">
-      {log.error && (
-        <div style={{ marginBottom: 10 }}>
-          <p className="log-section-title">错误</p>
-          <pre style={{ color: "#ef4444" }}>{log.error}</pre>
-        </div>
+      {selectedLog && (
+        <LogDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} />
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <p className="log-section-title">原始请求 Headers</p>
-          <pre>{JSON.stringify(log.originalRequestHeaders, null, 2)}</pre>
-        </div>
-        <div>
-          <p className="log-section-title">修改后请求 Headers</p>
-          <pre>{JSON.stringify(log.modifiedRequestHeaders, null, 2)}</pre>
-        </div>
-        <div>
-          <p className="log-section-title">原始请求 Body</p>
-          <pre>{JSON.stringify(log.originalRequestBody, null, 2)}</pre>
-        </div>
-        <div>
-          <p className="log-section-title">修改后请求 Body</p>
-          <pre>{JSON.stringify(log.modifiedRequestBody, null, 2)}</pre>
-        </div>
-        <div>
-          <p className="log-section-title">响应状态</p>
-          <pre>{log.responseStatus}</pre>
-        </div>
-        <div>
-          <p className="log-section-title">响应 Body</p>
-          <pre>
-            {typeof log.responseBody === "string"
-              ? log.responseBody
-              : JSON.stringify(log.responseBody, null, 2)}
-          </pre>
-        </div>
-      </div>
     </div>
   );
 }
