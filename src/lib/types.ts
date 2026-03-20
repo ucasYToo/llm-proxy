@@ -9,9 +9,17 @@ export interface Target {
   bodyParams: Record<string, unknown>;
 }
 
+export interface LogCollection {
+  /** 是否采集原始请求 body（来自客户端，未合并 bodyParams 前）。默认 false */
+  captureOriginalBody: boolean;
+  /** 是否采集原始流式事件数组（SSE 原始 data 列表）。默认 false */
+  captureRawStreamEvents: boolean;
+}
+
 export interface Config {
   activeTarget: string;
   targets: Target[];
+  logCollection: LogCollection;
 }
 
 export interface LogEntry {
@@ -37,6 +45,11 @@ export interface LogEntry {
   responseBody: unknown;
   /** 流式响应组装后的完整数据（仅流式响应有值） */
   assembledResponseBody?: unknown;
+  /** 预计算的 diff 结果（当 captureOriginalBody 关闭时存储，用于 Diff 视图） */
+  precomputedDiff?: {
+    headers: import("./jsonDiff").DiffEntry[];
+    body: import("./jsonDiff").DiffEntry[];
+  };
   durationMs: number;
   error?: string;
 }

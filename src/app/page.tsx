@@ -8,7 +8,11 @@ type Tab = "config" | "logs";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("config");
-  const [config, setConfig] = useState<Config>({ activeTarget: "", targets: [] });
+  const [config, setConfig] = useState<Config>({
+    activeTarget: "",
+    targets: [],
+    logCollection: { captureOriginalBody: false, captureRawStreamEvents: false },
+  });
 
   const fetchConfig = useCallback(async () => {
     const res = await fetch("/api/query?type=config");

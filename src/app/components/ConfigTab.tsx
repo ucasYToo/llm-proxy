@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { Config, Target } from "@/lib/types";
+import type { Config, Target, LogCollection } from "@/lib/types";
 import TargetForm from "./TargetForm";
 
 interface Props {
@@ -11,6 +11,20 @@ interface Props {
 export default function ConfigTab({ config, onRefresh }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Target | undefined>();
+  const [logCollection, setLogCollection] = useState<LogCollection>(
+    config.logCollection ?? { captureOriginalBody: false, captureRawStreamEvents: false }
+  );
+
+  async function handleLogCollectionChange(key: keyof LogCollection, value: boolean) {
+    const updated = { ...logCollection, [key]: value };
+    setLogCollection(updated);
+    await fetch("/api/set", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "updateLogCollection", logCollection: updated }),
+    });
+    onRefresh();
+  }
 
   async function handleSetActive(targetId: string) {
     await fetch("/api/set", {
@@ -84,6 +98,43 @@ export default function ConfigTab({ config, onRefresh }: Props) {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <p className="card-title">日志采集配置</p>
+        <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+          控制日志中存储的数据范围。关闭可选项可显著减小日志文件体积（最多保留 300 条）。
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={logCollection.captureOriginalBody}
+              onChange={(e) => handleLogCollectionChange("captureOriginalBody", e.target.checked)}
+              style={{ marginTop: 2, flexShrink: 0 }}
+            />
+            <div>
+              <span style={{ fontWeight: 500, fontSize: 13 }}>采集原始请求 Body</span>
+              <p style={{ color: "#9ca3af", fontSize: 12, marginTop: 2 }}>
+                存储客户端发送的原始请求 Headers 和 Body（合并 bodyParams 之前的数据），用于 Diff 对比视图
+              </p>
+            </div>
+          </label>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={logCollection.captureRawStreamEvents}
+              onChange={(e) => handleLogCollectionChange("captureRawStreamEvents", e.target.checked)}
+              style={{ marginTop: 2, flexShrink: 0 }}
+            />
+            <div>
+              <span style={{ fontWeight: 500, fontSize: 13 }}>采集原始流式事件</span>
+              <p style={{ color: "#9ca3af", fontSize: 12, marginTop: 2 }}>
+                存储流式响应的原始 SSE 事件数组（通常较大），可在响应体 Tab 中查看原始流式数据
+              </p>
+            </div>
+          </label>
+        </div>
       </div>
 
       <div className="card">

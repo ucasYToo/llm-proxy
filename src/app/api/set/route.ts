@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { readConfig, writeConfig } from "@/lib/config";
-import type { Target } from "@/lib/types";
+import type { Target, LogCollection } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -45,6 +45,16 @@ export async function POST(req: NextRequest) {
       if (config.activeTarget === targetId) {
         config.activeTarget = config.targets[0]?.id ?? "";
       }
+      writeConfig(config);
+      return NextResponse.json({ ok: true });
+    }
+
+    case "updateLogCollection": {
+      const { logCollection } = body as { logCollection: LogCollection };
+      config.logCollection = {
+        ...config.logCollection,
+        ...logCollection,
+      };
       writeConfig(config);
       return NextResponse.json({ ok: true });
     }

@@ -4,12 +4,28 @@ import type { Config, Target } from "./types";
 
 const CONFIG_PATH = path.join(process.cwd(), "data", "config.json");
 
-const DEFAULT_CONFIG: Config = { activeTarget: "", targets: [] };
+const DEFAULT_CONFIG: Config = {
+  activeTarget: "",
+  targets: [],
+  logCollection: {
+    captureOriginalBody: false,
+    captureRawStreamEvents: false,
+  },
+};
 
 export function readConfig(): Config {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
-    return JSON.parse(raw) as Config;
+    const parsed = JSON.parse(raw) as Config;
+    // Merge with defaults to handle missing fields in older config files
+    return {
+      ...DEFAULT_CONFIG,
+      ...parsed,
+      logCollection: {
+        ...DEFAULT_CONFIG.logCollection,
+        ...(parsed.logCollection ?? {}),
+      },
+    };
   } catch {
     return { ...DEFAULT_CONFIG };
   }

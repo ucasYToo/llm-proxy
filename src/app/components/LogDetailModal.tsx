@@ -182,20 +182,31 @@ function Section({ title, data }: { title: string; data: unknown }) {
 
 /* ── Diff View: side-by-side original vs modified ── */
 function DiffView({ log }: { log: LogEntry }) {
-  const headerDiffs = jsonDiff(log.originalRequestHeaders, log.modifiedRequestHeaders);
-  const bodyDiffs = jsonDiff(log.originalRequestBody, log.modifiedRequestBody);
+  // Use precomputed diff if original data was not captured
+  const hasOriginal = log.originalRequestBody !== null || Object.keys(log.originalRequestHeaders ?? {}).length > 0;
+  const headerDiffs = log.precomputedDiff
+    ? log.precomputedDiff.headers
+    : jsonDiff(log.originalRequestHeaders, log.modifiedRequestHeaders);
+  const bodyDiffs = log.precomputedDiff
+    ? log.precomputedDiff.body
+    : jsonDiff(log.originalRequestBody, log.modifiedRequestBody);
 
   return (
     <div className="diff-sections">
+      {!hasOriginal && log.precomputedDiff && (
+        <div style={{ padding: "8px 16px", background: "#fffbeb", borderBottom: "1px solid #fde68a", fontSize: 12, color: "#92400e" }}>
+          原始请求数据未采集，仅展示差异摘要（可在配置页开启"采集原始请求 Body"以查看完整对比）
+        </div>
+      )}
       <DiffSection
         title="Headers"
-        original={log.originalRequestHeaders}
+        original={hasOriginal ? log.originalRequestHeaders : null}
         modified={log.modifiedRequestHeaders}
         diffs={headerDiffs}
       />
       <DiffSection
         title="Body"
-        original={log.originalRequestBody}
+        original={hasOriginal ? log.originalRequestBody : null}
         modified={log.modifiedRequestBody}
         diffs={bodyDiffs}
       />
