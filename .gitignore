@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# TypeScript
+*.tsbuildinfo
+
+# Data (contains API keys and logs)
+data/config.json
+data/logs.json
+
+# Env files
+.env*.local
+.env.local
+
+# Claude AI project files
+.claude/
+
+# OS
+.DS_Store
