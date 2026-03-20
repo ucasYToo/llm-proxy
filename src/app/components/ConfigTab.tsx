@@ -11,13 +11,11 @@ interface Props {
 export default function ConfigTab({ config, onRefresh }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Target | undefined>();
-  const [logCollection, setLogCollection] = useState<LogCollection>(
-    config.logCollection ?? { captureOriginalBody: false, captureRawStreamEvents: false }
-  );
+
+  const logCollection: LogCollection = config.logCollection ?? { captureOriginalBody: false, captureRawStreamEvents: false };
 
   async function handleLogCollectionChange(key: keyof LogCollection, value: boolean) {
     const updated = { ...logCollection, [key]: value };
-    setLogCollection(updated);
     await fetch("/api/set", {
       method: "POST",
       headers: { "content-type": "application/json" },
