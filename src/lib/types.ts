@@ -22,6 +22,8 @@ export interface Config {
   logCollection: LogCollection;
 }
 
+export type LogStatus = "pending" | "streaming" | "completed" | "error";
+
 export interface LogEntry {
   id: string;
   timestamp: string;
@@ -52,4 +54,10 @@ export interface LogEntry {
   };
   durationMs: number;
   error?: string;
+  /** 日志状态：pending-请求中, streaming-接收流中, completed-完成, error-错误 */
+  status?: LogStatus;
+  /** 首包响应时间（从请求开始到首个流式 chunk 到达的毫秒数） */
+  firstChunkMs?: number;
+  /** 请求开始时间戳（用于计算各种耗时） */
+  startTime?: string;
 }

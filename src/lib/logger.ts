@@ -13,8 +13,11 @@ function readAll(): LogEntry[] {
   return JSON.parse(raw) as LogEntry[];
 }
 
-export function appendLog(entry: LogEntry): void {
-  // Apply log collection config to filter out unwanted fields
+function saveLogs(logs: LogEntry[]): void {
+  fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2), "utf-8");
+}
+
+function applyLogCollectionFilter(entry: LogEntry): LogEntry {
   const { logCollection } = readConfig();
   const filtered: LogEntry = { ...entry };
 
@@ -35,11 +38,67 @@ export function appendLog(entry: LogEntry): void {
     }
   }
 
+  return filtered;
+}
+
+/**
+ * 创建新日志条目（请求开始时调用）
+ */
+export function createLog(entry: LogEntry): void {
+  const filtered = applyLogCollectionFilter(entry);
   const logs = readAll();
   logs.unshift(filtered);
   // Keep only the most recent MAX_ENTRIES
   const trimmed = logs.slice(0, MAX_ENTRIES);
-  fs.writeFileSync(LOGS_PATH, JSON.stringify(trimmed, null, 2), "utf-8");
+  saveLogs(trimmed);
+}
+
+/**
+ * 更新现有日志条目（根据 ID）
+ * 如果条目不存在则不做任何操作
+ */
+export function updateLog(id: string, updates: Partial<LogEntry>): void {
+  const logs = readAll();
+  const index = logs.findIndex((l) => l.id === id);
+  if (index === -1) return;
+
+  // Merge updates
+  logs[index] = { ...logs[index], ...updates };
+  
+  // Apply filtering in case response body changed
+  const filtered = applyLogCollectionFilter(logs[index]);
+  logs[index] = filtered;
+  
+  saveLogs(logs);
+}
+
+/**
+ * 创建或更新日志条目
+ */
+export function upsertLog(entry: LogEntry): void {
+  const logs = readAll();
+  const index = logs.findIndex((l) => l.id === entry.id);
+  
+  const filtered = applyLogCollectionFilter(entry);
+  
+  if (index !== -1) {
+    // Update existing
+    logs[index] = { ...logs[index], ...filtered };
+  } else {
+    // Insert new
+    logs.unshift(filtered);
+  }
+  
+  // Keep only the most recent MAX_ENTRIES
+  const trimmed = logs.slice(0, MAX_ENTRIES);
+  saveLogs(trimmed);
+}
+
+/**
+ * 追加日志（向后兼容，请求结束时调用）
+ */
+export function appendLog(entry: LogEntry): void {
+  upsertLog(entry);
 }
 
 export interface QueryLogsOptions {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { getActiveTarget } from "@/lib/config";
-import { appendLog } from "@/lib/logger";
+import { createLog, updateLog } from "@/lib/logger";
+import type { LogStatus } from "@/lib/types";
 
 type Params = Promise<{ path: string[] }>;
 
@@ -54,6 +55,7 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
 
   const startMs = Date.now();
   const logId = uuidv4();
+  const startTime = new Date().toISOString();
 
   // Capture original request headers for logging
   const originalHeaders: Record<string, string> = {};
@@ -63,6 +65,25 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
 
   // Capture modified headers for logging
   const modifiedHeaders: Record<string, string> = { ...forwardHeaders };
+
+  // 1. 请求开始时立即创建日志（状态为 pending）
+  createLog({
+    id: logId,
+    timestamp: startTime,
+    startTime,
+    targetId: target.id,
+    targetName: target.name,
+    method: req.method,
+    path: `/${path.join("/")}`,
+    originalRequestHeaders: originalHeaders,
+    originalRequestBody: originalBody,
+    modifiedRequestHeaders: modifiedHeaders,
+    modifiedRequestBody: modifiedBody,
+    responseStatus: 0,
+    responseBody: null,
+    durationMs: 0,
+    status: "pending" as LogStatus,
+  });
 
   let upstreamRes: Response;
   try {
@@ -75,21 +96,12 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
     });
   } catch (err) {
     const durationMs = Date.now() - startMs;
-    appendLog({
-      id: logId,
-      timestamp: new Date().toISOString(),
-      targetId: target.id,
-      targetName: target.name,
-      method: req.method,
-      path: `/${path.join("/")}`,
-      originalRequestHeaders: originalHeaders,
-      originalRequestBody: originalBody,
-      modifiedRequestHeaders: modifiedHeaders,
-      modifiedRequestBody: modifiedBody,
+    // 错误时更新日志
+    updateLog(logId, {
       responseStatus: 0,
-      responseBody: null,
       durationMs,
       error: String(err),
+      status: "error" as LogStatus,
     });
     return NextResponse.json(
       { error: "Upstream request failed", detail: String(err) },
@@ -111,14 +123,27 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
   if (isStream) {
     // Tee the stream: pass through to client while collecting content for logging
     const chunks: string[] = [];
+    let firstChunkReceived = false;
     const decoder = new TextDecoder();
+    
     const { readable, writable } = new TransformStream({
       transform(chunk, controller) {
-        chunks.push(decoder.decode(chunk, { stream: true }));
+        const text = decoder.decode(chunk, { stream: true });
+        chunks.push(text);
         controller.enqueue(chunk);
+        
+        // 2. 首个 chunk 到达时更新状态
+        if (!firstChunkReceived) {
+          firstChunkReceived = true;
+          const firstChunkMs = Date.now() - startMs;
+          updateLog(logId, {
+            firstChunkMs,
+            status: "streaming" as LogStatus,
+          });
+        }
       },
       flush() {
-        // Stream finished — log the collected content
+        // Stream finished — 3. 更新最终状态
         const fullContent = chunks.join("");
         const durationMs = Date.now() - startMs;
 
@@ -166,21 +191,13 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
 
         const responseBody = parsedEvents.length > 0 ? parsedEvents : fullContent;
 
-        appendLog({
-          id: logId,
-          timestamp: new Date().toISOString(),
-          targetId: target.id,
-          targetName: target.name,
-          method: req.method,
-          path: `/${path.join("/")}`,
-          originalRequestHeaders: originalHeaders,
-          originalRequestBody: originalBody,
-          modifiedRequestHeaders: modifiedHeaders,
-          modifiedRequestBody: modifiedBody,
+        // 更新最终状态
+        updateLog(logId, {
           responseStatus: upstreamRes.status,
           responseBody,
           assembledResponseBody: assembledBody,
           durationMs,
+          status: "completed" as LogStatus,
         });
       },
     });
@@ -189,21 +206,12 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
       // If pipe fails, still log what we have
       const fullContent = chunks.join("");
       const durationMs = Date.now() - startMs;
-      appendLog({
-        id: logId,
-        timestamp: new Date().toISOString(),
-        targetId: target.id,
-        targetName: target.name,
-        method: req.method,
-        path: `/${path.join("/")}`,
-        originalRequestHeaders: originalHeaders,
-        originalRequestBody: originalBody,
-        modifiedRequestHeaders: modifiedHeaders,
-        modifiedRequestBody: modifiedBody,
+      updateLog(logId, {
         responseStatus: upstreamRes.status,
         responseBody: fullContent || "[stream-error]",
         durationMs,
         error: "Stream pipe failed",
+        status: "error" as LogStatus,
       });
     });
 
@@ -223,20 +231,12 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
     // keep as text
   }
 
-  appendLog({
-    id: logId,
-    timestamp: new Date().toISOString(),
-    targetId: target.id,
-    targetName: target.name,
-    method: req.method,
-    path: `/${path.join("/")}`,
-    originalRequestHeaders: originalHeaders,
-    originalRequestBody: originalBody,
-    modifiedRequestHeaders: modifiedHeaders,
-    modifiedRequestBody: modifiedBody,
+  // 更新最终状态
+  updateLog(logId, {
     responseStatus: upstreamRes.status,
     responseBody: resBodyLog,
     durationMs,
+    status: "completed" as LogStatus,
   });
 
   return new NextResponse(resText, {

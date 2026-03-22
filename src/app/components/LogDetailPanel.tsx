@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { JsonView, defaultStyles } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
 import type { LogEntry } from "@/lib/types";
@@ -8,12 +8,27 @@ import { jsonDiff, type DiffEntry } from "@/lib/jsonDiff";
 type ViewMode = "detail" | "response" | "diff";
 
 interface Props {
-  log: LogEntry;
+  log: LogEntry | null;
   onClose: () => void;
 }
 
-export default function LogDetailModal({ log, onClose }: Props) {
+export default function LogDetailPanel({ log, onClose }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("detail");
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (log) {
+      setIsVisible(true);
+    } else {
+      setIsVisible(false);
+    }
+  }, [log]);
+
+  useEffect(() => {
+    if (log) {
+      setViewMode("detail");
+    }
+  }, [log?.id]);
 
   function statusClass(status: number) {
     if (status === 0) return "status-err";
@@ -21,22 +36,31 @@ export default function LogDetailModal({ log, onClose }: Props) {
     return "status-err";
   }
 
+  if (!log) return null;
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="log-modal" onClick={(e) => e.stopPropagation()}>
+    <>
+      {/* Backdrop */}
+      <div 
+        className={`panel-backdrop ${isVisible ? "visible" : ""}`} 
+        onClick={onClose}
+      />
+      
+      {/* Panel */}
+      <div className={`log-panel ${isVisible ? "visible" : ""}`}>
         {/* Header */}
-        <div className="log-modal-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
-            <span className="method-badge" style={{ fontSize: 13, padding: "2px 8px" }}>
+        <div className="log-panel-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+            <span className="method-badge" style={{ fontSize: 13, padding: "2px 8px", flexShrink: 0 }}>
               {log.method}
             </span>
-            <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600 }}>
+            <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {log.path}
             </span>
-            <span className={statusClass(log.responseStatus)} style={{ fontSize: 13 }}>
+            <span className={statusClass(log.responseStatus)} style={{ fontSize: 13, flexShrink: 0 }}>
               {log.responseStatus || (log.error ? "ERR" : "-")}
             </span>
-            <span style={{ color: "#6b7280", fontSize: 12 }}>{log.durationMs}ms</span>
+            <span style={{ color: "#6b7280", fontSize: 12, flexShrink: 0 }}>{log.durationMs}ms</span>
           </div>
           <button className="btn-ghost btn-sm" onClick={onClose} style={{ flexShrink: 0 }}>
             ✕
@@ -57,21 +81,21 @@ export default function LogDetailModal({ log, onClose }: Props) {
         )}
 
         {/* View mode tabs */}
-        <div className="log-modal-tabs">
+        <div className="log-panel-tabs">
           <button
-            className={`log-modal-tab${viewMode === "detail" ? " active" : ""}`}
+            className={`log-panel-tab${viewMode === "detail" ? " active" : ""}`}
             onClick={() => setViewMode("detail")}
           >
             请求详情
           </button>
           <button
-            className={`log-modal-tab${viewMode === "response" ? " active" : ""}`}
+            className={`log-panel-tab${viewMode === "response" ? " active" : ""}`}
             onClick={() => setViewMode("response")}
           >
             响应体
           </button>
           <button
-            className={`log-modal-tab${viewMode === "diff" ? " active" : ""}`}
+            className={`log-panel-tab${viewMode === "diff" ? " active" : ""}`}
             onClick={() => setViewMode("diff")}
           >
             Diff 对比
@@ -79,13 +103,19 @@ export default function LogDetailModal({ log, onClose }: Props) {
         </div>
 
         {/* Content */}
-        <div className="log-modal-body">
+        <div className="log-panel-body">
           {viewMode === "detail" && <DetailView log={log} />}
           {viewMode === "response" && <ResponseView log={log} />}
           {viewMode === "diff" && <DiffView log={log} />}
         </div>
+
+        {/* Keyboard hint */}
+        <div className="panel-keyboard-hint">
+          <span>↑/↓ 或 J/K 切换日志</span>
+          <span>ESC 关闭</span>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -169,7 +199,7 @@ function Section({ title, data }: { title: string; data: unknown }) {
         <div className="json-viewer-wrap">
           <JsonView
             data={data as object}
-            shouldExpandNode={(level) => level < 2}
+            shouldExpandNode={(level) => level < 3}
             style={defaultStyles}
           />
         </div>
@@ -182,7 +212,6 @@ function Section({ title, data }: { title: string; data: unknown }) {
 
 /* ── Diff View: side-by-side original vs modified ── */
 function DiffView({ log }: { log: LogEntry }) {
-  // Use precomputed diff if original data was not captured
   const hasOriginal = log.originalRequestBody !== null || Object.keys(log.originalRequestHeaders ?? {}).length > 0;
   const headerDiffs = log.precomputedDiff
     ? log.precomputedDiff.headers
