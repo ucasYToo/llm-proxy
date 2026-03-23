@@ -8,11 +8,11 @@ export interface DiffEntry {
 /**
  * 对两个 JSON 可序列化对象进行浅层递归 diff，返回扁平的差异列表
  */
-export function jsonDiff(
+export const jsonDiff = (
   original: unknown,
   modified: unknown,
   prefix = ""
-): DiffEntry[] {
+): DiffEntry[] => {
   const diffs: DiffEntry[] = [];
 
   if (original === modified) return diffs;
@@ -72,15 +72,15 @@ export function jsonDiff(
   }
 
   return diffs;
-}
+};
 
 /**
  * 收集所有 diff 路径到 Set 中，用于快速查找
  */
-export function getDiffPaths(
+export const getDiffPaths = (
   original: unknown,
   modified: unknown
-): Set<string> {
+): Set<string> => {
   const entries = jsonDiff(original, modified);
   return new Set(entries.map((e) => e.path));
-}
+};

@@ -8,7 +8,7 @@ import type { TokenUsage } from "./types";
 /**
  * 从响应体中提取 token 用量（支持 Anthropic 和 OpenAI 格式）
  */
-export function extractTokenUsage(body: unknown): TokenUsage | undefined {
+export const extractTokenUsage = (body: unknown): TokenUsage | undefined => {
   if (!body || typeof body !== "object") return undefined;
   const b = body as Record<string, unknown>;
   const usage = b.usage as Record<string, unknown> | undefined;
@@ -45,14 +45,14 @@ export function extractTokenUsage(body: unknown): TokenUsage | undefined {
     cacheReadTokens,
     cacheCreationTokens,
   };
-}
+};
 
 /**
  * 将 Anthropic Messages API 流式事件组装为完整响应
  * 事件类型：message_start, content_block_start, content_block_delta, content_block_stop,
  *           message_delta, message_stop
  */
-export function assembleAnthropicResponse(events: unknown[]): Record<string, unknown> {
+export const assembleAnthropicResponse = (events: unknown[]): Record<string, unknown> => {
   let message: Record<string, unknown> = {};
   const contentBlocks: Record<string, unknown>[] = [];
   let currentBlockIndex = -1;
@@ -133,12 +133,12 @@ export function assembleAnthropicResponse(events: unknown[]): Record<string, unk
 
   message.content = contentBlocks;
   return message;
-}
+};
 
 /**
  * 将 OpenAI Chat Completions 流式 chunk 组装为完整响应
  */
-export function assembleOpenAIResponse(events: unknown[]): Record<string, unknown> {
+export const assembleOpenAIResponse = (events: unknown[]): Record<string, unknown> => {
   const result: Record<string, unknown> = {};
   const choicesMap: Map<number, Record<string, unknown>> = new Map();
 
@@ -204,4 +204,4 @@ export function assembleOpenAIResponse(events: unknown[]): Record<string, unknow
   );
 
   return result;
-}
+};

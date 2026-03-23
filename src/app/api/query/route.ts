@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readConfig } from "@/lib/config";
 import { queryLogs, clearLogs } from "@/lib/logger";
 
-export async function GET(req: NextRequest) {
+export const GET = async (req: NextRequest) => {
   const { searchParams } = req.nextUrl;
   const type = searchParams.get("type");
 
@@ -19,9 +19,9 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({ error: "type must be config or logs" }, { status: 400 });
-}
+};
 
-export async function DELETE(req: NextRequest) {
+export const DELETE = async (req: NextRequest) => {
   const { searchParams } = req.nextUrl;
   const type = searchParams.get("type");
 
@@ -31,4 +31,4 @@ export async function DELETE(req: NextRequest) {
   }
 
   return NextResponse.json({ error: "type must be logs" }, { status: 400 });
-}
+};

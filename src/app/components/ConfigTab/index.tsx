@@ -9,13 +9,13 @@ interface Props {
   onRefresh: () => void;
 }
 
-export default function ConfigTab({ config, onRefresh }: Props) {
+const ConfigTab = ({ config, onRefresh }: Props) => {
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Target | undefined>();
 
   const logCollection: LogCollection = config.logCollection ?? { captureOriginalBody: false, captureRawStreamEvents: false };
 
-  async function handleLogCollectionChange(key: keyof LogCollection, value: boolean) {
+  const handleLogCollectionChange = async (key: keyof LogCollection, value: boolean) => {
     const updated = { ...logCollection, [key]: value };
     await fetch("/api/set", {
       method: "POST",
@@ -23,18 +23,18 @@ export default function ConfigTab({ config, onRefresh }: Props) {
       body: JSON.stringify({ action: "updateLogCollection", logCollection: updated }),
     });
     onRefresh();
-  }
+  };
 
-  async function handleSetActive(targetId: string) {
+  const handleSetActive = async (targetId: string) => {
     await fetch("/api/set", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "setActive", targetId }),
     });
     onRefresh();
-  }
+  };
 
-  async function handleSave(target: Omit<Target, "id"> & { id?: string }) {
+  const handleSave = async (target: Omit<Target, "id"> & { id?: string }) => {
     const action = target.id ? "updateTarget" : "addTarget";
     await fetch("/api/set", {
       method: "POST",
@@ -44,9 +44,9 @@ export default function ConfigTab({ config, onRefresh }: Props) {
     setShowForm(false);
     setEditTarget(undefined);
     onRefresh();
-  }
+  };
 
-  async function handleDelete(targetId: string) {
+  const handleDelete = async (targetId: string) => {
     if (!confirm("确认删除该目标？")) return;
     await fetch("/api/set", {
       method: "POST",
@@ -54,14 +54,14 @@ export default function ConfigTab({ config, onRefresh }: Props) {
       body: JSON.stringify({ action: "deleteTarget", targetId }),
     });
     onRefresh();
-  }
+  };
 
   return (
     <div>
       <div className={styles.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span className={styles['card-title']} style={{ marginBottom: 0 }}>转发目标</span>
-          <button className="btn-primary btn-sm" onClick={() => { setEditTarget(undefined); setShowForm(true); }}>
+          <span className={styles.cardTitle} style={{ marginBottom: 0 }}>转发目标</span>
+          <button className="btnPrimary btnSm" onClick={() => { setEditTarget(undefined); setShowForm(true); }}>
             + 添加目标
           </button>
         </div>
@@ -69,9 +69,9 @@ export default function ConfigTab({ config, onRefresh }: Props) {
         {config.targets.length === 0 ? (
           <p className="empty">暂无目标，点击"添加目标"开始配置</p>
         ) : (
-          <div className={styles['target-list']}>
+          <div className={styles.targetList}>
             {config.targets.map((t) => (
-              <div key={t.id} className={`${styles['target-item']}${t.id === config.activeTarget ? ` ${styles.active}` : ""}`}>
+              <div key={t.id} className={`${styles.targetItem}${t.id === config.activeTarget ? ` ${styles.active}` : ""}`}>
                 <div style={{ flex: "none" }}>
                   <input
                     type="radio"
@@ -80,16 +80,16 @@ export default function ConfigTab({ config, onRefresh }: Props) {
                     onChange={() => handleSetActive(t.id)}
                   />
                 </div>
-                <span className={styles['target-name']}>{t.name}</span>
-                <span className={styles['target-url']}>{t.url}</span>
-                <div className={styles['target-actions']}>
+                <span className={styles.targetName}>{t.name}</span>
+                <span className={styles.targetUrl}>{t.url}</span>
+                <div className={styles.targetActions}>
                   <button
-                    className="btn-ghost btn-sm"
+                    className="btnGhost btnSm"
                     onClick={() => { setEditTarget(t); setShowForm(true); }}
                   >
                     编辑
                   </button>
-                  <button className="btn-danger btn-sm" onClick={() => handleDelete(t.id)}>
+                  <button className="btnDanger btnSm" onClick={() => handleDelete(t.id)}>
                     删除
                   </button>
                 </div>
@@ -100,7 +100,7 @@ export default function ConfigTab({ config, onRefresh }: Props) {
       </div>
 
       <div className={styles.card}>
-        <p className={styles['card-title']}>日志采集配置</p>
+        <p className={styles.cardTitle}>日志采集配置</p>
         <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
           控制日志中存储的数据范围。关闭可选项可显著减小日志文件体积（最多保留 300 条）。
         </p>
@@ -137,7 +137,7 @@ export default function ConfigTab({ config, onRefresh }: Props) {
       </div>
 
       <div className={styles.card}>
-        <p className={styles['card-title']}>使用说明</p>
+        <p className={styles.cardTitle}>使用说明</p>
         <p style={{ color: "#6b7280", lineHeight: 1.7 }}>
           将客户端（如 OpenAI SDK）的 <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>base_url</code> 设置为：
         </p>
@@ -158,4 +158,6 @@ export default function ConfigTab({ config, onRefresh }: Props) {
       )}
     </div>
   );
-}
+};
+
+export default ConfigTab;

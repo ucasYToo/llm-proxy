@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { readConfig, writeConfig } from "@/lib/config";
 import type { Target, LogCollection } from "@/lib/types";
 
-export async function POST(req: NextRequest) {
+export const POST = async (req: NextRequest) => {
   const body = await req.json();
   const { action } = body as { action: string };
   const config = readConfig();
@@ -62,4 +62,4 @@ export async function POST(req: NextRequest) {
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
-}
+};

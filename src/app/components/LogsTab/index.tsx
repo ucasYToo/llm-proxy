@@ -16,7 +16,7 @@ interface Props {
   config: Config;
 }
 
-export default function LogsTab({ config }: Props) {
+const LogsTab = ({ config }: Props) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -69,7 +69,7 @@ export default function LogsTab({ config }: Props) {
 
   // 键盘快捷键
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
+    const handleKeyDown = (e: KeyboardEvent) => {
       // 在输入框/选择框中输入时忽略
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
@@ -147,33 +147,33 @@ export default function LogsTab({ config }: Props) {
     });
   }, [logs, statusFilter, methodFilter, durationFilter]);
 
-  async function handleClear() {
+  const handleClear = async () => {
     if (!confirm("确认清空所有日志？")) return;
     await fetch("/api/query?type=logs", { method: "DELETE" });
     setLogs([]);
     setTotal(0);
     setOffset(0);
-  }
+  };
 
-  function getStatusBadge(status?: string) {
+  const getStatusBadge = (status?: string) => {
     switch (status) {
       case "pending":
-        return <span className={`${styles['status-badge']} ${styles.pending}`} title="请求已发送，等待响应">请求中</span>;
+        return <span className={`${styles.statusBadge} ${styles.pending}`} title="请求已发送，等待响应">请求中</span>;
       case "streaming":
-        return <span className={`${styles['status-badge']} ${styles.streaming}`} title="正在接收流式响应">流式中</span>;
+        return <span className={`${styles.statusBadge} ${styles.streaming}`} title="正在接收流式响应">流式中</span>;
       case "completed":
-        return <span className={`${styles['status-badge']} ${styles.completed}`} title="请求已完成">完成</span>;
+        return <span className={`${styles.statusBadge} ${styles.completed}`} title="请求已完成">完成</span>;
       case "error":
-        return <span className={`${styles['status-badge']} ${styles.error}`} title="请求出错">错误</span>;
+        return <span className={`${styles.statusBadge} ${styles.error}`} title="请求出错">错误</span>;
       default:
-        return <span className={`${styles['status-badge']} ${styles.unknown}`} title="状态未知">-</span>;
+        return <span className={`${styles.statusBadge} ${styles.unknown}`} title="状态未知">-</span>;
     }
-  }
+  };
 
   return (
     <div>
       {/* 工具栏 */}
-      <div className={styles['log-toolbar']}>
+      <div className={styles.logToolbar}>
         <select value={filterTarget} onChange={(e) => { setFilterTarget(e.target.value); setOffset(0); }}>
           <option value="">全部目标</option>
           {config.targets.map((t) => (
@@ -208,16 +208,16 @@ export default function LogsTab({ config }: Props) {
         </select>
 
         {/* 密度切换 */}
-        <div className={styles['density-toggle']}>
+        <div className={styles.densityToggle}>
           <button
-            className={`${styles['density-btn']} ${density === "compact" ? styles.active : ""}`}
+            className={`${styles.densityBtn} ${density === "compact" ? styles.active : ""}`}
             onClick={() => setDensity("compact")}
             title="紧凑"
           >
             ≡
           </button>
           <button
-            className={`${styles['density-btn']} ${density === "comfortable" ? styles.active : ""}`}
+            className={`${styles.densityBtn} ${density === "comfortable" ? styles.active : ""}`}
             onClick={() => setDensity("comfortable")}
             title="舒适"
           >
@@ -225,12 +225,12 @@ export default function LogsTab({ config }: Props) {
           </button>
         </div>
 
-        <button className="btn-ghost btn-sm" onClick={() => { setOffset(0); void fetchLogs(true); }} disabled={isRefreshing}>
+        <button className="btnGhost btnSm" onClick={() => { setOffset(0); void fetchLogs(true); }} disabled={isRefreshing}>
           {isRefreshing ? "⟳" : "刷新"}
         </button>
 
         {/* 自动刷新开关 */}
-        <label className={styles['auto-refresh-label']}>
+        <label className={styles.autoRefreshLabel}>
           <input
             type="checkbox"
             checked={autoRefresh}
@@ -238,7 +238,7 @@ export default function LogsTab({ config }: Props) {
           />
           <span>自动刷新</span>
           {autoRefresh && (
-            <span className={styles['refresh-indicator']} title={`最后更新: ${lastRefresh.toLocaleTimeString()}`}>
+            <span className={styles.refreshIndicator} title={`最后更新: ${lastRefresh.toLocaleTimeString()}`}>
               ●
             </span>
           )}
@@ -250,16 +250,16 @@ export default function LogsTab({ config }: Props) {
         </span>
 
         {totalPages > 1 && (
-          <div className={styles['pagination-controls']}>
+          <div className={styles.paginationControls}>
             <button
-              className="btn-ghost btn-sm"
+              className="btnGhost btnSm"
               disabled={currentPage === 1}
               onClick={() => setOffset(Math.max(0, offset - limit))}
             >
               上一页
             </button>
             <select
-              className={styles['page-select']}
+              className={styles.pageSelect}
               value={currentPage}
               onChange={(e) => setOffset((Number(e.target.value) - 1) * limit)}
             >
@@ -268,7 +268,7 @@ export default function LogsTab({ config }: Props) {
               ))}
             </select>
             <button
-              className="btn-ghost btn-sm"
+              className="btnGhost btnSm"
               disabled={currentPage === totalPages}
               onClick={() => setOffset(offset + limit)}
             >
@@ -276,7 +276,7 @@ export default function LogsTab({ config }: Props) {
             </button>
           </div>
         )}
-        <button className="btn-danger btn-sm" onClick={handleClear}>清空</button>
+        <button className="btnDanger btnSm" onClick={handleClear}>清空</button>
       </div>
 
       {logs.length === 0 ? (
@@ -285,8 +285,8 @@ export default function LogsTab({ config }: Props) {
         <p className="empty">没有符合筛选条件的日志</p>
       ) : (
         <>
-          <div className={styles['log-table-wrap']}>
-            <table className={`${styles['log-table']} ${density === 'compact' ? styles['row-compact'] : styles['row-comfortable']}`}>
+          <div className={styles.logTableWrap}>
+            <table className={`${styles.logTable} ${density === 'compact' ? styles.rowCompact : styles.rowComfortable}`}>
               <thead>
                 <tr>
                   <th style={{ width: 100 }}>时间</th>
@@ -316,18 +316,18 @@ export default function LogsTab({ config }: Props) {
                         setSelectedLog(log);
                       }}
                     >
-                      <td className={styles['time-cell']} title={new Date(log.timestamp).toLocaleString()}>
+                      <td className={styles.timeCell} title={new Date(log.timestamp).toLocaleString()}>
                         {formatTime(log.timestamp)}
                       </td>
                       <td>{log.targetName}</td>
-                      <td><span className={styles['method-badge']}>{log.method}</span></td>
+                      <td><span className={styles.methodBadge}>{log.method}</span></td>
                       <td style={{ maxWidth: 500 }}>
                         {requestLines.length > 0 && (
-                          <div className={styles['log-preview-row']}>
-                            <div className={styles['log-preview-label']}>请求</div>
-                            <div className={styles['log-preview-content']}>
+                          <div className={styles.logPreviewRow}>
+                            <div className={styles.logPreviewLabel}>请求</div>
+                            <div className={styles.logPreviewContent}>
                               {requestLines.map((line, idx) => (
-                                <div key={`req-${idx}`} className={styles['log-preview-line']} title={line}>
+                                <div key={`req-${idx}`} className={styles.logPreviewLine} title={line}>
                                   {line}
                                 </div>
                               ))}
@@ -335,11 +335,11 @@ export default function LogsTab({ config }: Props) {
                           </div>
                         )}
                         {responseLines.length > 0 && (
-                          <div className={styles['log-preview-row']} style={{ marginTop: requestLines.length > 0 ? 4 : 0 }}>
-                            <div className={styles['log-preview-label']}>响应</div>
-                            <div className={styles['log-preview-content']}>
+                          <div className={styles.logPreviewRow} style={{ marginTop: requestLines.length > 0 ? 4 : 0 }}>
+                            <div className={styles.logPreviewLabel}>响应</div>
+                            <div className={styles.logPreviewContent}>
                               {responseLines.map((line, idx) => (
-                                <div key={`resp-${idx}`} className={styles['log-preview-line']} title={line}>
+                                <div key={`resp-${idx}`} className={styles.logPreviewLine} title={line}>
                                   {line}
                                 </div>
                               ))}
@@ -405,4 +405,5 @@ export default function LogsTab({ config }: Props) {
       />
     </div>
   );
-}
+};
+export default LogsTab;

@@ -13,7 +13,7 @@ const DEFAULT_CONFIG: Config = {
   },
 };
 
-export function readConfig(): Config {
+export const readConfig = (): Config => {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
     const parsed = JSON.parse(raw) as Config;
@@ -29,14 +29,14 @@ export function readConfig(): Config {
   } catch {
     return { ...DEFAULT_CONFIG };
   }
-}
+};
 
-export function writeConfig(config: Config): void {
+export const writeConfig = (config: Config): void => {
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
-}
+};
 
-export function getActiveTarget(): Target | null {
+export const getActiveTarget = (): Target | null => {
   const config = readConfig();
   return config.targets.find((t) => t.id === config.activeTarget) ?? null;
-}
+};

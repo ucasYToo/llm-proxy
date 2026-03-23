@@ -7,7 +7,7 @@ import type { LogStatus } from "@/lib/types";
 
 type Params = Promise<{ path: string[] }>;
 
-async function handler(req: NextRequest, { params }: { params: Params }) {
+const handler = async (req: NextRequest, { params }: { params: Params }) => {
   const { path } = await params;
   const target = getActiveTarget();
 
@@ -252,7 +252,7 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
     status: upstreamRes.status,
     headers: resHeaders,
   });
-}
+};
 
 export const GET = handler;
 export const POST = handler;

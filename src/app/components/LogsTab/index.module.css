@@ -1,16 +1,16 @@
 
 /* Log toolbar */
-.log-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.logToolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 
 /* Density toggle */
-.density-toggle {
+.densityToggle {
   display: flex;
   gap: 2px;
   background: #f3f4f6;
   padding: 2px;
   border-radius: 6px;
 }
-.density-btn {
+.densityBtn {
   padding: 4px 8px;
   font-size: 12px;
   border: none;
@@ -19,14 +19,14 @@
   border-radius: 4px;
   color: #6b7280;
 }
-.density-btn.active {
+.densityBtn.active {
   background: #fff;
   color: #374151;
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 /* Auto refresh */
-.auto-refresh-label {
+.autoRefreshLabel {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -34,10 +34,10 @@
   color: #6b7280;
   cursor: pointer;
 }
-.auto-refresh-label input[type="checkbox"] {
+.autoRefreshLabel input[type="checkbox"] {
   margin: 0;
 }
-.refresh-indicator {
+.refreshIndicator {
   color: #10b981;
   font-size: 10px;
   animation: pulse 2s infinite;
@@ -48,16 +48,16 @@
 }
 
 /* Pagination */
-.pagination-controls {
+.paginationControls {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.pagination-controls .btn-ghost {
+.paginationControls .btnGhost {
   padding: 4px 10px;
   font-size: 12px;
 }
-.page-select {
+.pageSelect {
   border: 1px solid #d1d5db;
   border-radius: 4px;
   padding: 4px 8px;
@@ -67,16 +67,16 @@
 }
 
 /* Log table */
-.log-table-wrap {
+.logTableWrap {
   overflow-x: auto;
   max-height: calc(100vh - 180px);
   overflow-y: auto;
   border: 1px solid #e5e5e5;
   border-radius: 8px;
 }
-.log-table-wrap table { width: 100%; border-collapse: collapse; }
-.log-table-wrap th, .log-table-wrap td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
-.log-table-wrap th { 
+.logTableWrap table { width: 100%; border-collapse: collapse; }
+.logTableWrap th, .logTableWrap td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+.logTableWrap th { 
   font-size: 12px; 
   text-transform: uppercase; 
   color: #9ca3af; 
@@ -87,11 +87,11 @@
   z-index: 10;
   box-shadow: 0 1px 0 #e5e5e5;
 }
-.log-table-wrap tr:hover td { background: #fafafa; }
-.log-table-wrap tr.selected td { background: #eff6ff !important; }
+.logTableWrap tr:hover td { background: #fafafa; }
+.logTableWrap tr.selected td { background: #eff6ff !important; }
 
 /* Status badges for log status */
-.status-badge {
+.statusBadge {
   display: inline-block;
   font-size: 11px;
   font-weight: 600;
@@ -99,56 +99,56 @@
   border-radius: 4px;
   white-space: nowrap;
 }
-.status-badge.pending {
+.statusBadge.pending {
   background: #fef3c7;
   color: #92400e;
 }
-.status-badge.streaming {
+.statusBadge.streaming {
   background: #dbeafe;
   color: #1d4ed8;
   animation: pulse 1.5s infinite;
 }
-.status-badge.completed {
+.statusBadge.completed {
   background: #d1fae5;
   color: #065f46;
 }
-.status-badge.error {
+.statusBadge.error {
   background: #fee2e2;
   color: #dc2626;
 }
-.status-badge.unknown {
+.statusBadge.unknown {
   background: #f3f4f6;
   color: #6b7280;
 }
-.method-badge {
+.methodBadge {
   display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 5px;
   border-radius: 4px; background: #e0f2fe; color: #0369a1;
 }
 
 /* Density modes */
-.log-table-wrap .row-compact td { padding: 4px 10px; }
-.log-table-wrap .row-comfortable td { padding: 10px; }
+.logTableWrap .rowCompact td { padding: 4px 10px; }
+.logTableWrap .rowComfortable td { padding: 10px; }
 
 /* Time cell */
-.time-cell {
+.timeCell {
   font-size: 12px;
   color: #6b7280;
   white-space: nowrap;
 }
 
 /* Log preview in table */
-.log-table-wrap td { vertical-align: top; }
-.log-preview-row {
+.logTableWrap td { vertical-align: top; }
+.logPreviewRow {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   font-size: 12px;
   line-height: 1.5;
 }
-.log-preview-row + .log-preview-row {
+.logPreviewRow + .logPreviewRow {
   margin-top: 6px;
 }
-.log-preview-label {
+.logPreviewLabel {
   flex-shrink: 0;
   width: 32px;
   font-size: 10px;
@@ -159,25 +159,25 @@
   background: #e5e7eb;
   color: #6b7280;
 }
-.log-preview-row:first-child .log-preview-label {
+.logPreviewRow:first-child .logPreviewLabel {
   background: #dbeafe;
   color: #1d4ed8;
 }
-.log-preview-row:last-child .log-preview-label {
+.logPreviewRow:last-child .logPreviewLabel {
   background: #d1fae5;
   color: #047857;
 }
-.log-preview-content {
+.logPreviewContent {
   flex: 1;
   min-width: 0;
 }
-.log-preview-line {
+.logPreviewLine {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #374151;
   word-break: break-all;
 }
-.log-preview-line + .log-preview-line {
+.logPreviewLine + .logPreviewLine {
   margin-top: 2px;
 }

@@ -7,17 +7,17 @@ import { jsonDiff } from "./jsonDiff";
 const LOGS_PATH = path.join(process.cwd(), "data", "logs.json");
 const MAX_ENTRIES = 300;
 
-function readAll(): LogEntry[] {
+const readAll = (): LogEntry[] => {
   if (!fs.existsSync(LOGS_PATH)) return [];
   const raw = fs.readFileSync(LOGS_PATH, "utf-8");
   return JSON.parse(raw) as LogEntry[];
-}
+};
 
-function saveLogs(logs: LogEntry[]): void {
+const saveLogs = (logs: LogEntry[]): void => {
   fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2), "utf-8");
-}
+};
 
-function applyLogCollectionFilter(entry: LogEntry, preserveDiff = false): LogEntry {
+const applyLogCollectionFilter = (entry: LogEntry, preserveDiff = false): LogEntry => {
   const { logCollection } = readConfig();
   const filtered: LogEntry = { ...entry };
 
@@ -41,25 +41,25 @@ function applyLogCollectionFilter(entry: LogEntry, preserveDiff = false): LogEnt
   }
 
   return filtered;
-}
+};
 
 /**
  * 创建新日志条目（请求开始时调用）
  */
-export function createLog(entry: LogEntry): void {
+export const createLog = (entry: LogEntry): void => {
   const filtered = applyLogCollectionFilter(entry);
   const logs = readAll();
   logs.unshift(filtered);
   // 仅保留最近的 MAX_ENTRIES 条记录
   const trimmed = logs.slice(0, MAX_ENTRIES);
   saveLogs(trimmed);
-}
+};
 
 /**
  * 更新现有日志条目（根据 ID）
  * 如果条目不存在则不做任何操作
  */
-export function updateLog(id: string, updates: Partial<LogEntry>): void {
+export const updateLog = (id: string, updates: Partial<LogEntry>): void => {
   const logs = readAll();
   const index = logs.findIndex((l) => l.id === id);
   if (index === -1) return;
@@ -72,12 +72,12 @@ export function updateLog(id: string, updates: Partial<LogEntry>): void {
   logs[index] = filtered;
   
   saveLogs(logs);
-}
+};
 
 /**
  * 创建或更新日志条目
  */
-export function upsertLog(entry: LogEntry): void {
+export const upsertLog = (entry: LogEntry): void => {
   const logs = readAll();
   const index = logs.findIndex((l) => l.id === entry.id);
   
@@ -94,14 +94,14 @@ export function upsertLog(entry: LogEntry): void {
   // 仅保留最近的 MAX_ENTRIES 条记录
   const trimmed = logs.slice(0, MAX_ENTRIES);
   saveLogs(trimmed);
-}
+};
 
 /**
  * 追加日志（向后兼容，请求结束时调用）
  */
-export function appendLog(entry: LogEntry): void {
+export const appendLog = (entry: LogEntry): void => {
   upsertLog(entry);
-}
+};
 
 export interface QueryLogsOptions {
   limit?: number;
@@ -109,18 +109,18 @@ export interface QueryLogsOptions {
   targetId?: string;
 }
 
-export function queryLogs(opts: QueryLogsOptions = {}): {
+export const queryLogs = (opts: QueryLogsOptions = {}): {
   entries: LogEntry[];
   total: number;
-} {
+} => {
   const { limit = 50, offset = 0, targetId } = opts;
   let logs = readAll();
   if (targetId) {
     logs = logs.filter((l) => l.targetId === targetId);
   }
   return { entries: logs.slice(offset, offset + limit), total: logs.length };
-}
+};
 
-export function clearLogs(): void {
+export const clearLogs = (): void => {
   fs.writeFileSync(LOGS_PATH, "[]", "utf-8");
-}
+};

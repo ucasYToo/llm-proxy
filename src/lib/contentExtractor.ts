@@ -6,7 +6,7 @@
 import { truncateText } from "./format";
 
 /** 从 content 数组中提取多条文本（每条一行） */
-export function extractContentLines(content: unknown[]): string[] {
+export const extractContentLines = (content: unknown[]): string[] => {
   const lines: string[] = [];
   for (const item of content) {
     if (typeof item !== "object" || !item) continue;
@@ -52,10 +52,10 @@ export function extractContentLines(content: unknown[]): string[] {
     }
   }
   return lines;
-}
+};
 
 /** 提取最后一条 message 的文本内容（返回多行） */
-export function extractLastMessageLines(body: unknown): string[] {
+export const extractLastMessageLines = (body: unknown): string[] => {
   if (!body || typeof body !== "object") return [];
   const b = body as Record<string, unknown>;
   if (!Array.isArray(b.messages)) return [];
@@ -70,10 +70,10 @@ export function extractLastMessageLines(body: unknown): string[] {
     return extractContentLines(content);
   }
   return [];
-}
+};
 
 /** 提取响应体的 content（返回多行） */
-export function extractResponseLines(responseBody: unknown): string[] {
+export const extractResponseLines = (responseBody: unknown): string[] => {
   if (!responseBody) return [];
   if (typeof responseBody === "string") {
     return responseBody.trim() ? [truncateText(responseBody.trim(), 120)] : [];
@@ -109,4 +109,4 @@ export function extractResponseLines(responseBody: unknown): string[] {
     }
   }
   return [];
-}
+};

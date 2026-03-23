@@ -8,20 +8,20 @@ interface KVPair {
   value: string;
 }
 
-function kvFromRecord(record: Record<string, string | unknown>): KVPair[] {
+const kvFromRecord = (record: Record<string, string | unknown>): KVPair[] => {
   return Object.entries(record).map(([key, value]) => ({
     key,
     value: typeof value === "string" ? value : JSON.stringify(value),
   }));
-}
+};
 
-function recordFromKV(pairs: KVPair[]): Record<string, string> {
+const recordFromKV = (pairs: KVPair[]): Record<string, string> => {
   const result: Record<string, string> = {};
   for (const { key, value } of pairs) {
     if (key.trim()) result[key.trim()] = value;
   }
   return result;
-}
+};
 
 interface Props {
   initial?: Target;
@@ -29,7 +29,7 @@ interface Props {
   onCancel: () => void;
 }
 
-export default function TargetForm({ initial, onSave, onCancel }: Props) {
+const TargetForm = ({ initial, onSave, onCancel }: Props) => {
   const [name, setName] = useState(initial?.name ?? "");
   const [url, setUrl] = useState(initial?.url ?? "");
   const [headers, setHeaders] = useState<KVPair[]>(
@@ -39,7 +39,7 @@ export default function TargetForm({ initial, onSave, onCancel }: Props) {
     initial?.bodyParams ? kvFromRecord(initial.bodyParams as Record<string, string>) : [{ key: "", value: "" }]
   );
 
-  function handleSave() {
+  const handleSave = () => {
     if (!name.trim() || !url.trim()) return;
     const headersRecord = recordFromKV(headers);
     const bodyParamsRecord = recordFromKV(bodyParams);
@@ -55,7 +55,7 @@ export default function TargetForm({ initial, onSave, onCancel }: Props) {
       headers: headersRecord,
       bodyParams: parsedBody,
     });
-  }
+  };
 
   return (
     <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && onCancel()}>
@@ -90,17 +90,19 @@ export default function TargetForm({ initial, onSave, onCancel }: Props) {
         </div>
 
         <div className={styles.modalFooter}>
-          <button className="btn-ghost" onClick={onCancel}>取消</button>
-          <button className="btn-primary" onClick={handleSave} disabled={!name.trim() || !url.trim()}>
+          <button className="btnGhost" onClick={onCancel}>取消</button>
+          <button className="btnPrimary" onClick={handleSave} disabled={!name.trim() || !url.trim()}>
             保存
           </button>
         </div>
       </div>
     </div>
   );
-}
+};
 
-function KVEditor({
+export default TargetForm;
+
+const KVEditor = ({
   pairs,
   onChange,
   keyPlaceholder,
@@ -110,7 +112,7 @@ function KVEditor({
   onChange: (v: KVPair[]) => void;
   keyPlaceholder: string;
   valuePlaceholder: string;
-}) {
+}) => {
   return (
     <>
       <div className={styles.kvList}>
@@ -128,15 +130,15 @@ function KVEditor({
               placeholder={valuePlaceholder}
               onChange={(e) => onChange(pairs.map((p, i) => i === idx ? { ...p, value: e.target.value } : p))}
             />
-            <button className="btn-ghost btn-sm" onClick={() => onChange(pairs.filter((_, i) => i !== idx))}>
+            <button className="btnGhost btnSm" onClick={() => onChange(pairs.filter((_, i) => i !== idx))}>
               ✕
             </button>
           </div>
         ))}
       </div>
-      <button className="btn-ghost btn-sm" onClick={() => onChange([...pairs, { key: "", value: "" }])}>
+      <button className="btnGhost btnSm" onClick={() => onChange([...pairs, { key: "", value: "" }])}>
         + 添加
       </button>
     </>
   );
-}
+};

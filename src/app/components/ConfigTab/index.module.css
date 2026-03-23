@@ -7,19 +7,19 @@
   margin-bottom: 12px;
 }
 
-.card-title {
+.cardTitle {
   font-weight: 600;
   margin-bottom: 12px;
 }
 
 /* Target list */
-.target-list {
+.targetList {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.target-item {
+.targetItem {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -29,17 +29,17 @@
   background: #fff;
 }
 
-.target-item.active {
+.targetItem.active {
   border-color: #2563eb;
   background: #eff6ff;
 }
 
-.target-name {
+.targetName {
   font-weight: 600;
   flex: 1;
 }
 
-.target-url {
+.targetUrl {
   color: #6b7280;
   font-size: 12px;
   flex: 2;
@@ -48,7 +48,7 @@
   white-space: nowrap;
 }
 
-.target-actions {
+.targetActions {
   display: flex;
   gap: 6px;
 }
