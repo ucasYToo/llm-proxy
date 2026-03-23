@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Config, LogEntry } from "@/lib/types";
+import { formatTime, statusClass } from "@/lib/format";
+import { extractLastMessageLines, extractResponseLines } from "@/lib/contentExtractor";
 import LogDetailPanel from "./LogDetailPanel";
 
 type Density = "compact" | "comfortable";
@@ -10,137 +12,6 @@ type DurationFilter = "all" | "slow";
 
 interface Props {
   config: Config;
-}
-
-// 文本截断函数
-function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + "...";
-}
-
-// 智能时间格式化
-function formatTime(timestamp: string | number): string {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-  const timeStr = date.toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-
-  if (dateDay.getTime() === today.getTime()) {
-    return timeStr;
-  } else if (dateDay.getTime() === yesterday.getTime()) {
-    return `昨天 ${timeStr}`;
-  } else {
-    return `${date.getMonth() + 1}/${date.getDate()} ${timeStr}`;
-  }
-}
-
-// 从 content 数组中提取多条文本（每条一行）
-function extractContentLines(content: unknown[]): string[] {
-  const lines: string[] = [];
-  for (const item of content) {
-    if (typeof item !== "object" || !item) continue;
-    const i = item as Record<string, unknown>;
-    switch (i.type) {
-      case "text":
-        if (typeof i.text === "string" && i.text.trim()) {
-          lines.push(`[text] ${truncateText(i.text.trim(), 110)}`);
-        }
-        break;
-      case "thinking":
-        if (typeof i.thinking === "string" && i.thinking.trim()) {
-          lines.push(`[thinking] ${truncateText(i.thinking.trim(), 110)}`);
-        }
-        break;
-      case "tool_use":
-        if (typeof i.name === "string") {
-          lines.push(`[tool_use] ${i.name}`);
-        }
-        break;
-      case "tool_result":
-        if (typeof i.content === "string" && i.content.trim()) {
-          lines.push(`[tool_result] ${truncateText(i.content.trim(), 110)}`);
-        } else if (Array.isArray(i.content)) {
-          const nested = extractContentLines(i.content);
-          nested.forEach(line => lines.push(line.startsWith("[") ? line : `[tool_result] ${line}`));
-        }
-        break;
-      case "image":
-        lines.push("[image]");
-        break;
-      default:
-        if (i.type && typeof i.type === "string") {
-          const text = typeof i.text === "string" ? i.text : 
-                       typeof i.content === "string" ? i.content : "";
-          if (text.trim()) {
-            lines.push(`[${i.type}] ${truncateText(text.trim(), 110)}`);
-          } else {
-            lines.push(`[${i.type}]`);
-          }
-        }
-        break;
-    }
-  }
-  return lines;
-}
-
-// 提取最后一条 message 的文本内容（返回多行）
-function extractLastMessageLines(body: unknown): string[] {
-  if (!body || typeof body !== "object") return [];
-  const b = body as Record<string, unknown>;
-  if (!Array.isArray(b.messages)) return [];
-  const lastMsg = b.messages[b.messages.length - 1];
-  if (!lastMsg || typeof lastMsg !== "object") return [];
-  const msg = lastMsg as Record<string, unknown>;
-  const content = msg.content;
-  if (typeof content === "string") {
-    return content.trim() ? [truncateText(content.trim(), 120)] : [];
-  }
-  if (Array.isArray(content)) {
-    return extractContentLines(content);
-  }
-  return [];
-}
-
-// 提取响应体的 content（返回多行）
-function extractResponseLines(responseBody: unknown): string[] {
-  if (!responseBody) return [];
-  if (typeof responseBody === "string") {
-    return responseBody.trim() ? [truncateText(responseBody.trim(), 120)] : [];
-  }
-  if (typeof responseBody === "object") {
-    const rb = responseBody as Record<string, unknown>;
-    if (typeof rb.content === "string" && rb.content.trim()) {
-      return [truncateText(rb.content.trim(), 120)];
-    }
-    if (Array.isArray(rb.content)) {
-      return extractContentLines(rb.content);
-    }
-    if (Array.isArray(rb.choices) && rb.choices.length > 0) {
-      const choice = rb.choices[0] as Record<string, unknown>;
-      if (choice.message && typeof choice.message === "object") {
-        const msg = choice.message as Record<string, unknown>;
-        if (typeof msg.content === "string" && msg.content.trim()) {
-          return [truncateText(msg.content.trim(), 120)];
-        }
-        if (Array.isArray(msg.content)) {
-          return extractContentLines(msg.content);
-        }
-      }
-    }
-    if (Array.isArray(rb.choices) && rb.choices.length > 0) {
-      const firstChoice = rb.choices[0] as Record<string, unknown>;
-      if (firstChoice.delta && typeof firstChoice.delta === "object") {
-        const delta = firstChoice.delta as Record<string, unknown>;
-        if (typeof delta.content === "string" && delta.content.trim()) {
-          return [truncateText(delta.content.trim(), 120)];
-        }
-      }
-    }
-  }
-  return [];
 }
 
 export default function LogsTab({ config }: Props) {
@@ -280,12 +151,6 @@ export default function LogsTab({ config }: Props) {
     setLogs([]);
     setTotal(0);
     setOffset(0);
-  }
-
-  function statusClass(status: number) {
-    if (status === 0) return "status-err";
-    if (status >= 200 && status < 300) return "status-ok";
-    return "status-err";
   }
 
   function getStatusBadge(status?: string) {

@@ -4,6 +4,7 @@ import { JsonView, defaultStyles } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
 import type { LogEntry } from "@/lib/types";
 import { jsonDiff, type DiffEntry } from "@/lib/jsonDiff";
+import { statusClass, formatValue } from "@/lib/format";
 
 type ViewMode = "detail" | "response" | "diff";
 
@@ -29,12 +30,6 @@ export default function LogDetailPanel({ log, onClose }: Props) {
       setViewMode("detail");
     }
   }, [log?.id]);
-
-  function statusClass(status: number) {
-    if (status === 0) return "status-err";
-    if (status >= 200 && status < 300) return "status-ok";
-    return "status-err";
-  }
 
   if (!log) return null;
 
@@ -351,16 +346,3 @@ function DiffSection({
   );
 }
 
-function formatValue(val: unknown): string {
-  if (val === null) return "null";
-  if (val === undefined) return "undefined";
-  if (typeof val === "string") return `"${val}"`;
-  if (typeof val === "object") {
-    try {
-      return JSON.stringify(val);
-    } catch {
-      return String(val);
-    }
-  }
-  return String(val);
-}
