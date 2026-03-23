@@ -1,3 +1,4 @@
+
 "use client";
 import { useEffect, useState } from "react";
 import { JsonView, defaultStyles } from "react-json-view-lite";
@@ -5,6 +6,7 @@ import "react-json-view-lite/dist/index.css";
 import type { LogEntry } from "@/lib/types";
 import { jsonDiff, type DiffEntry } from "@/lib/jsonDiff";
 import { statusClass, formatValue } from "@/lib/format";
+import styles from "./index.module.css";
 
 type ViewMode = "detail" | "response" | "diff";
 
@@ -35,16 +37,16 @@ export default function LogDetailPanel({ log, onClose }: Props) {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* 遮罩层 */}
       <div 
-        className={`panel-backdrop ${isVisible ? "visible" : ""}`} 
+        className={`${styles['panel-backdrop']} ${isVisible ? styles.visible : ""}`} 
         onClick={onClose}
       />
       
-      {/* Panel */}
-      <div className={`log-panel ${isVisible ? "visible" : ""}`}>
-        {/* Header */}
-        <div className="log-panel-header">
+      {/* 面板 */}
+      <div className={`${styles['log-panel']} ${isVisible ? styles.visible : ""}`}>
+        {/* 头部 */}
+        <div className={styles['log-panel-header']}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
             <span className="method-badge" style={{ fontSize: 13, padding: "2px 8px", flexShrink: 0 }}>
               {log.method}
@@ -62,8 +64,8 @@ export default function LogDetailPanel({ log, onClose }: Props) {
           </button>
         </div>
 
-        {/* Meta info */}
-        <div className="log-meta">
+        {/* 元信息 */}
+        <div className={styles['log-meta']}>
           <span><strong>目标：</strong>{log.targetName}</span>
           <span><strong>时间：</strong>{new Date(log.timestamp).toLocaleString()}</span>
           {log.tokenUsage && (
@@ -77,44 +79,44 @@ export default function LogDetailPanel({ log, onClose }: Props) {
           )}
         </div>
 
-        {/* Error banner */}
+        {/* 错误提示 */}
         {log.error && (
-          <div className="log-error-banner">
+          <div className={styles['log-error-banner']}>
             <strong>错误：</strong>{log.error}
           </div>
         )}
 
-        {/* View mode tabs */}
-        <div className="log-panel-tabs">
+        {/* 视图模式标签页 */}
+        <div className={styles['log-panel-tabs']}>
           <button
-            className={`log-panel-tab${viewMode === "detail" ? " active" : ""}`}
+            className={`${styles['log-panel-tab']}${viewMode === "detail" ? ` ${styles.active}` : ""}`}
             onClick={() => setViewMode("detail")}
           >
             请求详情
           </button>
           <button
-            className={`log-panel-tab${viewMode === "response" ? " active" : ""}`}
+            className={`${styles['log-panel-tab']}${viewMode === "response" ? ` ${styles.active}` : ""}`}
             onClick={() => setViewMode("response")}
           >
             响应体
           </button>
           <button
-            className={`log-panel-tab${viewMode === "diff" ? " active" : ""}`}
+            className={`${styles['log-panel-tab']}${viewMode === "diff" ? ` ${styles.active}` : ""}`}
             onClick={() => setViewMode("diff")}
           >
             Diff 对比
           </button>
         </div>
 
-        {/* Content */}
-        <div className="log-panel-body">
+        {/* 内容区 */}
+        <div className={styles['log-panel-body']}>
           {viewMode === "detail" && <DetailView log={log} />}
           {viewMode === "response" && <ResponseView log={log} />}
           {viewMode === "diff" && <DiffView log={log} />}
         </div>
 
-        {/* Keyboard hint */}
-        <div className="panel-keyboard-hint">
+        {/* 键盘提示 */}
+        <div className={styles['panel-keyboard-hint']}>
           <span>↑/↓ 或 J/K 切换日志</span>
           <span>ESC 关闭</span>
         </div>
@@ -123,33 +125,33 @@ export default function LogDetailPanel({ log, onClose }: Props) {
   );
 }
 
-/* ── Detail View: shows modified headers/body (no response here) ── */
+/* ── 详情视图：展示修改后的 headers/body ── */
 function DetailView({ log }: { log: LogEntry }) {
   return (
-    <div className="detail-sections">
+    <div className={styles['detail-sections']}>
       <Section title="请求 Headers（修改后）" data={log.modifiedRequestHeaders} />
       <Section title="请求 Body（修改后）" data={log.modifiedRequestBody} />
     </div>
   );
 }
 
-/* ── Response View: assembled data first, then raw stream events ── */
+/* ── 响应视图：优先展示组装后数据，其次原始流式事件 ── */
 function ResponseView({ log }: { log: LogEntry }) {
   const hasAssembled = log.assembledResponseBody !== null && log.assembledResponseBody !== undefined;
   const isStreamArray = Array.isArray(log.responseBody);
 
   return (
-    <div className="detail-sections">
-      {/* Assembled response (priority display) */}
+    <div className={styles['detail-sections']}>
+      {/* 组装后响应（优先展示） */}
       {hasAssembled && (
-        <div className="detail-section">
-          <div className="response-section-header">
-            <p className="log-section-title">组装后响应</p>
-            <span className="diff-badge" style={{ background: "#dbeafe", color: "#1e40af" }}>
+        <div className={styles['detail-section']}>
+          <div className={styles['response-section-header']}>
+            <p className={styles['log-section-title']}>组装后响应</p>
+            <span className={styles['diff-badge']} style={{ background: "#dbeafe", color: "#1e40af" }}>
               已合并
             </span>
           </div>
-          <div className="json-viewer-wrap">
+          <div className={styles['json-viewer-wrap']}>
             <JsonView
               data={log.assembledResponseBody as object}
               shouldExpandNode={(level) => level < 5}
@@ -159,21 +161,21 @@ function ResponseView({ log }: { log: LogEntry }) {
         </div>
       )}
 
-      {/* Raw response body */}
-      <div className="detail-section">
-        <div className="response-section-header">
-          <p className="log-section-title">
+      {/* 原始响应体 */}
+      <div className={styles['detail-section']}>
+        <div className={styles['response-section-header']}>
+          <p className={styles['log-section-title']}>
             {hasAssembled ? "原始流式数据" : "响应 Body"}
           </p>
           {isStreamArray && (
-            <span className="diff-badge" style={{ background: "#f3e8ff", color: "#6b21a8" }}>
+            <span className={styles['diff-badge']} style={{ background: "#f3e8ff", color: "#6b21a8" }}>
               {(log.responseBody as unknown[]).length} 个事件
             </span>
           )}
         </div>
         {log.responseBody !== null && log.responseBody !== undefined ? (
           typeof log.responseBody === "object" ? (
-            <div className="json-viewer-wrap">
+            <div className={styles['json-viewer-wrap']}>
               <JsonView
                 data={log.responseBody as object}
                 shouldExpandNode={(level) => level < 3}
@@ -181,7 +183,7 @@ function ResponseView({ log }: { log: LogEntry }) {
               />
             </div>
           ) : (
-            <pre className="log-pre">{String(log.responseBody)}</pre>
+            <pre className={styles['log-pre']}>{String(log.responseBody)}</pre>
           )
         ) : (
           <p className="empty" style={{ padding: 16 }}>无数据</p>
@@ -197,10 +199,10 @@ function Section({ title, data }: { title: string; data: unknown }) {
   const isJsonObject = typeof data === "object";
 
   return (
-    <div className="detail-section">
-      <p className="log-section-title">{title}</p>
+    <div className={styles['detail-section']}>
+      <p className={styles['log-section-title']}>{title}</p>
       {isJsonObject ? (
-        <div className="json-viewer-wrap">
+        <div className={styles['json-viewer-wrap']}>
           <JsonView
             data={data as object}
             shouldExpandNode={(level) => level < 3}
@@ -208,13 +210,13 @@ function Section({ title, data }: { title: string; data: unknown }) {
           />
         </div>
       ) : (
-        <pre className="log-pre">{String(data)}</pre>
+        <pre className={styles['log-pre']}>{String(data)}</pre>
       )}
     </div>
   );
 }
 
-/* ── Diff View: side-by-side original vs modified ── */
+/* ── Diff 视图：原始请求与修改后请求的并排对比 ── */
 function DiffView({ log }: { log: LogEntry }) {
   const hasOriginal = log.originalRequestBody !== null || Object.keys(log.originalRequestHeaders ?? {}).length > 0;
   const headerDiffs = log.precomputedDiff
@@ -225,7 +227,7 @@ function DiffView({ log }: { log: LogEntry }) {
     : jsonDiff(log.originalRequestBody, log.modifiedRequestBody);
 
   return (
-    <div className="diff-sections">
+    <div className={styles['diff-sections']}>
       {!hasOriginal && log.precomputedDiff && (
         <div style={{ padding: "8px 16px", background: "#fffbeb", borderBottom: "1px solid #fde68a", fontSize: 12, color: "#92400e" }}>
           原始请求数据未采集，仅展示差异摘要（可在配置页开启"采集原始请求 Body"以查看完整对比）
@@ -264,37 +266,37 @@ function DiffSection({
   const hasDiff = diffs.length > 0;
 
   return (
-    <div className="diff-section">
-      <div className="diff-section-header">
-        <p className="log-section-title">{title}</p>
+    <div className={styles['diff-section']}>
+      <div className={styles['diff-section-header']}>
+        <p className={styles['log-section-title']}>{title}</p>
         {hasDiff ? (
-          <span className="diff-badge diff-badge-changed">{diffs.length} 处差异</span>
+          <span className={`${styles['diff-badge']} ${styles['diff-badge-changed']}`}>{diffs.length} 处差异</span>
         ) : (
-          <span className="diff-badge diff-badge-same">无差异</span>
+          <span className={`${styles['diff-badge']} ${styles['diff-badge-same']}`}>无差异</span>
         )}
       </div>
 
       {hasDiff && (
-        <div className="diff-entries">
+        <div className={styles['diff-entries']}>
           {diffs.map((d, i) => (
-            <div key={i} className={`diff-entry diff-entry-${d.type}`}>
-              <span className="diff-path">{d.path}</span>
+            <div key={i} className={`${styles['diff-entry']} ${styles[`diff-entry-${d.type}`]}`}>
+              <span className={styles['diff-path']}>{d.path}</span>
               {d.type === "added" && (
-                <span className="diff-value diff-added">
+                <span className={`${styles['diff-value']} ${styles['diff-added']}`}>
                   + {formatValue(d.newValue)}
                 </span>
               )}
               {d.type === "removed" && (
-                <span className="diff-value diff-removed">
+                <span className={`${styles['diff-value']} ${styles['diff-removed']}`}>
                   - {formatValue(d.oldValue)}
                 </span>
               )}
               {d.type === "changed" && (
                 <>
-                  <span className="diff-value diff-removed">
+                  <span className={`${styles['diff-value']} ${styles['diff-removed']}`}>
                     - {formatValue(d.oldValue)}
                   </span>
-                  <span className="diff-value diff-added">
+                  <span className={`${styles['diff-value']} ${styles['diff-added']}`}>
                     + {formatValue(d.newValue)}
                   </span>
                 </>
@@ -304,12 +306,12 @@ function DiffSection({
         </div>
       )}
 
-      <div className="diff-container">
-        <div className="diff-pane">
-          <p className="diff-pane-title">原始请求</p>
+      <div className={styles['diff-container']}>
+        <div className={styles['diff-pane']}>
+          <p className={styles['diff-pane-title']}>原始请求</p>
           {original !== null && original !== undefined ? (
             typeof original === "object" ? (
-              <div className="json-viewer-wrap">
+              <div className={styles['json-viewer-wrap']}>
                 <JsonView
                   data={original as object}
                   shouldExpandNode={(level) => level < 3}
@@ -317,17 +319,17 @@ function DiffSection({
                 />
               </div>
             ) : (
-              <pre className="log-pre">{String(original)}</pre>
+              <pre className={styles['log-pre']}>{String(original)}</pre>
             )
           ) : (
             <p className="empty" style={{ padding: 16 }}>无数据</p>
           )}
         </div>
-        <div className="diff-pane">
-          <p className="diff-pane-title">修改后请求</p>
+        <div className={styles['diff-pane']}>
+          <p className={styles['diff-pane-title']}>修改后请求</p>
           {modified !== null && modified !== undefined ? (
             typeof modified === "object" ? (
-              <div className="json-viewer-wrap">
+              <div className={styles['json-viewer-wrap']}>
                 <JsonView
                   data={modified as object}
                   shouldExpandNode={(level) => level < 3}
@@ -335,7 +337,7 @@ function DiffSection({
                 />
               </div>
             ) : (
-              <pre className="log-pre">{String(modified)}</pre>
+              <pre className={styles['log-pre']}>{String(modified)}</pre>
             )
           ) : (
             <p className="empty" style={{ padding: 16 }}>无数据</p>
@@ -345,4 +347,3 @@ function DiffSection({
     </div>
   );
 }
-

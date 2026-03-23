@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "LLM Proxy",
-  description: "Local LLM API proxy with target management and request logging",
+  description: "本地 LLM API 代理，支持目标管理和请求日志",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

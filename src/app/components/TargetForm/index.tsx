@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { Target } from "@/lib/types";
+import styles from "./index.module.css";
 
 interface KVPair {
   key: string;
@@ -38,12 +39,11 @@ export default function TargetForm({ initial, onSave, onCancel }: Props) {
     initial?.bodyParams ? kvFromRecord(initial.bodyParams as Record<string, string>) : [{ key: "", value: "" }]
   );
 
-
   function handleSave() {
     if (!name.trim() || !url.trim()) return;
     const headersRecord = recordFromKV(headers);
     const bodyParamsRecord = recordFromKV(bodyParams);
-    // Try parse body param values as JSON
+    // 尝试将 body 参数值解析为 JSON
     const parsedBody: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(bodyParamsRecord)) {
       try { parsedBody[k] = JSON.parse(v); } catch { parsedBody[k] = v; }
@@ -58,16 +58,16 @@ export default function TargetForm({ initial, onSave, onCancel }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onCancel()}>
-      <div className="modal">
+    <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className={styles.modal}>
         <h2>{initial ? "编辑目标" : "添加目标"}</h2>
 
-        <div className="form-group">
+        <div className={styles.formGroup}>
           <label>名称</label>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI" />
         </div>
 
-        <div className="form-group">
+        <div className={styles.formGroup}>
           <label>Base URL</label>
           <input
             type="text"
@@ -75,21 +75,21 @@ export default function TargetForm({ initial, onSave, onCancel }: Props) {
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://api.openai.com/v1"
           />
-          <p className="form-hint">请求路径将直接拼接到此 URL 后面</p>
+          <p className={styles.formHint}>请求路径将直接拼接到此 URL 后面</p>
         </div>
 
-        <div className="form-group">
+        <div className={styles.formGroup}>
           <label>请求头（Headers）</label>
           <KVEditor pairs={headers} onChange={setHeaders} keyPlaceholder="Authorization" valuePlaceholder="Bearer sk-xxx" />
         </div>
 
-        <div className="form-group">
+        <div className={styles.formGroup}>
           <label>Body 追加参数</label>
           <KVEditor pairs={bodyParams} onChange={setBodyParams} keyPlaceholder="model" valuePlaceholder="gpt-4o" />
-          <p className="form-hint">值支持 JSON 格式（如 true、123、"字符串"）</p>
+          <p className={styles.formHint}>值支持 JSON 格式（如 true、123、"字符串"）</p>
         </div>
 
-        <div className="modal-footer">
+        <div className={styles.modalFooter}>
           <button className="btn-ghost" onClick={onCancel}>取消</button>
           <button className="btn-primary" onClick={handleSave} disabled={!name.trim() || !url.trim()}>
             保存
@@ -113,9 +113,9 @@ function KVEditor({
 }) {
   return (
     <>
-      <div className="kv-list">
+      <div className={styles.kvList}>
         {pairs.map((pair, idx) => (
-          <div key={idx} className="kv-row">
+          <div key={idx} className={styles.kvRow}>
             <input
               type="text"
               value={pair.key}

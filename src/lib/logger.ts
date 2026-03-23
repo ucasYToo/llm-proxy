@@ -22,8 +22,7 @@ function applyLogCollectionFilter(entry: LogEntry, preserveDiff = false): LogEnt
   const filtered: LogEntry = { ...entry };
 
   if (!logCollection.captureOriginalBody) {
-    // Only compute diff if not already present (preserveDiff=true means updateLog is calling,
-    // and the diff was already computed correctly in createLog)
+    // 仅在 diff 尚未存在时计算（preserveDiff=true 表示 updateLog 调用，diff 已在 createLog 中正确计算）
     if (!preserveDiff || !filtered.precomputedDiff) {
       filtered.precomputedDiff = {
         headers: jsonDiff(entry.originalRequestHeaders, entry.modifiedRequestHeaders),
@@ -35,7 +34,7 @@ function applyLogCollectionFilter(entry: LogEntry, preserveDiff = false): LogEnt
   }
 
   if (!logCollection.captureRawStreamEvents) {
-    // Only strip if it's the raw SSE events array (not assembled body)
+    // 仅在是原始 SSE 事件数组时才清除（非组装后的 body）
     if (Array.isArray(filtered.responseBody)) {
       filtered.responseBody = null;
     }
@@ -51,7 +50,7 @@ export function createLog(entry: LogEntry): void {
   const filtered = applyLogCollectionFilter(entry);
   const logs = readAll();
   logs.unshift(filtered);
-  // Keep only the most recent MAX_ENTRIES
+  // 仅保留最近的 MAX_ENTRIES 条记录
   const trimmed = logs.slice(0, MAX_ENTRIES);
   saveLogs(trimmed);
 }
@@ -65,10 +64,10 @@ export function updateLog(id: string, updates: Partial<LogEntry>): void {
   const index = logs.findIndex((l) => l.id === id);
   if (index === -1) return;
 
-  // Merge updates
+  // 合并更新
   logs[index] = { ...logs[index], ...updates };
   
-  // Apply filtering in case response body changed (preserve existing diff)
+  // 应用过滤（保留已有的 diff）
   const filtered = applyLogCollectionFilter(logs[index], true);
   logs[index] = filtered;
   
@@ -85,14 +84,14 @@ export function upsertLog(entry: LogEntry): void {
   const filtered = applyLogCollectionFilter(entry);
   
   if (index !== -1) {
-    // Update existing
+    // 更新已有记录
     logs[index] = { ...logs[index], ...filtered };
   } else {
-    // Insert new
+    // 插入新记录
     logs.unshift(filtered);
   }
   
-  // Keep only the most recent MAX_ENTRIES
+  // 仅保留最近的 MAX_ENTRIES 条记录
   const trimmed = logs.slice(0, MAX_ENTRIES);
   saveLogs(trimmed);
 }

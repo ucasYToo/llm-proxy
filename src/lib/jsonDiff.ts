@@ -6,8 +6,7 @@ export interface DiffEntry {
 }
 
 /**
- * Shallow-ish diff between two JSON-serializable objects.
- * Recursively walks both objects and returns a flat list of differences.
+ * 对两个 JSON 可序列化对象进行浅层递归 diff，返回扁平的差异列表
  */
 export function jsonDiff(
   original: unknown,
@@ -18,7 +17,7 @@ export function jsonDiff(
 
   if (original === modified) return diffs;
 
-  // Both are null / undefined / primitives
+  // 两者都是 null / undefined / 原始类型
   if (
     original === null ||
     original === undefined ||
@@ -38,7 +37,7 @@ export function jsonDiff(
     return diffs;
   }
 
-  // Arrays
+  // 数组
   if (Array.isArray(original) || Array.isArray(modified)) {
     const origArr = Array.isArray(original) ? original : [];
     const modArr = Array.isArray(modified) ? modified : [];
@@ -56,7 +55,7 @@ export function jsonDiff(
     return diffs;
   }
 
-  // Objects
+  // 对象
   const origObj = original as Record<string, unknown>;
   const modObj = modified as Record<string, unknown>;
   const allKeys = new Set([...Object.keys(origObj), ...Object.keys(modObj)]);
@@ -76,7 +75,7 @@ export function jsonDiff(
 }
 
 /**
- * Collect all diff paths into a Set for quick lookup.
+ * 收集所有 diff 路径到 Set 中，用于快速查找
  */
 export function getDiffPaths(
   original: unknown,

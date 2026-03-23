@@ -22,17 +22,17 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
   const search = req.nextUrl.search;
   const fullUrl = search ? `${targetUrl}${search}` : targetUrl;
 
-  // Build merged headers
+  // 构建合并后的请求头
   const forwardHeaders: Record<string, string> = {};
   req.headers.forEach((value, key) => {
-    // Skip hop-by-hop and Next.js internal headers
+    // 跳过逐跳传输头和 Next.js 内部头
     if (!["host", "connection", "transfer-encoding"].includes(key.toLowerCase())) {
       forwardHeaders[key] = value;
     }
   });
   Object.assign(forwardHeaders, target.headers);
 
-  // Build merged body
+  // 构建合并后的请求体
   let requestBody: unknown = undefined;
   let originalBody: unknown = undefined;
   let modifiedBody: unknown = undefined;
@@ -58,13 +58,13 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
   const logId = uuidv4();
   const startTime = new Date().toISOString();
 
-  // Capture original request headers for logging
+  // 捕获原始请求头用于日志记录
   const originalHeaders: Record<string, string> = {};
   req.headers.forEach((value, key) => {
     originalHeaders[key] = value;
   });
 
-  // Capture modified headers for logging
+  // 捕获修改后的请求头用于日志记录
   const modifiedHeaders: Record<string, string> = { ...forwardHeaders };
 
   // 1. 请求开始时立即创建日志（状态为 pending）
@@ -92,7 +92,7 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
       method: req.method,
       headers: forwardHeaders,
       body: requestBody as BodyInit | undefined,
-      // @ts-expect-error Node 18+ supports this
+      // @ts-expect-error Node 18+ 支持此选项
       duplex: "half",
     });
   } catch (err) {
@@ -113,7 +113,7 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
   const resContentType = upstreamRes.headers.get("content-type") ?? "";
   const isStream = resContentType.includes("text/event-stream");
 
-  // Build response headers
+  // 构建响应头
   const resHeaders = new Headers();
   upstreamRes.headers.forEach((value, key) => {
     if (!["transfer-encoding", "connection"].includes(key.toLowerCase())) {
@@ -122,7 +122,7 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
   });
 
   if (isStream) {
-    // Tee the stream: pass through to client while collecting content for logging
+    // 分流：将流传递给客户端的同时收集内容用于日志记录
     const chunks: string[] = [];
     let firstChunkReceived = false;
     const decoder = new TextDecoder();
@@ -148,15 +148,15 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
         const fullContent = chunks.join("");
         const durationMs = Date.now() - startMs;
 
-        // Parse SSE events into structured data
-        // Supports both "data: {...}" (OpenAI) and "data:{...}" (Anthropic) formats
+        // 将 SSE 事件解析为结构化数据
+        // 支持 "data: {...}"（OpenAI）和 "data:{...}"（Anthropic）两种格式
         let parsedEvents: unknown[] = [];
         try {
           const lines = fullContent.split("\n");
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed.startsWith("data:")) continue;
-            // Strip "data:" prefix (with or without space)
+            // 去除 "data:" 前缀（带或不带空格）
             const payload = trimmed.startsWith("data: ")
               ? trimmed.slice(6)
               : trimmed.slice(5);
@@ -168,31 +168,31 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
             }
           }
         } catch {
-          // keep parsedEvents empty
+          // 保持 parsedEvents 为空
         }
 
-        // Assemble a complete response from SSE events
-        // Supports OpenAI chat completions and Anthropic messages formats
+        // 从 SSE 事件组装完整响应
+        // 支持 OpenAI Chat Completions 和 Anthropic Messages 格式
         let assembledBody: unknown = undefined;
         try {
           if (parsedEvents.length > 0) {
             const firstEvent = parsedEvents[0] as Record<string, unknown>;
 
             if (firstEvent?.type === "message_start") {
-              // Anthropic Messages API format
+              // Anthropic Messages API 格式
               assembledBody = assembleAnthropicResponse(parsedEvents);
             } else if (firstEvent?.object === "chat.completion.chunk" || firstEvent?.choices) {
-              // OpenAI Chat Completions format
+              // OpenAI Chat Completions 格式
               assembledBody = assembleOpenAIResponse(parsedEvents);
             }
           }
         } catch {
-          // assembly failed, leave as undefined
+          // 组装失败，保持 undefined
         }
 
         const responseBody = parsedEvents.length > 0 ? parsedEvents : fullContent;
 
-        // Extract token usage from assembled response
+        // 从组装后的响应中提取 token 用量
         const tokenUsage = extractTokenUsage(assembledBody);
 
         // 更新最终状态
@@ -208,7 +208,7 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
     });
 
     upstreamRes.body!.pipeTo(writable).catch(() => {
-      // If pipe fails, still log what we have
+      // 管道失败时，仍然记录已有的数据
       const fullContent = chunks.join("");
       const durationMs = Date.now() - startMs;
       updateLog(logId, {
@@ -226,17 +226,17 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
     });
   }
 
-  // Non-streaming: buffer and log
+  // 非流式：缓冲并记录
   const resText = await upstreamRes.text();
   const durationMs = Date.now() - startMs;
   let resBodyLog: unknown = resText;
   try {
     resBodyLog = JSON.parse(resText);
   } catch {
-    // keep as text
+    // 保持为文本
   }
 
-  // Extract token usage from non-streaming response
+  // 从非流式响应中提取 token 用量
   const tokenUsage = extractTokenUsage(resBodyLog);
 
   // 更新最终状态

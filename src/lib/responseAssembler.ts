@@ -6,7 +6,7 @@
 import type { TokenUsage } from "./types";
 
 /**
- * Extract token usage from a response body (supports Anthropic and OpenAI formats).
+ * 从响应体中提取 token 用量（支持 Anthropic 和 OpenAI 格式）
  */
 export function extractTokenUsage(body: unknown): TokenUsage | undefined {
   if (!body || typeof body !== "object") return undefined;
@@ -14,14 +14,14 @@ export function extractTokenUsage(body: unknown): TokenUsage | undefined {
   const usage = b.usage as Record<string, unknown> | undefined;
   if (!usage) return undefined;
 
-  // Anthropic format: input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens
-  // OpenAI format: prompt_tokens, completion_tokens, total_tokens, prompt_tokens_details.cached_tokens
+  // Anthropic 格式：input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens
+  // OpenAI 格式：prompt_tokens, completion_tokens, total_tokens, prompt_tokens_details.cached_tokens
   const inputTokens: number | undefined = (usage.input_tokens as number | undefined) ?? (usage.prompt_tokens as number | undefined);
   const outputTokens: number | undefined = (usage.output_tokens as number | undefined) ?? (usage.completion_tokens as number | undefined);
   const totalTokens: number | undefined = (usage.total_tokens as number | undefined) ??
     (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined);
 
-  // Cache tokens: Anthropic uses cache_read_input_tokens, OpenAI uses prompt_tokens_details.cached_tokens
+  // 缓存 token：Anthropic 使用 cache_read_input_tokens，OpenAI 使用 prompt_tokens_details.cached_tokens
   let cacheReadTokens: number | undefined = undefined;
   if (typeof usage.cache_read_input_tokens === "number") {
     cacheReadTokens = usage.cache_read_input_tokens;
@@ -48,9 +48,9 @@ export function extractTokenUsage(body: unknown): TokenUsage | undefined {
 }
 
 /**
- * Assemble Anthropic Messages API streaming events into a complete response.
- * Events: message_start, content_block_start, content_block_delta, content_block_stop,
- *         message_delta, message_stop
+ * 将 Anthropic Messages API 流式事件组装为完整响应
+ * 事件类型：message_start, content_block_start, content_block_delta, content_block_stop,
+ *           message_delta, message_stop
  */
 export function assembleAnthropicResponse(events: unknown[]): Record<string, unknown> {
   let message: Record<string, unknown> = {};
@@ -72,7 +72,7 @@ export function assembleAnthropicResponse(events: unknown[]): Record<string, unk
         currentBlockIndex = (e.index as number) ?? contentBlocks.length;
         const block = (e.content_block as Record<string, unknown>) ?? {};
         contentBlocks[currentBlockIndex] = { ...block };
-        // Initialize currentText based on block type
+        // 根据 block 类型初始化 currentText
         if (block.type === "thinking") {
           currentText = (block.thinking as string) ?? "";
         } else {
@@ -89,7 +89,7 @@ export function assembleAnthropicResponse(events: unknown[]): Record<string, unk
         } else if (delta?.type === "input_json_delta" && typeof delta.partial_json === "string") {
           currentText += delta.partial_json;
         } else if (delta?.type === "signature_delta" && typeof delta.signature === "string") {
-          // Store signature on the block directly
+          // 将签名直接存储到 block 上
           if (currentBlockIndex >= 0 && contentBlocks[currentBlockIndex]) {
             contentBlocks[currentBlockIndex].signature = delta.signature;
           }
@@ -136,7 +136,7 @@ export function assembleAnthropicResponse(events: unknown[]): Record<string, unk
 }
 
 /**
- * Assemble OpenAI Chat Completions streaming chunks into a complete response.
+ * 将 OpenAI Chat Completions 流式 chunk 组装为完整响应
  */
 export function assembleOpenAIResponse(events: unknown[]): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -166,7 +166,7 @@ export function assembleOpenAIResponse(events: unknown[]): Record<string, unknow
         }
         if (delta.role) accMsg.role = delta.role;
         if (delta.tool_calls) {
-          // Accumulate tool calls
+          // 累积 tool_calls
           if (!accMsg.tool_calls) accMsg.tool_calls = [];
           const existingCalls = accMsg.tool_calls as Array<Record<string, unknown>>;
           const newCalls = delta.tool_calls as Array<Record<string, unknown>>;

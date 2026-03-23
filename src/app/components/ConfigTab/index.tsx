@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { Config, Target, LogCollection } from "@/lib/types";
-import TargetForm from "./TargetForm";
+import TargetForm from "../TargetForm";
+import styles from "./index.module.css";
 
 interface Props {
   config: Config;
@@ -57,9 +58,9 @@ export default function ConfigTab({ config, onRefresh }: Props) {
 
   return (
     <div>
-      <div className="card">
+      <div className={styles.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span className="card-title" style={{ marginBottom: 0 }}>转发目标</span>
+          <span className={styles['card-title']} style={{ marginBottom: 0 }}>转发目标</span>
           <button className="btn-primary btn-sm" onClick={() => { setEditTarget(undefined); setShowForm(true); }}>
             + 添加目标
           </button>
@@ -68,9 +69,9 @@ export default function ConfigTab({ config, onRefresh }: Props) {
         {config.targets.length === 0 ? (
           <p className="empty">暂无目标，点击"添加目标"开始配置</p>
         ) : (
-          <div className="target-list">
+          <div className={styles['target-list']}>
             {config.targets.map((t) => (
-              <div key={t.id} className={`target-item${t.id === config.activeTarget ? " active" : ""}`}>
+              <div key={t.id} className={`${styles['target-item']}${t.id === config.activeTarget ? ` ${styles.active}` : ""}`}>
                 <div style={{ flex: "none" }}>
                   <input
                     type="radio"
@@ -79,9 +80,9 @@ export default function ConfigTab({ config, onRefresh }: Props) {
                     onChange={() => handleSetActive(t.id)}
                   />
                 </div>
-                <span className="target-name">{t.name}</span>
-                <span className="target-url">{t.url}</span>
-                <div className="target-actions">
+                <span className={styles['target-name']}>{t.name}</span>
+                <span className={styles['target-url']}>{t.url}</span>
+                <div className={styles['target-actions']}>
                   <button
                     className="btn-ghost btn-sm"
                     onClick={() => { setEditTarget(t); setShowForm(true); }}
@@ -98,8 +99,8 @@ export default function ConfigTab({ config, onRefresh }: Props) {
         )}
       </div>
 
-      <div className="card">
-        <p className="card-title">日志采集配置</p>
+      <div className={styles.card}>
+        <p className={styles['card-title']}>日志采集配置</p>
         <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
           控制日志中存储的数据范围。关闭可选项可显著减小日志文件体积（最多保留 300 条）。
         </p>
@@ -135,8 +136,8 @@ export default function ConfigTab({ config, onRefresh }: Props) {
         </div>
       </div>
 
-      <div className="card">
-        <p className="card-title">使用说明</p>
+      <div className={styles.card}>
+        <p className={styles['card-title']}>使用说明</p>
         <p style={{ color: "#6b7280", lineHeight: 1.7 }}>
           将客户端（如 OpenAI SDK）的 <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>base_url</code> 设置为：
         </p>

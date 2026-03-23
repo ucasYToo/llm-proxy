@@ -1,0 +1,54 @@
+/* Cards */
+.card {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.card-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* Target list */
+.target-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.target-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.target-item.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.target-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.target-url {
+  color: #6b7280;
+  font-size: 12px;
+  flex: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-actions {
+  display: flex;
+  gap: 6px;
+}

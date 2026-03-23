@@ -17,7 +17,7 @@ export function readConfig(): Config {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
     const parsed = JSON.parse(raw) as Config;
-    // Merge with defaults to handle missing fields in older config files
+    // 与默认值合并，处理旧配置文件中缺失的字段
     return {
       ...DEFAULT_CONFIG,
       ...parsed,

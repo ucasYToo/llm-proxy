@@ -1,9 +1,11 @@
+
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Config, LogEntry } from "@/lib/types";
 import { formatTime, statusClass } from "@/lib/format";
 import { extractLastMessageLines, extractResponseLines } from "@/lib/contentExtractor";
-import LogDetailPanel from "./LogDetailPanel";
+import LogDetailPanel from "../LogDetailPanel";
+import styles from "./index.module.css";
 
 type Density = "compact" | "comfortable";
 type StatusFilter = "all" | "success" | "error" | "pending" | "streaming" | "completed";
@@ -52,7 +54,7 @@ export default function LogsTab({ config }: Props) {
     }
   }, [offset, filterTarget]);
 
-  // Initial fetch and auto refresh
+  // 初始加载和自动刷新
   useEffect(() => {
     void fetchLogs();
   }, [fetchLogs]);
@@ -65,10 +67,10 @@ export default function LogsTab({ config }: Props) {
     return () => clearInterval(interval);
   }, [autoRefresh, fetchLogs]);
 
-  // Keyboard shortcuts
+  // 键盘快捷键
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // Ignore if typing in input/select
+      // 在输入框/选择框中输入时忽略
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
       }
@@ -82,7 +84,7 @@ export default function LogsTab({ config }: Props) {
       }
 
       if (selectedLog) {
-        // Navigation in detail view
+        // 详情视图中的导航
         if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
           e.preventDefault();
           if (selectedIndex > 0) {
@@ -99,7 +101,7 @@ export default function LogsTab({ config }: Props) {
           }
         }
       } else {
-        // Navigation in list
+        // 列表中的导航
         if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
           e.preventDefault();
           if (selectedIndex < logs.length - 1) {
@@ -125,7 +127,7 @@ export default function LogsTab({ config }: Props) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedLog, selectedIndex, logs]);
 
-  // Client-side filtering
+  // 客户端筛选
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
       if (statusFilter === "success" && (log.responseStatus < 200 || log.responseStatus >= 300 || log.error)) return false;
@@ -156,24 +158,22 @@ export default function LogsTab({ config }: Props) {
   function getStatusBadge(status?: string) {
     switch (status) {
       case "pending":
-        return <span className="status-badge pending" title="请求已发送，等待响应">请求中</span>;
+        return <span className={`${styles['status-badge']} ${styles.pending}`} title="请求已发送，等待响应">请求中</span>;
       case "streaming":
-        return <span className="status-badge streaming" title="正在接收流式响应">流式中</span>;
+        return <span className={`${styles['status-badge']} ${styles.streaming}`} title="正在接收流式响应">流式中</span>;
       case "completed":
-        return <span className="status-badge completed" title="请求已完成">完成</span>;
+        return <span className={`${styles['status-badge']} ${styles.completed}`} title="请求已完成">完成</span>;
       case "error":
-        return <span className="status-badge error" title="请求出错">错误</span>;
+        return <span className={`${styles['status-badge']} ${styles.error}`} title="请求出错">错误</span>;
       default:
-        return <span className="status-badge unknown" title="状态未知">-</span>;
+        return <span className={`${styles['status-badge']} ${styles.unknown}`} title="状态未知">-</span>;
     }
   }
 
-  const rowHeightClass = density === "compact" ? "row-compact" : "row-comfortable";
-
   return (
     <div>
-      {/* Toolbar */}
-      <div className="log-toolbar">
+      {/* 工具栏 */}
+      <div className={styles['log-toolbar']}>
         <select value={filterTarget} onChange={(e) => { setFilterTarget(e.target.value); setOffset(0); }}>
           <option value="">全部目标</option>
           {config.targets.map((t) => (
@@ -181,7 +181,7 @@ export default function LogsTab({ config }: Props) {
           ))}
         </select>
 
-        {/* Status Filter */}
+        {/* 状态筛选 */}
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
           <option value="all">全部状态</option>
           <option value="pending">请求中</option>
@@ -191,7 +191,7 @@ export default function LogsTab({ config }: Props) {
           <option value="error">错误</option>
         </select>
 
-        {/* Method Filter */}
+        {/* 方法筛选 */}
         <select value={methodFilter} onChange={(e) => setMethodFilter(e.target.value as MethodFilter)}>
           <option value="all">全部方法</option>
           <option value="POST">POST</option>
@@ -201,23 +201,23 @@ export default function LogsTab({ config }: Props) {
           <option value="other">其他</option>
         </select>
 
-        {/* Duration Filter */}
+        {/* 耗时筛选 */}
         <select value={durationFilter} onChange={(e) => setDurationFilter(e.target.value as DurationFilter)}>
           <option value="all">全部耗时</option>
           <option value="slow">慢请求 (&gt;3s)</option>
         </select>
 
-        {/* Density Toggle */}
-        <div className="density-toggle">
+        {/* 密度切换 */}
+        <div className={styles['density-toggle']}>
           <button
-            className={`density-btn ${density === "compact" ? "active" : ""}`}
+            className={`${styles['density-btn']} ${density === "compact" ? styles.active : ""}`}
             onClick={() => setDensity("compact")}
             title="紧凑"
           >
             ≡
           </button>
           <button
-            className={`density-btn ${density === "comfortable" ? "active" : ""}`}
+            className={`${styles['density-btn']} ${density === "comfortable" ? styles.active : ""}`}
             onClick={() => setDensity("comfortable")}
             title="舒适"
           >
@@ -229,8 +229,8 @@ export default function LogsTab({ config }: Props) {
           {isRefreshing ? "⟳" : "刷新"}
         </button>
 
-        {/* Auto Refresh Toggle */}
-        <label className="auto-refresh-label">
+        {/* 自动刷新开关 */}
+        <label className={styles['auto-refresh-label']}>
           <input
             type="checkbox"
             checked={autoRefresh}
@@ -238,7 +238,7 @@ export default function LogsTab({ config }: Props) {
           />
           <span>自动刷新</span>
           {autoRefresh && (
-            <span className="refresh-indicator" title={`最后更新: ${lastRefresh.toLocaleTimeString()}`}>
+            <span className={styles['refresh-indicator']} title={`最后更新: ${lastRefresh.toLocaleTimeString()}`}>
               ●
             </span>
           )}
@@ -250,7 +250,7 @@ export default function LogsTab({ config }: Props) {
         </span>
 
         {totalPages > 1 && (
-          <div className="pagination-controls">
+          <div className={styles['pagination-controls']}>
             <button
               className="btn-ghost btn-sm"
               disabled={currentPage === 1}
@@ -259,7 +259,7 @@ export default function LogsTab({ config }: Props) {
               上一页
             </button>
             <select
-              className="page-select"
+              className={styles['page-select']}
               value={currentPage}
               onChange={(e) => setOffset((Number(e.target.value) - 1) * limit)}
             >
@@ -285,8 +285,8 @@ export default function LogsTab({ config }: Props) {
         <p className="empty">没有符合筛选条件的日志</p>
       ) : (
         <>
-          <div className="log-table-wrap">
-            <table className={`log-table ${rowHeightClass}`}>
+          <div className={styles['log-table-wrap']}>
+            <table className={`${styles['log-table']} ${density === 'compact' ? styles['row-compact'] : styles['row-comfortable']}`}>
               <thead>
                 <tr>
                   <th style={{ width: 100 }}>时间</th>
@@ -310,24 +310,24 @@ export default function LogsTab({ config }: Props) {
                   return (
                     <tr
                       key={log.id}
-                      className={isSelected ? "selected" : ""}
+                      className={isSelected ? styles.selected : ""}
                       onClick={() => {
                         setSelectedIndex(index);
                         setSelectedLog(log);
                       }}
                     >
-                      <td className="time-cell" title={new Date(log.timestamp).toLocaleString()}>
+                      <td className={styles['time-cell']} title={new Date(log.timestamp).toLocaleString()}>
                         {formatTime(log.timestamp)}
                       </td>
                       <td>{log.targetName}</td>
-                      <td><span className="method-badge">{log.method}</span></td>
+                      <td><span className={styles['method-badge']}>{log.method}</span></td>
                       <td style={{ maxWidth: 500 }}>
                         {requestLines.length > 0 && (
-                          <div className="log-preview-row">
-                            <div className="log-preview-label">请求</div>
-                            <div className="log-preview-content">
+                          <div className={styles['log-preview-row']}>
+                            <div className={styles['log-preview-label']}>请求</div>
+                            <div className={styles['log-preview-content']}>
                               {requestLines.map((line, idx) => (
-                                <div key={`req-${idx}`} className="log-preview-line" title={line}>
+                                <div key={`req-${idx}`} className={styles['log-preview-line']} title={line}>
                                   {line}
                                 </div>
                               ))}
@@ -335,11 +335,11 @@ export default function LogsTab({ config }: Props) {
                           </div>
                         )}
                         {responseLines.length > 0 && (
-                          <div className="log-preview-row" style={{ marginTop: requestLines.length > 0 ? 4 : 0 }}>
-                            <div className="log-preview-label">响应</div>
-                            <div className="log-preview-content">
+                          <div className={styles['log-preview-row']} style={{ marginTop: requestLines.length > 0 ? 4 : 0 }}>
+                            <div className={styles['log-preview-label']}>响应</div>
+                            <div className={styles['log-preview-content']}>
                               {responseLines.map((line, idx) => (
-                                <div key={`resp-${idx}`} className="log-preview-line" title={line}>
+                                <div key={`resp-${idx}`} className={styles['log-preview-line']} title={line}>
                                   {line}
                                 </div>
                               ))}
@@ -395,7 +395,7 @@ export default function LogsTab({ config }: Props) {
         </>
       )}
 
-      {/* Side Panel */}
+      {/* 侧边详情面板 */}
       <LogDetailPanel
         log={selectedLog}
         onClose={() => {
