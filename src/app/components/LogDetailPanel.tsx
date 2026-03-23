@@ -71,6 +71,15 @@ export default function LogDetailPanel({ log, onClose }: Props) {
         <div className="log-meta">
           <span><strong>目标：</strong>{log.targetName}</span>
           <span><strong>时间：</strong>{new Date(log.timestamp).toLocaleString()}</span>
+          {log.tokenUsage && (
+            <span>
+              <strong>Token：</strong>
+              {log.tokenUsage.inputTokens ?? "?"} 输入 / {log.tokenUsage.outputTokens ?? "?"} 输出
+              {log.tokenUsage.totalTokens != null && ` (共 ${log.tokenUsage.totalTokens})`}
+              {log.tokenUsage.cacheReadTokens != null && ` | 缓存读取 ${log.tokenUsage.cacheReadTokens}`}
+              {log.tokenUsage.cacheCreationTokens != null && ` | 缓存创建 ${log.tokenUsage.cacheCreationTokens}`}
+            </span>
+          )}
         </div>
 
         {/* Error banner */}

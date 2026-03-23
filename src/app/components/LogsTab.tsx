@@ -130,8 +130,14 @@ function extractResponseLines(responseBody: unknown): string[] {
         }
       }
     }
-    if (typeof rb.choices?.[0]?.delta?.content === "string" && rb.choices[0].delta.content.trim()) {
-      return [truncateText(rb.choices[0].delta.content.trim(), 120)];
+    if (Array.isArray(rb.choices) && rb.choices.length > 0) {
+      const firstChoice = rb.choices[0] as Record<string, unknown>;
+      if (firstChoice.delta && typeof firstChoice.delta === "object") {
+        const delta = firstChoice.delta as Record<string, unknown>;
+        if (typeof delta.content === "string" && delta.content.trim()) {
+          return [truncateText(delta.content.trim(), 120)];
+        }
+      }
     }
   }
   return [];
@@ -424,6 +430,7 @@ export default function LogsTab({ config }: Props) {
                   <th style={{ minWidth: 200 }}>最后消息 / 响应</th>
                   <th style={{ width: 70 }}>HTTP</th>
                   <th style={{ width: 60 }}>状态</th>
+                  <th style={{ width: 100 }}>Token</th>
                   <th style={{ width: 80 }}>耗时</th>
                 </tr>
               </thead>
@@ -482,6 +489,23 @@ export default function LogsTab({ config }: Props) {
                         {log.responseStatus || (log.error ? "ERR" : "-")}
                       </td>
                       <td>{getStatusBadge(log.status)}</td>
+                      <td style={{ color: "#6b7280", whiteSpace: "nowrap", fontSize: 12 }}>
+                        {log.tokenUsage ? (
+                          <span
+                            title={[
+                              `输入: ${log.tokenUsage.inputTokens ?? "-"}`,
+                              `输出: ${log.tokenUsage.outputTokens ?? "-"}`,
+                              log.tokenUsage.totalTokens != null ? `总计: ${log.tokenUsage.totalTokens}` : null,
+                              log.tokenUsage.cacheReadTokens != null ? `缓存读取: ${log.tokenUsage.cacheReadTokens}` : null,
+                              log.tokenUsage.cacheCreationTokens != null ? `缓存创建: ${log.tokenUsage.cacheCreationTokens}` : null,
+                            ].filter(Boolean).join("\n")}
+                          >
+                            {log.tokenUsage.inputTokens ?? "?"} / {log.tokenUsage.outputTokens ?? "?"}
+                          </span>
+                        ) : (
+                          <span style={{ color: "#9ca3af" }}>-</span>
+                        )}
+                      </td>
                       <td style={{ color: "#6b7280", whiteSpace: "nowrap" }}>
                         {log.firstChunkMs ? (
                           <span title={`首包: ${log.firstChunkMs}ms, 总耗时: ${log.durationMs}ms`}>

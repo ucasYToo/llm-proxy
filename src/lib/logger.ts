@@ -17,16 +17,19 @@ function saveLogs(logs: LogEntry[]): void {
   fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2), "utf-8");
 }
 
-function applyLogCollectionFilter(entry: LogEntry): LogEntry {
+function applyLogCollectionFilter(entry: LogEntry, preserveDiff = false): LogEntry {
   const { logCollection } = readConfig();
   const filtered: LogEntry = { ...entry };
 
   if (!logCollection.captureOriginalBody) {
-    // Pre-compute diff before discarding original data
-    filtered.precomputedDiff = {
-      headers: jsonDiff(entry.originalRequestHeaders, entry.modifiedRequestHeaders),
-      body: jsonDiff(entry.originalRequestBody, entry.modifiedRequestBody),
-    };
+    // Only compute diff if not already present (preserveDiff=true means updateLog is calling,
+    // and the diff was already computed correctly in createLog)
+    if (!preserveDiff || !filtered.precomputedDiff) {
+      filtered.precomputedDiff = {
+        headers: jsonDiff(entry.originalRequestHeaders, entry.modifiedRequestHeaders),
+        body: jsonDiff(entry.originalRequestBody, entry.modifiedRequestBody),
+      };
+    }
     filtered.originalRequestBody = null;
     filtered.originalRequestHeaders = {};
   }
@@ -65,8 +68,8 @@ export function updateLog(id: string, updates: Partial<LogEntry>): void {
   // Merge updates
   logs[index] = { ...logs[index], ...updates };
   
-  // Apply filtering in case response body changed
-  const filtered = applyLogCollectionFilter(logs[index]);
+  // Apply filtering in case response body changed (preserve existing diff)
+  const filtered = applyLogCollectionFilter(logs[index], true);
   logs[index] = filtered;
   
   saveLogs(logs);

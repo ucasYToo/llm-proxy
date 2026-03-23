@@ -60,4 +60,12 @@ export interface LogEntry {
   firstChunkMs?: number;
   /** 请求开始时间戳（用于计算各种耗时） */
   startTime?: string;
+  /** 提取的 token 使用量（从响应中提取） */
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  };
 }

@@ -4,6 +4,14 @@ import { getActiveTarget } from "@/lib/config";
 import { createLog, updateLog } from "@/lib/logger";
 import type { LogStatus } from "@/lib/types";
 
+interface TokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}
+
 type Params = Promise<{ path: string[] }>;
 
 async function handler(req: NextRequest, { params }: { params: Params }) {
@@ -191,6 +199,9 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
 
         const responseBody = parsedEvents.length > 0 ? parsedEvents : fullContent;
 
+        // Extract token usage from assembled response
+        const tokenUsage = extractTokenUsage(assembledBody);
+
         // 更新最终状态
         updateLog(logId, {
           responseStatus: upstreamRes.status,
@@ -198,6 +209,7 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
           assembledResponseBody: assembledBody,
           durationMs,
           status: "completed" as LogStatus,
+          tokenUsage,
         });
       },
     });
@@ -231,18 +243,64 @@ async function handler(req: NextRequest, { params }: { params: Params }) {
     // keep as text
   }
 
+  // Extract token usage from non-streaming response
+  const tokenUsage = extractTokenUsage(resBodyLog);
+
   // 更新最终状态
   updateLog(logId, {
     responseStatus: upstreamRes.status,
     responseBody: resBodyLog,
     durationMs,
     status: "completed" as LogStatus,
+    tokenUsage,
   });
 
   return new NextResponse(resText, {
     status: upstreamRes.status,
     headers: resHeaders,
   });
+}
+
+/**
+ * Extract token usage from a response body (supports Anthropic and OpenAI formats).
+ */
+function extractTokenUsage(body: unknown): TokenUsage | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const b = body as Record<string, unknown>;
+  const usage = b.usage as Record<string, unknown> | undefined;
+  if (!usage) return undefined;
+
+  // Anthropic format: input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens
+  // OpenAI format: prompt_tokens, completion_tokens, total_tokens, prompt_tokens_details.cached_tokens
+  const inputTokens: number | undefined = (usage.input_tokens as number | undefined) ?? (usage.prompt_tokens as number | undefined);
+  const outputTokens: number | undefined = (usage.output_tokens as number | undefined) ?? (usage.completion_tokens as number | undefined);
+  const totalTokens: number | undefined = (usage.total_tokens as number | undefined) ??
+    (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined);
+
+  // Cache tokens: Anthropic uses cache_read_input_tokens, OpenAI uses prompt_tokens_details.cached_tokens
+  let cacheReadTokens: number | undefined = undefined;
+  if (typeof usage.cache_read_input_tokens === "number") {
+    cacheReadTokens = usage.cache_read_input_tokens;
+  } else if (typeof usage.cached_tokens === "number") {
+    cacheReadTokens = usage.cached_tokens;
+  } else if (usage.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
+    const details = usage.prompt_tokens_details as Record<string, unknown>;
+    if (typeof details.cached_tokens === "number") {
+      cacheReadTokens = details.cached_tokens;
+    }
+  }
+  const cacheCreationTokens: number | undefined =
+    typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : undefined;
+
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+  };
 }
 
 /**
