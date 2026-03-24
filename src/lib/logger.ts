@@ -5,7 +5,7 @@ import { readConfig } from "./config";
 import { jsonDiff } from "./jsonDiff";
 
 const LOGS_PATH = path.join(process.cwd(), "data", "logs.json");
-const MAX_ENTRIES = 300;
+const MAX_ENTRIES = 100;
 
 const readAll = (): LogEntry[] => {
   if (!fs.existsSync(LOGS_PATH)) return [];
