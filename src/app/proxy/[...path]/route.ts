@@ -44,8 +44,11 @@ const handler = async (req: NextRequest, { params }: { params: Params }) => {
       originalBody = json;
       const merged = { ...(json as Record<string, unknown>), ...target.bodyParams };
       modifiedBody = merged;
-      requestBody = JSON.stringify(merged);
+      const bodyString = JSON.stringify(merged);
+      requestBody = bodyString;
       forwardHeaders["content-type"] = "application/json";
+      // 修改 body 后必须更新 content-length，否则 HTTPS 服务端校验不通过
+      forwardHeaders["content-length"] = new TextEncoder().encode(bodyString).byteLength.toString();
     } else {
       const buffer = await req.arrayBuffer();
       originalBody = "[binary]";
