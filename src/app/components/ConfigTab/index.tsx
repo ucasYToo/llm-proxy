@@ -89,6 +89,15 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                   >
                     编辑
                   </button>
+                  <button
+                    className="btnGhost btnSm"
+                    onClick={() => {
+                      setEditTarget({ ...t, id: "", name: `${t.name} (副本)` });
+                      setShowForm(true);
+                    }}
+                  >
+                    复制
+                  </button>
                   <button className="btnDanger btnSm" onClick={() => handleDelete(t.id)}>
                     删除
                   </button>

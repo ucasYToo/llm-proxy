@@ -94,3 +94,28 @@
 .kvRow button {
   flex-shrink: 0;
 }
+
+/* Quick key tags */
+.quickKeys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.quickKeyBtn {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px dashed #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.quickKeyBtn:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}

@@ -80,12 +80,12 @@ const TargetForm = ({ initial, onSave, onCancel }: Props) => {
 
         <div className={styles.formGroup}>
           <label>请求头（Headers）</label>
-          <KVEditor pairs={headers} onChange={setHeaders} keyPlaceholder="Authorization" valuePlaceholder="Bearer sk-xxx" />
+          <KVEditor pairs={headers} onChange={setHeaders} keyPlaceholder="Authorization" valuePlaceholder="Bearer sk-xxx" quickKeys={["user-agent", "authorization"]} />
         </div>
 
         <div className={styles.formGroup}>
           <label>Body 追加参数</label>
-          <KVEditor pairs={bodyParams} onChange={setBodyParams} keyPlaceholder="model" valuePlaceholder="gpt-4o" />
+          <KVEditor pairs={bodyParams} onChange={setBodyParams} keyPlaceholder="model" valuePlaceholder="gpt-4o" quickKeys={["model"]} />
           <p className={styles.formHint}>值支持 JSON 格式（如 true、123、"字符串"）</p>
         </div>
 
@@ -107,14 +107,39 @@ const KVEditor = ({
   onChange,
   keyPlaceholder,
   valuePlaceholder,
+  quickKeys,
 }: {
   pairs: KVPair[];
   onChange: (v: KVPair[]) => void;
   keyPlaceholder: string;
   valuePlaceholder: string;
+  quickKeys?: string[];
 }) => {
+  const existingKeys = new Set(pairs.map((p) => p.key.trim().toLowerCase()));
+
+  const handleQuickAdd = (key: string) => {
+    // 如果已有空行，填入 key；否则新增一行
+    const emptyIndex = pairs.findIndex((p) => !p.key.trim());
+    if (emptyIndex >= 0) {
+      onChange(pairs.map((p, i) => i === emptyIndex ? { ...p, key } : p));
+    } else {
+      onChange([...pairs, { key, value: "" }]);
+    }
+  };
+
+  const availableQuickKeys = quickKeys?.filter((k) => !existingKeys.has(k.toLowerCase()));
+
   return (
     <>
+      {availableQuickKeys && availableQuickKeys.length > 0 && (
+        <div className={styles.quickKeys}>
+          {availableQuickKeys.map((key) => (
+            <button key={key} className={styles.quickKeyBtn} onClick={() => handleQuickAdd(key)}>
+              + {key}
+            </button>
+          ))}
+        </div>
+      )}
       <div className={styles.kvList}>
         {pairs.map((pair, idx) => (
           <div key={idx} className={styles.kvRow}>
