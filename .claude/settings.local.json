@@ -8,7 +8,18 @@
       "Bash(npm run:*)",
       "Bash(npm uninstall:*)",
       "Bash(npm install:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Bash(: \"检查项目整体结构\")",
+      "Bash(: \"查看最近的提交详情\")",
+      "Bash(: 1860420284)",
+      "Bash(: 1279868708)",
+      "Bash(npm whoami:*)",
+      "Bash(npm view:*)",
+      "Bash(npm publish:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(npx llm-proxy-view:*)"
     ]
   },
   "defaultMode": "bypassPermissions"
