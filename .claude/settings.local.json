@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X DELETE 'http://localhost:1998/api/query?type=logs')",
+      "Bash(curl -s -X POST 'http://localhost:1998/api/set' -H 'content-type: application/json' -d '{\"\"action\"\":\"\"deleteTarget\"\",\"\"targetId\"\":\"\"81c5f29a-a854-450e-b530-09f2e5ad34e3\"\"}')",
+      "Bash(kill 37023)",
+      "Bash(kill 36905)",
+      "Bash(npm run:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm install:*)",
+      "Bash(xargs kill:*)"
+    ]
+  },
+  "defaultMode": "bypassPermissions"
+}

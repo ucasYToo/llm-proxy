@@ -2,96 +2,115 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
+## Project Overview
 
+**claude-llm-proxy** is an LLM Proxy CLI tool that forwards LLM API requests through a local proxy server to upstream services (OpenAI, Anthropic, etc.). It supports configuration management, request/response logging with token usage statistics, and streaming response interception.
+
+## Common Commands
+
+### Development
 ```bash
-npm install    # Install dependencies
-npm run dev    # Development server on http://localhost:1998
-npm run build  # Production build
-npm start      # Production server on http://localhost:1998
+npm install              # Install dependencies
+npm run build           # Build TypeScript to dist/
+npm run dev             # Run in development mode with tsx
+npm test                # Run Jest tests
 ```
 
-## Architecture Overview
+### CLI Usage
+```bash
+# Start proxy server
+node bin/cli.js start [--port 3000] [--host 0.0.0.0] [--ui]
 
-This is a **Next.js 15 full-stack LLM API Proxy** that forwards requests to configured upstream LLM providers (OpenAI, Anthropic, etc.) with automatic header/body injection and request logging.
+# Configuration management
+node bin/cli.js config list
+node bin/cli.js config add --name "OpenAI" --url "https://api.openai.com/v1" --headers '{"Authorization":"Bearer sk-xxx"}'
+node bin/cli.js config set-active <target-id>
+node bin/cli.js config delete <target-id>
 
-### Core Data Flow
+# View logs
+node bin/cli.js logs [--limit 10] [--json] [--target "OpenAI"]
+node bin/cli.js clear-logs
+```
+
+### Building UI
+```bash
+npm run build:ui        # Build React UI in ui/
+npm run build:all       # Build both backend and UI
+```
+
+## Architecture
+
+### Code Structure
 
 ```
-Client → /proxy/{path} → Proxy Route → Upstream LLM API
-                ↓
-           Logger (async, non-blocking)
-                ↓
-           data/logs.json
+src/
+├/                  # CLI commands (Commander.js)
+│   ├── index.ts         # Main CLI entry point
+│  └/
+│       ├── start.ts     # Start server command
+│       ├── config.ts    # Config management commands
+│      └.ts        # Log viewing commands
+├/               # Express server
+│   ├── index.ts         # Server setup and middleware
+│   ├── routes.ts        # API routes (/api/*)
+│  └.ts           # Proxy route handler (/proxy/*)
+├/                 # Core proxy logic
+│   ├── proxy.ts         # Main proxy request handler
+│   ├── assemble.ts      # Stream response assembly
+│  └.ts            # JSON diff utilities
+├/               # Configuration
+│   ├── types.ts         # TypeScript type definitions
+│  └.ts           # Config read/write operations
+├/              # Data persistence
+│  └.ts            # Log storage operations
+└/                # Utilities
+   └.ts          # Formatting utilities
 ```
 
-### Key Architectural Patterns
+### Key Components
 
-**1. Catch-All Proxy Route** (`src/app/proxy/[...path]/route.ts`)
-- All HTTP methods (GET, POST, PUT, etc.) handled by single handler
-- Merges incoming request headers/body with configured `Target.headers` and `Target.bodyParams`
-- Strips hop-by-hop headers (`host`, `connection`, `transfer-encoding`)
-- Returns 503 if no active target configured
+1. **Proxy Flow**:
+   - Requests to `/proxy/*` are forwarded to configured upstream targets
+   - Headers and body params from target config are merged into requests
+   - Responses (including SSE streams) are intercepted and logged
 
-**2. Streaming Response Handling**
-- Uses `TransformStream` to tee the response stream
-- Client receives stream immediately (low latency)
-- Stream chunks are captured for logging via `transform()` and `flush()` hooks
-- Supports both OpenAI (`data: {...}`) and Anthropic (`data:{...}`) SSE formats
+2. **Configuration**:
+   - Stored in `~/.claude-proxy/config.json`
+   - Multiple targets supported, each with URL, headers, body params
+   - Active target determines where requests are forwarded
 
-**3. File-Based JSON Persistence**
-- Config stored in `data/config.json` (gitignored)
-- Logs stored in `data/logs.json` (gitignored, max 300 entries)
-- No database; all reads/writes are synchronous `fs` operations
-- Logger handles missing files gracefully (returns empty array)
+3. **Logging**:
+   - Stored in `~/.claude-proxy/logs.json`
+   - Captures request/response pairs, token usage, timing
+   - Supports streaming response assembly from SSE events
+   - Privacy controls: can disable original body/raw stream capture
 
-**4. Log Lifecycle (Async State Machine)**
-- `pending`: Request initiated (`createLog`)
-- `streaming`: First SSE chunk received (for stream responses)
-- `completed`: Request finished successfully
-- `error`: Request failed or stream pipe error
-- Logs are created at request start and updated incrementally via `updateLog()`
+4. **API Endpoints**:
+   - `GET /api/query?type=config` - Get configuration
+   - `GET /api/query?type=logs` - Get logs with pagination
+   - `POST /api/set` - Modify configuration
+   - `DELETE /api/query?type=logs` - Clear logs
+   - `POST /api/shutdown` - Shutdown server
+   - `ALL /proxy/*` - Proxy requests to upstream
 
-**5. Response Assembly for Streams**
-- `responseAssembler.ts` parses SSE chunks into structured responses
-- Supports OpenAI Chat Completions and Anthropic Messages API formats
-- Token usage extracted from both assembled streams and non-stream responses
-- `assembledResponseBody` field contains the reconstructed complete response
+### Data Types
 
-**6. Log Collection Controls**
-- `captureOriginalBody`: When false, original request headers/body are cleared and a `precomputedDiff` is stored instead
-- `captureRawStreamEvents`: When false, raw SSE event arrays are cleared from logs
-- These are configured per-config, not per-request
+Key types defined in `src/config/types.ts`:
+- `Target`: Upstream API config (id, name, url, headers, bodyParams)
+- `Config`: Main config structure (activeTarget, targets, logCollection)
+- `LogEntry`: Request/response log with timing and token stats
+- `TokenUsage`: Token consumption tracking
 
-### API Routes
+## Development Notes
 
-| Route | Purpose |
-|-------|---------|
-| `/proxy/[...path]` | Main proxy - forwards to active target's base URL |
-| `/api/query?type=config` | Returns full config including targets |
-| `/api/query?type=logs[&limit&offset&targetId]` | Paginated log query |
-| `DELETE /api/query?type=logs` | Clear all logs |
-| `POST /api/set` | Config mutations (setActive, addTarget, updateTarget, deleteTarget, updateLogCollection) |
+- Uses TypeScript with strict mode, strict null checks enabled
+- Path alias `@/*` maps to `src/*`
+- Prettier formatting enforced via lint-staged on commit
+- UI built with React + Vite, served from `ui/` directory
+- Default port 1998, localhost binding
 
-### Type System
+## Storage
 
-Key types in `src/lib/types.ts`:
-- `Target`: Upstream LLM endpoint config (id, name, url, headers, bodyParams)
-- `LogEntry`: Request/response record with both original and modified request data
-- `TokenUsage`: Extracted from responses for analytics (input/output/cache tokens)
-
-### Component Architecture
-
-Client UI uses plain CSS modules (no UI library):
-- `page.tsx`: Main layout with tab navigation (config/logs)
-- `ConfigTab`: Target CRUD and activation UI
-- `LogsTab`: Paginated log viewer with filters and detail panel
-- `TargetForm`: Modal for add/edit target
-
-All components are Client Components (`"use client"`) with data fetching via standard `fetch()`.
-
-### Response Body Types in Logs
-
-- Non-streaming: Parsed JSON object or raw text string
-- Streaming: Array of parsed SSE event objects or `"[stream]"` if raw events not captured
-- Error: Error message string
+All persistent data stored to `~/.claude-proxy/`:
+- `config.json` - Target configurations
+- `logs.json` - Request/response logs (max 100 entries, FIFO)

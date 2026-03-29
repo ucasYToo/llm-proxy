@@ -1,24 +1,66 @@
 {
   "name": "llm-proxy",
   "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev -p 1998",
-    "build": "next build",
-    "start": "next start -p 1998"
+  "description": "LLM Proxy CLI - 代理转发和日志管理工具",
+  "bin": {
+    "claude-proxy": "./bin/cli.js"
   },
+  "main": "dist/core/proxy.js",
+  "types": "dist/config/types.d.ts",
+  "files": [
+    "dist",
+    "bin",
+    "ui-dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist ui-dist && tsc && chmod +x bin/cli.js && vite build",
+    "dev": "tsx src/cli/index.ts",
+    "dev:ui": "vite",
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/llm-proxy.git"
+  },
+  "keywords": [
+    "claude",
+    "llm",
+    "proxy",
+    "cli",
+    "openai",
+    "anthropic"
+  ],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
-    "next": "^16.2.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-json-view-lite": "^2.5.0",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "fs-extra": "^11.2.0",
+    "ora": "^5.4.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.21",
+    "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^29.5.4",
     "@types/node": "^22",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@types/uuid": "^10",
-    "typescript": "^5"
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jest": "^29.6.4",
+    "prettier": "^3.0.2",
+    "timeout": "^0.2.1",
+    "ts-jest": "^29.1.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
   }
 }

@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "type": "builder",
+    "builder": {
+      "name": "@ali/builder-package",
+      "nodeVersion": 20
+    }
+  },
+  "nodeVersion": 20
+}

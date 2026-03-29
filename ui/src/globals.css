@@ -1,0 +1,97 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: #1a1a1a;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+/* Buttons */
+button {
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 6px;
+  border: none;
+  padding: 6px 14px;
+}
+.btnPrimary {
+  background: #2563eb;
+  color: #fff;
+}
+.btnPrimary:hover {
+  background: #1d4ed8;
+}
+.btnDanger {
+  background: #ef4444;
+  color: #fff;
+}
+.btnDanger:hover {
+  background: #dc2626;
+}
+.btnGhost {
+  background: transparent;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+.btnGhost:hover {
+  background: #f3f4f6;
+}
+.btnGhost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btnSm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Global status classes (used across multiple components) */
+.statusOk {
+  color: #10b981;
+  font-weight: 600;
+}
+.statusErr {
+  color: #ef4444;
+  font-weight: 600;
+}
+.methodBadge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+/* Misc */
+.empty {
+  text-align: center;
+  color: #9ca3af;
+  padding: 32px;
+}
+.flexEnd {
+  display: flex;
+  justify-content: flex-end;
+}
+.gap2 {
+  gap: 8px;
+}
+.flex {
+  display: flex;
+}
+select {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: #fff;
+}
