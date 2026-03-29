@@ -1,12 +1,21 @@
 {
-  "name": "llm-proxy",
+  "name": "llm-proxy-view",
   "version": "1.0.0",
   "description": "LLM Proxy CLI - 代理转发和日志管理工具",
   "bin": {
     "claude-proxy": "./bin/cli.js"
   },
-  "main": "dist/core/proxy.js",
-  "types": "dist/config/types.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/config/types.d.ts"
+    }
+  },
   "files": [
     "dist",
     "bin",
@@ -20,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/llm-proxy.git"
+    "url": "https://github.com/ucasYToo/llm-proxy.git"
   },
   "keywords": [
     "claude",
