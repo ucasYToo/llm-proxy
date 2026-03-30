@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { readConfig, writeConfig, getActiveTarget } from "../../config/store";
-import type { Target } from "../../config/types";
+import { readConfig, writeConfig, getActiveTarget, getChannels, addChannel, deleteChannel, setChannelActiveTarget } from "../../config/store";
+import type { Target, Channel } from "../../config/types";
 import { v4 as uuidv4 } from "uuid";
 
 export const configCommand = (program: Command) => {
@@ -125,5 +125,87 @@ export const configCommand = (program: Command) => {
       console.log(
         `  采集原始流式事件: ${cfg.logCollection.captureRawStreamEvents ? chalk.green("是") : chalk.red("否")}`,
       );
+    });
+
+  // 通道管理子命令
+  const channel = config.command("channel").description("通道管理");
+
+  channel
+    .command("list")
+    .description("列出所有通道")
+    .action(() => {
+      const cfg = readConfig();
+      const channels = getChannels();
+      if (channels.length === 0) {
+        console.log(chalk.yellow("未配置任何通道"));
+        return;
+      }
+
+      console.log(chalk.bold("\n配置的通道:"));
+      channels.forEach((c) => {
+        const activeTarget = cfg.targets.find((t) => t.id === c.activeTarget);
+        console.log(`  ${c.name} (ID: ${c.id})`);
+        console.log(`    活动目标: ${activeTarget ? chalk.green(activeTarget.name) : chalk.yellow("未设置")}`);
+        console.log("");
+      });
+    });
+
+  channel
+    .command("add")
+    .description("添加新通道")
+    .requiredOption("--name <name>", "通道名称")
+    .option("--active-target <name>", "活动目标名称")
+    .action((options: { name: string; activeTarget?: string }) => {
+      const cfg = readConfig();
+      let activeTargetId = "";
+      if (options.activeTarget) {
+        const target = cfg.targets.find((t) => t.name === options.activeTarget);
+        if (!target) {
+          console.error(chalk.red(`未找到目标: ${options.activeTarget}`));
+          process.exit(1);
+        }
+        activeTargetId = target.id;
+      }
+
+      const newChannel: Channel = {
+        id: uuidv4(),
+        name: options.name,
+        activeTarget: activeTargetId,
+      };
+
+      addChannel(newChannel);
+      console.log(chalk.green(`已添加通道: ${newChannel.name}`));
+      console.log(`  ID: ${newChannel.id}`);
+    });
+
+  channel
+    .command("set-active")
+    .description("设置通道的活动目标")
+    .requiredOption("--channel <channelId>", "通道 ID")
+    .requiredOption("--target <targetName>", "目标名称")
+    .action((options: { channel: string; target: string }) => {
+      const cfg = readConfig();
+      const target = cfg.targets.find((t) => t.name === options.target);
+      if (!target) {
+        console.error(chalk.red(`未找到目标: ${options.target}`));
+        process.exit(1);
+      }
+
+      setChannelActiveTarget(options.channel, target.id);
+      console.log(chalk.green(`通道 ${options.channel} 的活动目标已设置为: ${target.name}`));
+    });
+
+  channel
+    .command("delete")
+    .description("删除通道")
+    .requiredOption("--channel <channelId>", "通道 ID")
+    .action((options: { channel: string }) => {
+      if (options.channel === "default") {
+        console.error(chalk.red("不能删除默认通道"));
+        process.exit(1);
+      }
+
+      deleteChannel(options.channel);
+      console.log(chalk.green(`已删除通道: ${options.channel}`));
     });
 };

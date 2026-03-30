@@ -12,6 +12,7 @@ ui/dist/
 .sass-cache
 .DS_Store
 .idea
+.aone_copilot
 
 # Temporary files
 *.tmp

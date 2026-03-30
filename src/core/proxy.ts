@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { getActiveTarget } from "../config/store";
+import { getActiveTarget, readConfig } from "../config/store";
 import { createLog, updateLog } from "../storage/logs";
 import {
   extractTokenUsage,
@@ -15,6 +15,10 @@ export interface ProxyRequest {
   headers: Record<string, string>;
   body: unknown;
   contentType: string;
+  /** 指定目标 ID，优先于 activeTarget 使用 */
+  targetId?: string;
+  /** 通道 ID，用于日志记录 */
+  channelId?: string;
 }
 
 export interface ProxyResponse {
@@ -31,7 +35,12 @@ export const proxyRequest = async (
   req: ProxyRequest,
   onChunk?: (chunk: string) => void,
 ): Promise<ProxyResponse> => {
-  const target = getActiveTarget();
+  // 如果指定了 targetId，则使用该目标；否则使用全局活动目标
+  let target = getActiveTarget();
+  if (req.targetId) {
+    const config = readConfig();
+    target = config.targets.find((t) => t.id === req.targetId) ?? null;
+  }
 
   if (!target) {
     throw new Error("No active target configured");

@@ -6,6 +6,12 @@ export interface Target {
   bodyParams: Record<string, any>;
 }
 
+export interface Channel {
+  id: string;
+  name: string;
+  activeTarget: string;
+}
+
 export interface LogCollection {
   captureOriginalBody: boolean;
   captureRawStreamEvents: boolean;
@@ -17,6 +23,8 @@ export interface Config {
   logCollection: LogCollection;
   /** 备份的 Claude Code 原始 ANTHROPIC_BASE_URL，用于一键还原 */
   claudeCodeOriginalBaseUrl?: string;
+  /** 通道配置列表 */
+  channels: Channel[];
 }
 
 export type LogStatus = "pending" | "streaming" | "completed" | "error";
@@ -157,3 +165,41 @@ export const restoreClaudeCodeProxy = async (): Promise<void> => {
   });
   if (!res.ok) throw new Error("Failed to restore Claude Code proxy");
 };
+
+export async function addChannel(channel: Omit<Channel, "id">): Promise<Channel> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "addChannel", channel }),
+  });
+  if (!res.ok) throw new Error("Failed to add channel");
+  const data = await res.json();
+  return data.channel;
+}
+
+export async function updateChannel(channel: Channel): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "updateChannel", channel }),
+  });
+  if (!res.ok) throw new Error("Failed to update channel");
+}
+
+export async function deleteChannel(channelId: string): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "deleteChannel", channelId }),
+  });
+  if (!res.ok) throw new Error("Failed to delete channel");
+}
+
+export async function setChannelActiveTarget(channelId: string, targetId: string): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "setChannelActive", channelId, targetId }),
+  });
+  if (!res.ok) throw new Error("Failed to set channel active target");
+}

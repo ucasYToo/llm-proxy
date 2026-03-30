@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
-import { readConfig, writeConfig } from "../config/store";
+import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTarget, getChannels } from "../config/store";
 import { queryLogs, clearLogs } from "../storage/logs";
-import type { Target, LogCollection } from "../config/types";
+import type { Target, LogCollection, Channel } from "../config/types";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import path from "path";
@@ -60,6 +60,11 @@ export const setupApiRoutes = (app: Express) => {
           return;
         }
         config.activeTarget = targetId;
+        // 同步更新默认通道的活动目标，保持向后兼容
+        const defaultChannel = config.channels.find((c) => c.id === "default");
+        if (defaultChannel) {
+          defaultChannel.activeTarget = targetId;
+        }
         writeConfig(config);
         res.json({ ok: true });
         break;
@@ -145,6 +150,51 @@ export const setupApiRoutes = (app: Express) => {
         // 清除备份
         delete config.claudeCodeOriginalBaseUrl;
         writeConfig(config);
+        res.json({ ok: true });
+        break;
+      }
+
+      case "addChannel": {
+        const { channel } = req.body as { channel: Omit<Channel, "id"> };
+        const newChannel: Channel = { id: uuidv4(), ...channel };
+        addChannel(newChannel);
+        res.json({ ok: true, channel: newChannel });
+        break;
+      }
+
+      case "updateChannel": {
+        const { channel } = req.body as { channel: Channel };
+        const channels = getChannels();
+        const idx = channels.findIndex((c) => c.id === channel.id);
+        if (idx === -1) {
+          res.status(404).json({ error: "Channel not found" });
+          return;
+        }
+        channels[idx] = channel;
+        config.channels = channels;
+        writeConfig(config);
+        res.json({ ok: true });
+        break;
+      }
+
+      case "deleteChannel": {
+        const { channelId } = req.body as { channelId: string };
+        if (channelId === "default") {
+          res.status(400).json({ error: "Cannot delete default channel" });
+          return;
+        }
+        deleteChannel(channelId);
+        res.json({ ok: true });
+        break;
+      }
+
+      case "setChannelActive": {
+        const { channelId, targetId } = req.body as { channelId: string; targetId: string };
+        if (!config.targets.find((t) => t.id === targetId)) {
+          res.status(404).json({ error: "Target not found" });
+          return;
+        }
+        setChannelActiveTarget(channelId, targetId);
         res.json({ ok: true });
         break;
       }

@@ -16,12 +16,21 @@ export interface LogCollection {
   captureRawStreamEvents: boolean;
 }
 
+export interface Channel {
+  id: string;
+  name: string;
+  /** 该通道当前选择的活动目标 ID */
+  activeTarget: string;
+}
+
 export interface Config {
   activeTarget: string;
   targets: Target[];
   logCollection: LogCollection;
   /** 备份的 Claude Code 原始 ANTHROPIC_BASE_URL，用于一键还原 */
   claudeCodeOriginalBaseUrl?: string;
+  /** 通道配置列表 */
+  channels: Channel[];
 }
 
 export interface TokenUsage {
