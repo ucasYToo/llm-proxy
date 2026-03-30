@@ -23,11 +23,12 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
 
   const isProxyApplied = !!config.claudeCodeOriginalBaseUrl;
 
-  const handleApplyProxy = async () => {
-    if (!confirm("将把 Claude Code 的 ANTHROPIC_BASE_URL 切换为本代理地址，确认继续？")) return;
+  const handleApplyProxy = async (channelId: string) => {
+    const channelName = config.channels?.find((c) => c.id === channelId)?.name ?? channelId;
+    if (!confirm(`将把 Claude Code 的 ANTHROPIC_BASE_URL 切换为通道「${channelName}」的代理地址，确认继续？`)) return;
     setClaudeCodeLoading(true);
     try {
-      await applyClaudeCodeProxy(1998);
+      await applyClaudeCodeProxy(1998, channelId);
       onRefresh();
     } catch (e) {
       alert("操作失败：" + String(e));
@@ -345,6 +346,10 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
           <div className={styles.targetList}>
             {channels.map((ch) => {
               const activeTarget = config.targets.find((t) => t.id === ch.activeTarget);
+              const isThisChannelApplied = isProxyApplied && config.claudeCodeChannelId === ch.id;
+              const proxyUrl = ch.id === "default"
+                ? "http://localhost:1998/proxy"
+                : `http://localhost:1998/${ch.id}/proxy`;
               return (
                 <div key={ch.id} className={styles.targetItem}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -380,7 +385,12 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                         </button>
                       </div>
                     ) : (
-                      <span className={styles.targetName}>{ch.name}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span className={styles.targetName}>{ch.name}</span>
+                        {isThisChannelApplied && (
+                          <span className="statusOk" style={{ fontSize: 11 }}>● Claude Code 已接入</span>
+                        )}
+                      </div>
                     )}
                     <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 12, color: "#6b7280" }}>活动目标：</span>
@@ -410,11 +420,29 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                     </div>
                     <div style={{ marginTop: 4 }}>
                       <code style={{ fontSize: 11, color: "#9ca3af", background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
-                        http://localhost:1998/{ch.id}/proxy
+                        {proxyUrl}
                       </code>
                     </div>
                   </div>
                   <div className={styles.targetActions}>
+                    {isThisChannelApplied ? (
+                      <button
+                        className="btnGhost btnSm"
+                        onClick={handleRestoreProxy}
+                        disabled={claudeCodeLoading}
+                      >
+                        {claudeCodeLoading ? "还原中…" : "还原 Claude Code"}
+                      </button>
+                    ) : (
+                      <button
+                        className="btnGhost btnSm"
+                        onClick={() => handleApplyProxy(ch.id)}
+                        disabled={claudeCodeLoading}
+                        title={isProxyApplied ? `当前已接入其他通道，点击切换到「${ch.name}」` : `将 Claude Code 接入此通道`}
+                      >
+                        {claudeCodeLoading ? "接入中…" : "接入 Claude Code"}
+                      </button>
+                    )}
                     <button
                       className="btnGhost btnSm"
                       onClick={() => startEditChannel(ch)}
@@ -510,71 +538,6 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
             </div>
           </label>
         </div>
-      </div>
-
-      <div className={styles.card}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <span className={styles.cardTitle} style={{ marginBottom: 0 }}>
-            Claude Code 接入
-          </span>
-          {isProxyApplied ? (
-            <span className="statusOk" style={{ fontSize: 12 }}>● 已接入代理</span>
-          ) : (
-            <span style={{ color: "#9ca3af", fontSize: 12 }}>未接入</span>
-          )}
-        </div>
-
-        {isProxyApplied ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>
-              <span style={{ fontWeight: 500, color: "#1a1a1a" }}>当前地址：</span>
-              <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
-                http://localhost:1998/proxy
-              </code>
-            </div>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>
-              <span style={{ fontWeight: 500, color: "#1a1a1a" }}>备份地址：</span>
-              <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
-                {config.claudeCodeOriginalBaseUrl || "（空）"}
-              </code>
-            </div>
-            <div style={{ marginTop: 4 }}>
-              <button
-                className="btnGhost btnSm"
-                onClick={handleRestoreProxy}
-                disabled={claudeCodeLoading}
-              >
-                {claudeCodeLoading ? "还原中…" : "还原原始地址"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <p style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.6 }}>
-              一键将 Claude Code 的{" "}
-              <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
-                ANTHROPIC_BASE_URL
-              </code>{" "}
-              切换为本代理地址，原始地址将自动备份，可随时还原。
-            </p>
-            <div>
-              <button
-                className="btnPrimary btnSm"
-                onClick={handleApplyProxy}
-                disabled={claudeCodeLoading}
-              >
-                {claudeCodeLoading ? "接入中…" : "一键接入代理"}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className={styles.card}>

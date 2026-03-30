@@ -116,24 +116,29 @@ export const setupApiRoutes = (app: Express) => {
       }
 
       case "applyClaudeCodeProxy": {
-        const { proxyPort } = req.body as { proxyPort?: number };
+        const { proxyPort, channelId } = req.body as { proxyPort?: number; channelId?: string };
         const port = proxyPort ?? 1998;
+        const targetChannelId = channelId ?? "default";
         const settings = readClaudeSettings();
         const env = (settings.env ?? {}) as Record<string, string>;
-        const originalUrl = env["ANTHROPIC_BASE_URL"] ?? "";
-        // 备份原始 URL 到代理 config
-        config.claudeCodeOriginalBaseUrl = originalUrl;
+        // 仅在首次接入时备份原始 URL
+        if (config.claudeCodeOriginalBaseUrl === undefined) {
+          config.claudeCodeOriginalBaseUrl = env["ANTHROPIC_BASE_URL"] ?? "";
+        }
+        // 记录当前接入的通道 ID
+        config.claudeCodeChannelId = targetChannelId;
         writeConfig(config);
         // 写入新的代理地址到 ~/.claude/settings.json
-        settings.env = { ...env, ANTHROPIC_BASE_URL: `http://localhost:${port}/proxy` };
+        const proxyPath = targetChannelId === "default" ? "proxy" : `${targetChannelId}/proxy`;
+        settings.env = { ...env, ANTHROPIC_BASE_URL: `http://localhost:${port}/${proxyPath}` };
         writeClaudeSettings(settings);
-        res.json({ ok: true, originalUrl });
+        res.json({ ok: true, channelId: targetChannelId });
         break;
       }
 
       case "restoreClaudeCodeProxy": {
         const originalUrl = config.claudeCodeOriginalBaseUrl;
-        if (!originalUrl && originalUrl !== "") {
+        if (originalUrl === undefined) {
           res.status(400).json({ error: "No backup URL found" });
           return;
         }
@@ -147,8 +152,9 @@ export const setupApiRoutes = (app: Express) => {
           settings.env = rest;
         }
         writeClaudeSettings(settings);
-        // 清除备份
+        // 清除备份和通道记录
         delete config.claudeCodeOriginalBaseUrl;
+        delete config.claudeCodeChannelId;
         writeConfig(config);
         res.json({ ok: true });
         break;

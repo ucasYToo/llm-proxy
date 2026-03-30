@@ -29,6 +29,8 @@ export interface Config {
   logCollection: LogCollection;
   /** 备份的 Claude Code 原始 ANTHROPIC_BASE_URL，用于一键还原 */
   claudeCodeOriginalBaseUrl?: string;
+  /** 当前接入 Claude Code 的通道 ID */
+  claudeCodeChannelId?: string;
   /** 通道配置列表 */
   channels: Channel[];
 }
