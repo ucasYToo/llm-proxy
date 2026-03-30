@@ -17,6 +17,7 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
   const [editChannelId, setEditChannelId] = useState<string | undefined>();
   const [editChannelName, setEditChannelName] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
+  const [newChannelId, setNewChannelId] = useState("");
 
   const channels = config.channels ?? [];
 
@@ -106,8 +107,16 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
       return;
     }
     try {
-      await addChannel({ name: newChannelName.trim(), activeTarget: "" });
+      const channelData: { name: string; activeTarget: string; id?: string } = {
+        name: newChannelName.trim(),
+        activeTarget: "",
+      };
+      if (newChannelId.trim()) {
+        channelData.id = newChannelId.trim();
+      }
+      await addChannel(channelData);
       setNewChannelName("");
+      setNewChannelId("");
       setShowChannelForm(false);
       onRefresh();
     } catch (e) {
@@ -267,6 +276,7 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
           <div
             style={{
               display: "flex",
+              flexDirection: "column",
               gap: 8,
               marginBottom: 12,
               padding: "10px 12px",
@@ -275,33 +285,57 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
               border: "1px solid #e5e7eb",
             }}
           >
-            <input
-              type="text"
-              placeholder="通道名称"
-              value={newChannelName}
-              onChange={(e) => setNewChannelName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddChannel()}
-              style={{
-                flex: 1,
-                padding: "4px 8px",
-                border: "1px solid #d1d5db",
-                borderRadius: 4,
-                fontSize: 13,
-              }}
-              autoFocus
-            />
-            <button className="btnPrimary btnSm" onClick={handleAddChannel}>
-              确认
-            </button>
-            <button
-              className="btnGhost btnSm"
-              onClick={() => {
-                setShowChannelForm(false);
-                setNewChannelName("");
-              }}
-            >
-              取消
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                placeholder="通道名称（如：通义千问）"
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddChannel()}
+                style={{
+                  flex: 1,
+                  padding: "4px 8px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 4,
+                  fontSize: 13,
+                }}
+                autoFocus
+              />
+              <input
+                type="text"
+                placeholder="通道 ID（可选，如：qwen）"
+                value={newChannelId}
+                onChange={(e) => setNewChannelId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddChannel()}
+                style={{
+                  flex: 1,
+                  padding: "4px 8px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 4,
+                  fontSize: 13,
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 11, color: "#9ca3af" }}>
+                通道 ID 将用于 URL 路径（如 /qwen/proxy），只允许字母、数字、连字符和下划线，不填则自动生成
+              </span>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <button className="btnPrimary btnSm" onClick={handleAddChannel}>
+                  确认
+                </button>
+                <button
+                  className="btnGhost btnSm"
+                  onClick={() => {
+                    setShowChannelForm(false);
+                    setNewChannelName("");
+                    setNewChannelId("");
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

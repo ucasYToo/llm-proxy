@@ -166,13 +166,16 @@ export const restoreClaudeCodeProxy = async (): Promise<void> => {
   if (!res.ok) throw new Error("Failed to restore Claude Code proxy");
 };
 
-export async function addChannel(channel: Omit<Channel, "id">): Promise<Channel> {
+export async function addChannel(channel: Omit<Channel, "id"> & { id?: string }): Promise<Channel> {
   const res = await fetch("/api/set", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "addChannel", channel }),
   });
-  if (!res.ok) throw new Error("Failed to add channel");
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || "Failed to add channel");
+  }
   const data = await res.json();
   return data.channel;
 }

@@ -155,8 +155,17 @@ export const setupApiRoutes = (app: Express) => {
       }
 
       case "addChannel": {
-        const { channel } = req.body as { channel: Omit<Channel, "id"> };
-        const newChannel: Channel = { id: uuidv4(), ...channel };
+        const { channel } = req.body as { channel: Omit<Channel, "id"> & { id?: string } };
+        const channelId = channel.id?.trim() || uuidv4();
+        if (!/^[a-zA-Z0-9_-]+$/.test(channelId)) {
+          res.status(400).json({ error: "通道 ID 只能包含字母、数字、连字符和下划线" });
+          return;
+        }
+        if (getChannels().find((c) => c.id === channelId)) {
+          res.status(400).json({ error: `通道 ID '${channelId}' 已存在` });
+          return;
+        }
+        const newChannel: Channel = { ...channel, id: channelId };
         addChannel(newChannel);
         res.json({ ok: true, channel: newChannel });
         break;
