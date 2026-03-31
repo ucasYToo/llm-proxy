@@ -1,6 +1,6 @@
 {
   "name": "llm-proxy-view",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "LLM Proxy CLI - 代理转发和日志管理工具",
   "bin": {
     "claude-proxy": "./bin/cli.js"
