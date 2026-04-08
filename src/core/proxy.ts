@@ -49,9 +49,23 @@ export const proxyRequest = async (
   const targetUrl = `${target.url.replace(/\/$/, "")}/${req.path.join("/")}`;
   const fullUrl = req.search ? `${targetUrl}${req.search}` : targetUrl;
 
-  // 构建合并后的请求头
+  // 构建合并后的请求头（过滤掉 hop-by-hop 头和会导致冲突的头）
+  const hopByHopHeaders = new Set([
+    "host",
+    "connection",
+    "keep-alive",
+    "transfer-encoding",
+    "te",
+    "upgrade",
+    "proxy-authorization",
+    "proxy-connection",
+  ]);
   const forwardHeaders: Record<string, string> = {};
-  Object.assign(forwardHeaders, req.headers);
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (!hopByHopHeaders.has(key.toLowerCase())) {
+      forwardHeaders[key] = value;
+    }
+  }
   Object.assign(forwardHeaders, target.headers);
 
   // 构建合并后的请求体
