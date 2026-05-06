@@ -195,18 +195,10 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
 
   return (
     <div>
-      <div className={styles.card}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <span className={styles.cardTitle} style={{ marginBottom: 0 }}>
-            转发目标
-          </span>
+      {/* 转发目标 */}
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>转发目标</span>
           <button
             className="btnPrimary btnSm"
             onClick={() => {
@@ -225,23 +217,18 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
             {config.targets.map((t) => (
               <div
                 key={t.id}
-                className={`${styles.targetItem}${t.id === config.activeTarget ? ` ${styles.active}` : ""}`}
+                className={`${styles.targetRow}${t.id === config.activeTarget ? ` ${styles.active}` : ""}`}
               >
-                <div style={{ flex: "none" }}>
-                  <input
-                    type="radio"
-                    name="active"
-                    checked={t.id === config.activeTarget}
-                    onChange={() => handleSetActive(t.id)}
-                  />
-                </div>
+                <input
+                  type="radio"
+                  name="active"
+                  checked={t.id === config.activeTarget}
+                  onChange={() => handleSetActive(t.id)}
+                  className={styles.targetRadio}
+                />
                 <span className={styles.targetName}>{t.name}</span>
                 <span className={styles.targetUrl}>{t.url}</span>
-                {t.anthropicModel && (
-                  <span style={{ fontSize: 11, color: "#7c3aed", background: "#f5f3ff", padding: "1px 6px", borderRadius: 4, flexShrink: 0 }}>
-                    {t.anthropicModel}
-                  </span>
-                )}
+                <span className={styles.modelBadge}>{t.anthropicModel || ''}</span>
                 <div className={styles.targetActions}>
                   <button
                     className="btnGhost btnSm"
@@ -278,19 +265,11 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
         )}
       </div>
 
-      <div className={styles.card}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <span className={styles.cardTitle} style={{ marginBottom: 0 }}>
-            通道管理
-          </span>
-          <div style={{ display: "flex", gap: 8 }}>
+      {/* 通道管理 */}
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>通道管理</span>
+          <div className={styles.headerActions}>
             <button
               className="btnGhost btnSm"
               onClick={handleRefreshStatus}
@@ -307,53 +286,26 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
             </button>
           </div>
         </div>
+
         {refreshMsg && (
-          <p style={{
-            color: refreshMsg.startsWith("检测到") ? "#059669" : "#9ca3af",
-            fontSize: 12,
-            marginBottom: 8,
-            background: refreshMsg.startsWith("检测到") ? "#ecfdf5" : "#f9fafb",
-            padding: "6px 10px",
-            borderRadius: 4,
-          }}>
+          <p className={refreshMsg.startsWith("检测到") ? styles.alertSuccess : styles.alertInfo}>
             {refreshMsg}
           </p>
         )}
-        <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          每个通道可以独立选择活动目标，通过不同的 URL 路径区分（如{" "}
-          <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
-            /default/proxy
-          </code>
-          ）。
+
+        <p className={styles.hint}>
+          每个通道可以独立选择活动目标，通过不同的 URL 路径区分（如 <code>/default/proxy</code>）。
         </p>
 
         {showChannelForm && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              marginBottom: 12,
-              padding: "10px 12px",
-              background: "#f9fafb",
-              borderRadius: 6,
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            <div style={{ display: "flex", gap: 8 }}>
+          <div className={styles.inlineForm}>
+            <div className={styles.inlineFormRow}>
               <input
                 type="text"
                 placeholder="通道名称（如：通义千问）"
                 value={newChannelName}
                 onChange={(e) => setNewChannelName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddChannel()}
-                style={{
-                  flex: 1,
-                  padding: "4px 8px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 4,
-                  fontSize: 13,
-                }}
                 autoFocus
               />
               <input
@@ -362,20 +314,13 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                 value={newChannelId}
                 onChange={(e) => setNewChannelId(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddChannel()}
-                style={{
-                  flex: 1,
-                  padding: "4px 8px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 4,
-                  fontSize: 13,
-                }}
               />
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 11, color: "#9ca3af" }}>
+            <div className={styles.inlineFormActions}>
+              <span className={styles.inlineFormHint}>
                 通道 ID 将用于 URL 路径（如 /qwen/proxy），只允许字母、数字、连字符和下划线，不填则自动生成
               </span>
-              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <div className={styles.inlineFormButtons}>
                 <button className="btnPrimary btnSm" onClick={handleAddChannel}>
                   确认
                 </button>
@@ -397,7 +342,7 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
         {channels.length === 0 ? (
           <p className="empty">暂无通道，点击"添加通道"开始配置</p>
         ) : (
-          <div className={styles.targetList}>
+          <div className={styles.channelList}>
             {channels.map((ch) => {
               const activeTarget = config.targets.find((t) => t.id === ch.activeTarget);
               const isThisChannelApplied = isProxyApplied && config.claudeCodeChannelId === ch.id;
@@ -405,10 +350,10 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                 ? "http://localhost:1998/proxy"
                 : `http://localhost:1998/${ch.id}/proxy`;
               return (
-                <div key={ch.id} className={styles.targetItem}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                <div key={ch.id} className={`${styles.channelCard}${isThisChannelApplied ? ` ${styles.connected}` : ""}`}>
+                  <div className={styles.channelHeader}>
                     {editChannelId === ch.id ? (
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <div className={styles.editChannelRow}>
                         <input
                           type="text"
                           value={editChannelName}
@@ -416,12 +361,6 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleUpdateChannelName(ch);
                             if (e.key === "Escape") cancelEditChannel();
-                          }}
-                          style={{
-                            padding: "2px 6px",
-                            border: "1px solid #d1d5db",
-                            borderRadius: 4,
-                            fontSize: 13,
                           }}
                           autoFocus
                         />
@@ -439,90 +378,85 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                         </button>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span className={styles.targetName}>{ch.name}</span>
-                        {isThisChannelApplied && (
-                          <span className="statusOk" style={{ fontSize: 11 }}>● Claude Code 已接入</span>
-                        )}
+                      <>
+                        <div className={styles.channelTitleRow}>
+                          <span className={styles.channelName}>{ch.name}</span>
+                          {isThisChannelApplied && (
+                            <span className={styles.statusBadge}>Claude Code 已接入</span>
+                          )}
+                        </div>
+                        <div className={styles.channelActions}>
+                          <button
+                            className="btnGhost btnSm"
+                            onClick={() => handleApplyProxy(ch.id)}
+                            disabled={claudeCodeLoading}
+                            title={
+                              isThisChannelApplied
+                                ? "重新写入代理配置（用于更新 ANTHROPIC_MODEL 等）"
+                                : isProxyApplied
+                                  ? `当前已接入其他通道，点击切换到「${ch.name}」`
+                                  : `将 Claude Code 接入此通道`
+                            }
+                          >
+                            {claudeCodeLoading ? "接入中…" : isThisChannelApplied ? "更新接入" : "接入 Claude Code"}
+                          </button>
+                          {isThisChannelApplied && (
+                            <button
+                              className="btnGhost btnSm"
+                              onClick={handleRestoreProxy}
+                              disabled={claudeCodeLoading}
+                            >
+                              {claudeCodeLoading ? "还原中…" : "还原"}
+                            </button>
+                          )}
+                          <button
+                            className="btnGhost btnSm"
+                            onClick={() => startEditChannel(ch)}
+                          >
+                            重命名
+                          </button>
+                          {ch.id !== "default" && (
+                            <button
+                              className="btnDanger btnSm"
+                              onClick={() => handleDeleteChannel(ch.id)}
+                            >
+                              删除
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {editChannelId !== ch.id && (
+                    <>
+                      <div className={styles.channelBody}>
+                        <div className={styles.channelField}>
+                          <span className={styles.channelFieldLabel}>活动目标</span>
+                          <select
+                            value={ch.activeTarget}
+                            onChange={(e) => handleSetChannelActive(ch.id, e.target.value)}
+                          >
+                            <option value="">未选择</option>
+                            {config.targets.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name}
+                              </option>
+                            ))}
+                          </select>
+                          {activeTarget && (
+                            <span className={styles.targetUrl}>{activeTarget.url}</span>
+                          )}
+                          {activeTarget?.anthropicModel && (
+                            <span className={styles.modelBadge}>{activeTarget.anthropicModel}</span>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "#6b7280" }}>活动目标：</span>
-                      <select
-                        value={ch.activeTarget}
-                        onChange={(e) => handleSetChannelActive(ch.id, e.target.value)}
-                        style={{
-                          fontSize: 12,
-                          padding: "2px 6px",
-                          border: "1px solid #d1d5db",
-                          borderRadius: 4,
-                          background: "#fff",
-                        }}
-                      >
-                        <option value="">未选择</option>
-                        {config.targets.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                      {activeTarget && (
-                        <span style={{ fontSize: 11, color: "#9ca3af" }}>
-                          {activeTarget.url}
-                        </span>
-                      )}
-                      {activeTarget?.anthropicModel && (
-                        <span style={{ fontSize: 11, color: "#7c3aed", background: "#f5f3ff", padding: "1px 6px", borderRadius: 4 }}>
-                          {activeTarget.anthropicModel}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ marginTop: 4 }}>
-                      <code style={{ fontSize: 11, color: "#9ca3af", background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
-                        {proxyUrl}
-                      </code>
-                    </div>
-                  </div>
-                  <div className={styles.targetActions}>
-                    {/* 始终显示接入按钮，已接入同通道时显示"更新接入" */}
-                    <button
-                      className="btnGhost btnSm"
-                      onClick={() => handleApplyProxy(ch.id)}
-                      disabled={claudeCodeLoading}
-                      title={
-                        isThisChannelApplied
-                          ? "重新写入代理配置（用于更新 ANTHROPIC_MODEL 等）"
-                          : isProxyApplied
-                            ? `当前已接入其他通道，点击切换到「${ch.name}」`
-                            : `将 Claude Code 接入此通道`
-                      }
-                    >
-                      {claudeCodeLoading ? "接入中…" : isThisChannelApplied ? "更新接入" : "接入 Claude Code"}
-                    </button>
-                    {isThisChannelApplied && (
-                      <button
-                        className="btnGhost btnSm"
-                        onClick={handleRestoreProxy}
-                        disabled={claudeCodeLoading}
-                      >
-                        {claudeCodeLoading ? "还原中…" : "还原"}
-                      </button>
-                    )}
-                    <button
-                      className="btnGhost btnSm"
-                      onClick={() => startEditChannel(ch)}
-                    >
-                      重命名
-                    </button>
-                    {ch.id !== "default" && (
-                      <button
-                        className="btnDanger btnSm"
-                        onClick={() => handleDeleteChannel(ch.id)}
-                      >
-                        删除
-                      </button>
-                    )}
-                  </div>
+                      <div className={styles.channelFooter}>
+                        <span className={styles.proxyUrl}>{proxyUrl}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -530,107 +464,64 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
         )}
       </div>
 
-      <div className={styles.card}>
-        <p className={styles.cardTitle}>日志采集配置</p>
-        <p
-          style={{
-            color: "#6b7280",
-            fontSize: 12,
-            marginBottom: 12,
-            lineHeight: 1.6,
-          }}
-        >
-          控制日志中存储的数据范围。关闭可选项可显著减小日志文件体积（最多保留
-          300 条）。
+      {/* 日志采集配置 */}
+      <div className={styles.section}>
+        <p className={styles.sectionTitle}>日志采集配置</p>
+        <p className={styles.hint}>
+          控制日志中存储的数据范围。关闭可选项可显著减小日志文件体积（最多保留 300 条）。
         </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-              cursor: "pointer",
-            }}
-          >
+        <div className={styles.toggleList}>
+          <label className={styles.toggleItem}>
             <input
               type="checkbox"
               checked={logCollection.captureOriginalBody}
               onChange={(e) =>
-                handleLogCollectionChange(
-                  "captureOriginalBody",
-                  e.target.checked,
-                )
+                handleLogCollectionChange("captureOriginalBody", e.target.checked)
               }
-              style={{ marginTop: 2, flexShrink: 0 }}
             />
             <div>
-              <span style={{ fontWeight: 500, fontSize: 13 }}>
-                采集原始请求 Body
-              </span>
-              <p style={{ color: "#9ca3af", fontSize: 12, marginTop: 2 }}>
-                存储客户端发送的原始请求 Headers 和 Body（合并 bodyParams
-                之前的数据），用于 Diff 对比视图
-              </p>
+              <div className={styles.toggleLabel}>采集原始请求 Body</div>
+              <div className={styles.toggleDesc}>
+                存储客户端发送的原始请求 Headers 和 Body（合并 bodyParams 之前的数据），用于 Diff 对比视图
+              </div>
             </div>
           </label>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-              cursor: "pointer",
-            }}
-          >
+          <label className={styles.toggleItem}>
             <input
               type="checkbox"
               checked={logCollection.captureRawStreamEvents}
               onChange={(e) =>
-                handleLogCollectionChange(
-                  "captureRawStreamEvents",
-                  e.target.checked,
-                )
+                handleLogCollectionChange("captureRawStreamEvents", e.target.checked)
               }
-              style={{ marginTop: 2, flexShrink: 0 }}
             />
             <div>
-              <span style={{ fontWeight: 500, fontSize: 13 }}>
-                采集原始流式事件
-              </span>
-              <p style={{ color: "#9ca3af", fontSize: 12, marginTop: 2 }}>
-                存储流式响应的原始 SSE 事件数组（通常较大），可在响应体 Tab
-                中查看原始流式数据
-              </p>
+              <div className={styles.toggleLabel}>采集原始流式事件</div>
+              <div className={styles.toggleDesc}>
+                存储流式响应的原始 SSE 事件数组（通常较大），可在响应体 Tab 中查看原始流式数据
+              </div>
             </div>
           </label>
         </div>
       </div>
 
-      <div className={styles.card}>
-        <p className={styles.cardTitle}>使用说明</p>
-        <p style={{ color: "#6b7280", lineHeight: 1.7 }}>
-          将客户端（如 OpenAI SDK）的{" "}
-          <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
-            base_url
-          </code>{" "}
-          设置为对应通道的代理地址：
+      {/* 使用说明 */}
+      <div className={styles.section}>
+        <p className={styles.sectionTitle}>使用说明</p>
+        <p className={styles.guideText}>
+          将客户端（如 OpenAI SDK）的 <code>base_url</code> 设置为对应通道的代理地址：
         </p>
-        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className={styles.codeBlockGroup}>
           <div>
-            <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 4 }}>默认通道（向后兼容）：</p>
-            <pre style={{ background: "#f3f4f6", padding: "8px 12px", borderRadius: 6, fontSize: 13, margin: 0 }}>
-              http://localhost:1998/proxy
-            </pre>
+            <div className={styles.codeBlockLabel}>默认通道（向后兼容）</div>
+            <pre className={styles.codeBlock}>http://localhost:1998/proxy</pre>
           </div>
           <div>
-            <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 4 }}>指定通道（推荐）：</p>
-            <pre style={{ background: "#f3f4f6", padding: "8px 12px", borderRadius: 6, fontSize: 13, margin: 0 }}>
-              http://localhost:1998/{"{channelId}"}/proxy
-            </pre>
+            <div className={styles.codeBlockLabel}>指定通道（推荐）</div>
+            <pre className={styles.codeBlock}>http://localhost:1998/{"{channelId}"}/proxy</pre>
           </div>
         </div>
-        <p style={{ color: "#6b7280", marginTop: 10, lineHeight: 1.7, fontSize: 12 }}>
-          请求路径会直接拼接到该通道选中目标的 Base URL 后，配置的 Headers 和 Body
-          参数会自动合并进每次请求。
+        <p className={styles.guideFooter}>
+          请求路径会直接拼接到该通道选中目标的 Base URL 后，配置的 Headers 和 Body 参数会自动合并进每次请求。
         </p>
       </div>
 

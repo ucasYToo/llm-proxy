@@ -26,22 +26,27 @@
 .tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 2px solid #e5e5e5;
-  margin-bottom: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 24px;
 }
 .tabBtn {
-  padding: 8px 18px;
+  padding: 10px 20px;
   border: none;
   background: none;
   cursor: pointer;
   font-size: 14px;
-  color: #666;
+  color: #6b7280;
   border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
+  margin-bottom: -1px;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+.tabBtn:hover {
+  color: #374151;
 }
 .tabBtn.active {
-  color: #2563eb;
-  border-bottom-color: #2563eb;
+  color: #111827;
+  border-bottom-color: #111827;
   font-weight: 600;
 }
 

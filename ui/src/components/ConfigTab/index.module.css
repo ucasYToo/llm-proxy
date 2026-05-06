@@ -1,54 +1,414 @@
-/* Cards */
-.card {
+/* Section Cards */
+.section {
   background: #fff;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
-.cardTitle {
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.sectionTitle {
+  font-size: 15px;
   font-weight: 600;
-  margin-bottom: 12px;
+  color: #111827;
+  letter-spacing: -0.01em;
 }
 
-/* Target list */
+.headerActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Alert Messages */
+.alert {
+  font-size: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+.alertSuccess {
+  font-size: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  line-height: 1.5;
+  color: #065f46;
+  background: #ecfdf5;
+}
+
+.alertInfo {
+  font-size: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  line-height: 1.5;
+  color: #6b7280;
+  background: #f9fafb;
+}
+
+/* Target List */
 .targetList {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.targetItem {
+.targetRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #f3f4f6;
+  border-radius: 10px;
   background: #fff;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.targetItem.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+.targetRow:hover {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+}
+
+.targetRow.active {
+  border-left: 3px solid #2563eb;
+  background: #f8fafc;
+  padding-left: 11px;
+}
+
+.targetRadio {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #111827;
+  cursor: pointer;
 }
 
 .targetName {
   font-weight: 600;
+  color: #111827;
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .targetUrl {
-  color: #6b7280;
+  color: #9ca3af;
   font-size: 12px;
   flex: 2;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .targetActions {
   display: flex;
   gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Badges */
+.modelBadge {
+  font-size: 11px;
+  color: #92400e;
+  background: #fef3c7;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.statusBadge {
+  font-size: 11px;
+  color: #065f46;
+  background: #d1fae5;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* Channel Cards */
+.channelList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.channelCard {
+  border: 1px solid #f3f4f6;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.channelCard:hover {
+  border-color: #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.channelCard.connected {
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+}
+
+.channelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  gap: 12px;
+}
+
+.channelTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.channelName {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channelActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.channelBody {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.channelField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.channelFieldLabel {
+  font-size: 12px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.channelFooter {
+  padding: 10px 14px;
+  background: #f9fafb;
+  border-top: 1px solid #f3f4f6;
+}
+
+.proxyUrl {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+/* Inline Form (Add Channel) */
+.inlineForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 14px;
+  background: #f9fafb;
+  border-radius: 10px;
+  border: 1px solid #f3f4f6;
+}
+
+.inlineFormRow {
+  display: flex;
+  gap: 10px;
+}
+
+.inlineFormRow input {
+  flex: 1;
+}
+
+.inlineFormHint {
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+.inlineFormActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inlineFormButtons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Log Collection */
+.toggleList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.toggleItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.toggleItem:hover {
+  background: #f9fafb;
+}
+
+.toggleItem input {
+  margin-top: 2px;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #111827;
+  cursor: pointer;
+}
+
+.toggleLabel {
+  font-weight: 500;
+  font-size: 13px;
+  color: #374151;
+}
+
+.toggleDesc {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+/* Usage Guide */
+.guideText {
+  color: #6b7280;
+  line-height: 1.7;
+  font-size: 13px;
+}
+
+.codeBlockGroup {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.codeBlockLabel {
+  color: #6b7280;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.codeBlock {
+  background: #111827;
+  color: #e5e7eb;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  margin: 0;
+  overflow-x: auto;
+}
+
+.guideFooter {
+  color: #6b7280;
+  margin-top: 12px;
+  line-height: 1.7;
+  font-size: 12px;
+}
+
+/* Edit Channel Inline */
+.editChannelRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.editChannelRow input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hint text */
+.hint {
+  color: #6b7280;
+  font-size: 12px;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .section {
+    padding: 14px;
+  }
+
+  .targetRow {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .targetUrl {
+    flex-basis: 100%;
+    order: 3;
+    margin-left: 28px;
+  }
+
+  .targetActions {
+    order: 4;
+    margin-left: auto;
+  }
+
+  .channelHeader {
+    flex-wrap: wrap;
+  }
+
+  .channelActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .inlineFormActions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
