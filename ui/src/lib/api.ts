@@ -4,6 +4,7 @@ export interface Target {
   url: string;
   headers: Record<string, string>;
   bodyParams: Record<string, any>;
+  anthropicModel?: string;
 }
 
 export interface Channel {
@@ -23,6 +24,8 @@ export interface Config {
   logCollection: LogCollection;
   /** 备份的 Claude Code 原始 ANTHROPIC_BASE_URL，用于一键还原 */
   claudeCodeOriginalBaseUrl?: string;
+  /** 备份的 Claude Code 原始 ANTHROPIC_MODEL，用于一键还原 */
+  claudeCodeOriginalModel?: string;
   /** 当前接入 Claude Code 的通道 ID */
   claudeCodeChannelId?: string;
   /** 通道配置列表 */
@@ -199,6 +202,22 @@ export async function deleteChannel(channelId: string): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to delete channel");
 }
+
+export const refreshClaudeCodeStatus = async (): Promise<{
+  ok: boolean;
+  detected: boolean;
+  channelId?: string;
+  currentUrl: string | null;
+  currentModel: string | null;
+}> => {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "refreshClaudeCodeStatus" }),
+  });
+  if (!res.ok) throw new Error("Failed to refresh Claude Code status");
+  return res.json();
+};
 
 export async function setChannelActiveTarget(channelId: string, targetId: string): Promise<void> {
   const res = await fetch("/api/set", {

@@ -31,6 +31,7 @@ const recordFromKV = (pairs: KVPair[]): Record<string, string> => {
 const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
   const [name, setName] = useState(initial?.name ?? "");
   const [url, setUrl] = useState(initial?.url ?? "");
+  const [anthropicModel, setAnthropicModel] = useState(initial?.anthropicModel ?? "");
   const [headers, setHeaders] = useState<KVPair[]>(
     initial?.headers
       ? kvFromRecord(initial.headers as Record<string, string>)
@@ -60,6 +61,7 @@ const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
       url: url.trim().replace(/\/$/, ""),
       headers: headersRecord,
       bodyParams: parsedBody,
+      anthropicModel: anthropicModel.trim() || undefined,
     });
   };
 
@@ -114,6 +116,19 @@ const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
           />
           <p className={styles.formHint}>
             值支持 JSON 格式（如 true、123、"字符串"）
+          </p>
+        </div>
+
+        <div className={styles.formGroup}>
+          <label>ANTHROPIC_MODEL（Claude Code 接入时同步写入）</label>
+          <input
+            type="text"
+            value={anthropicModel}
+            onChange={(e) => setAnthropicModel(e.target.value)}
+            placeholder="claude-sonnet-4-6"
+          />
+          <p className={styles.formHint}>
+            接入 Claude Code 时会将该值写入 ~/.claude/settings.json 的 ANTHROPIC_MODEL 字段
           </p>
         </div>
 

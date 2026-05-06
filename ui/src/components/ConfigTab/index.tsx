@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Config, Target, LogCollection, Channel } from "../../lib/api";
-import { applyClaudeCodeProxy, restoreClaudeCodeProxy, addChannel, updateChannel, deleteChannel, setChannelActiveTarget } from "../../lib/api";
+import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget } from "../../lib/api";
 import TargetForm from "../TargetForm/index";
 import styles from "./index.module.css";
 
@@ -13,6 +13,7 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Target | undefined>();
   const [claudeCodeLoading, setClaudeCodeLoading] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
   const [showChannelForm, setShowChannelForm] = useState(false);
   const [editChannelId, setEditChannelId] = useState<string | undefined>();
   const [editChannelName, setEditChannelName] = useState("");
@@ -25,7 +26,11 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
 
   const handleApplyProxy = async (channelId: string) => {
     const channelName = config.channels?.find((c) => c.id === channelId)?.name ?? channelId;
-    if (!confirm(`将把 Claude Code 的 ANTHROPIC_BASE_URL 切换为通道「${channelName}」的代理地址，确认继续？`)) return;
+    const isUpdate = isProxyApplied && config.claudeCodeChannelId === channelId;
+    const msg = isUpdate
+      ? `将重新写入通道「${channelName}」的代理配置到 Claude Code（会更新 ANTHROPIC_MODEL 等），确认继续？`
+      : `将把 Claude Code 的 ANTHROPIC_BASE_URL 切换为通道「${channelName}」的代理地址，确认继续？`;
+    if (!confirm(msg)) return;
     setClaudeCodeLoading(true);
     try {
       await applyClaudeCodeProxy(1998, channelId);
@@ -45,6 +50,28 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
       onRefresh();
     } catch (e) {
       alert("操作失败：" + String(e));
+    } finally {
+      setClaudeCodeLoading(false);
+    }
+  };
+
+  const handleRefreshStatus = async () => {
+    setClaudeCodeLoading(true);
+    setRefreshMsg(null);
+    try {
+      const result = await refreshClaudeCodeStatus();
+      if (result.detected) {
+        const channelName = config.channels?.find((c) => c.id === result.channelId)?.name ?? result.channelId;
+        const modelInfo = result.currentModel ? `，模型: ${result.currentModel}` : "";
+        setRefreshMsg(`检测到 Claude Code 已接入通道「${channelName}」${modelInfo}`);
+      } else {
+        setRefreshMsg(result.currentUrl
+          ? `Claude Code 当前 ANTHROPIC_BASE_URL 未指向本代理（${result.currentUrl}）`
+          : "Claude Code 未设置 ANTHROPIC_BASE_URL，未接入代理");
+      }
+      onRefresh();
+    } catch (e) {
+      setRefreshMsg("刷新失败：" + String(e));
     } finally {
       setClaudeCodeLoading(false);
     }
@@ -210,6 +237,11 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                 </div>
                 <span className={styles.targetName}>{t.name}</span>
                 <span className={styles.targetUrl}>{t.url}</span>
+                {t.anthropicModel && (
+                  <span style={{ fontSize: 11, color: "#7c3aed", background: "#f5f3ff", padding: "1px 6px", borderRadius: 4, flexShrink: 0 }}>
+                    {t.anthropicModel}
+                  </span>
+                )}
                 <div className={styles.targetActions}>
                   <button
                     className="btnGhost btnSm"
@@ -258,13 +290,35 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
           <span className={styles.cardTitle} style={{ marginBottom: 0 }}>
             通道管理
           </span>
-          <button
-            className="btnPrimary btnSm"
-            onClick={() => setShowChannelForm(true)}
-          >
-            + 添加通道
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btnGhost btnSm"
+              onClick={handleRefreshStatus}
+              disabled={claudeCodeLoading}
+              title="读取 ~/.claude/settings.json 检测实际接入状态"
+            >
+              {claudeCodeLoading ? "检测中…" : "刷新状态"}
+            </button>
+            <button
+              className="btnPrimary btnSm"
+              onClick={() => setShowChannelForm(true)}
+            >
+              + 添加通道
+            </button>
+          </div>
         </div>
+        {refreshMsg && (
+          <p style={{
+            color: refreshMsg.startsWith("检测到") ? "#059669" : "#9ca3af",
+            fontSize: 12,
+            marginBottom: 8,
+            background: refreshMsg.startsWith("检测到") ? "#ecfdf5" : "#f9fafb",
+            padding: "6px 10px",
+            borderRadius: 4,
+          }}>
+            {refreshMsg}
+          </p>
+        )}
         <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
           每个通道可以独立选择活动目标，通过不同的 URL 路径区分（如{" "}
           <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
@@ -417,6 +471,11 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                           {activeTarget.url}
                         </span>
                       )}
+                      {activeTarget?.anthropicModel && (
+                        <span style={{ fontSize: 11, color: "#7c3aed", background: "#f5f3ff", padding: "1px 6px", borderRadius: 4 }}>
+                          {activeTarget.anthropicModel}
+                        </span>
+                      )}
                     </div>
                     <div style={{ marginTop: 4 }}>
                       <code style={{ fontSize: 11, color: "#9ca3af", background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
@@ -425,22 +484,28 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                     </div>
                   </div>
                   <div className={styles.targetActions}>
-                    {isThisChannelApplied ? (
+                    {/* 始终显示接入按钮，已接入同通道时显示"更新接入" */}
+                    <button
+                      className="btnGhost btnSm"
+                      onClick={() => handleApplyProxy(ch.id)}
+                      disabled={claudeCodeLoading}
+                      title={
+                        isThisChannelApplied
+                          ? "重新写入代理配置（用于更新 ANTHROPIC_MODEL 等）"
+                          : isProxyApplied
+                            ? `当前已接入其他通道，点击切换到「${ch.name}」`
+                            : `将 Claude Code 接入此通道`
+                      }
+                    >
+                      {claudeCodeLoading ? "接入中…" : isThisChannelApplied ? "更新接入" : "接入 Claude Code"}
+                    </button>
+                    {isThisChannelApplied && (
                       <button
                         className="btnGhost btnSm"
                         onClick={handleRestoreProxy}
                         disabled={claudeCodeLoading}
                       >
-                        {claudeCodeLoading ? "还原中…" : "还原 Claude Code"}
-                      </button>
-                    ) : (
-                      <button
-                        className="btnGhost btnSm"
-                        onClick={() => handleApplyProxy(ch.id)}
-                        disabled={claudeCodeLoading}
-                        title={isProxyApplied ? `当前已接入其他通道，点击切换到「${ch.name}」` : `将 Claude Code 接入此通道`}
-                      >
-                        {claudeCodeLoading ? "接入中…" : "接入 Claude Code"}
+                        {claudeCodeLoading ? "还原中…" : "还原"}
                       </button>
                     )}
                     <button

@@ -121,18 +121,77 @@ export const setupApiRoutes = (app: Express) => {
         const targetChannelId = channelId ?? "default";
         const settings = readClaudeSettings();
         const env = (settings.env ?? {}) as Record<string, string>;
-        // 仅在首次接入时备份原始 URL
+
+        // 仅在首次接入时备份原始 ANTHROPIC_BASE_URL
         if (config.claudeCodeOriginalBaseUrl === undefined) {
           config.claudeCodeOriginalBaseUrl = env["ANTHROPIC_BASE_URL"] ?? "";
         }
+        // 仅在首次接入时备份原始 ANTHROPIC_MODEL
+        if (config.claudeCodeOriginalModel === undefined) {
+          config.claudeCodeOriginalModel = env["ANTHROPIC_MODEL"] ?? "";
+        }
+
         // 记录当前接入的通道 ID
         config.claudeCodeChannelId = targetChannelId;
         writeConfig(config);
-        // 写入新的代理地址到 ~/.claude/settings.json
+
+        // 查找通道的活动目标，获取其 anthropicModel
+        const channel = config.channels.find((c) => c.id === targetChannelId);
+        const activeTarget = channel
+          ? config.targets.find((t) => t.id === channel.activeTarget)
+          : undefined;
+
+        // 写入代理地址到 ~/.claude/settings.json
         const proxyPath = targetChannelId === "default" ? "proxy" : `${targetChannelId}/proxy`;
-        settings.env = { ...env, ANTHROPIC_BASE_URL: `http://localhost:${port}/${proxyPath}` };
+        const newEnv: Record<string, string> = {
+          ...env,
+          ANTHROPIC_BASE_URL: `http://localhost:${port}/${proxyPath}`,
+        };
+
+        // 如果目标配置了 anthropicModel，同步写入 ANTHROPIC_MODEL
+        if (activeTarget?.anthropicModel) {
+          newEnv["ANTHROPIC_MODEL"] = activeTarget.anthropicModel;
+        }
+
+        settings.env = newEnv;
         writeClaudeSettings(settings);
         res.json({ ok: true, channelId: targetChannelId });
+        break;
+      }
+
+      case "refreshClaudeCodeStatus": {
+        const settings = readClaudeSettings();
+        const env = (settings.env ?? {}) as Record<string, string>;
+        const currentUrl = env["ANTHROPIC_BASE_URL"] ?? "";
+        const currentModel = env["ANTHROPIC_MODEL"] ?? "";
+
+        // Match proxy URL: http://localhost:{port}/{optionalChannelId}/proxy
+        const proxyPattern = /^http:\/\/localhost:\d+\/(?:([a-zA-Z0-9_-]+)\/)?proxy$/;
+        const match = currentUrl.match(proxyPattern);
+
+        if (match) {
+          const detectedChannelId = match[1] || "default";
+          if (config.claudeCodeOriginalBaseUrl === undefined) {
+            config.claudeCodeOriginalBaseUrl = "";
+          }
+          if (config.claudeCodeOriginalModel === undefined) {
+            config.claudeCodeOriginalModel = currentModel;
+          }
+          config.claudeCodeChannelId = detectedChannelId;
+        } else {
+          delete config.claudeCodeOriginalBaseUrl;
+          delete config.claudeCodeOriginalModel;
+          delete config.claudeCodeChannelId;
+        }
+
+        writeConfig(config);
+        res.json({
+          ok: true,
+          detected: !!match,
+          channelId: match ? (match[1] || "default") : undefined,
+          currentUrl: currentUrl || null,
+          currentModel: currentModel || null,
+        });
         break;
       }
 
@@ -142,18 +201,35 @@ export const setupApiRoutes = (app: Express) => {
           res.status(400).json({ error: "No backup URL found" });
           return;
         }
+        const originalModel = config.claudeCodeOriginalModel;
+
         const settings = readClaudeSettings();
-        const env = (settings.env ?? {}) as Record<string, string>;
+        let env = (settings.env ?? {}) as Record<string, string>;
+
+        // 还原 ANTHROPIC_BASE_URL
         if (originalUrl) {
-          settings.env = { ...env, ANTHROPIC_BASE_URL: originalUrl };
+          env = { ...env, ANTHROPIC_BASE_URL: originalUrl };
         } else {
-          // 原始值为空时删除该字段
           const { ANTHROPIC_BASE_URL: _removed, ...rest } = env;
-          settings.env = rest;
+          env = rest as Record<string, string>;
         }
+
+        // 还原 ANTHROPIC_MODEL
+        if (originalModel !== undefined) {
+          if (originalModel) {
+            env = { ...env, ANTHROPIC_MODEL: originalModel };
+          } else {
+            const { ANTHROPIC_MODEL: _removed, ...rest } = env;
+            env = rest as Record<string, string>;
+          }
+        }
+
+        settings.env = env;
         writeClaudeSettings(settings);
+
         // 清除备份和通道记录
         delete config.claudeCodeOriginalBaseUrl;
+        delete config.claudeCodeOriginalModel;
         delete config.claudeCodeChannelId;
         writeConfig(config);
         res.json({ ok: true });

@@ -7,6 +7,8 @@ export interface Target {
   headers: Record<string, string>;
   /** 额外的 Body 字段，会合并到每个代理请求体中 */
   bodyParams: Record<string, unknown>;
+  /** 接入 Claude Code 时写入的 ANTHROPIC_MODEL 值 */
+  anthropicModel?: string;
 }
 
 export interface LogCollection {
@@ -29,6 +31,8 @@ export interface Config {
   logCollection: LogCollection;
   /** 备份的 Claude Code 原始 ANTHROPIC_BASE_URL，用于一键还原 */
   claudeCodeOriginalBaseUrl?: string;
+  /** 备份的 Claude Code 原始 ANTHROPIC_MODEL，用于一键还原 */
+  claudeCodeOriginalModel?: string;
   /** 当前接入 Claude Code 的通道 ID */
   claudeCodeChannelId?: string;
   /** 通道配置列表 */

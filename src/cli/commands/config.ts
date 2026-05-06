@@ -41,12 +41,14 @@ export const configCommand = (program: Command) => {
     .requiredOption("--url <url>", "目标 URL")
     .option("--headers <json>", "额外的请求头 (JSON)", "{}")
     .option("--body-params <json>", "额外的 Body 参数 (JSON)", "{}")
+    .option("--anthropic-model <model>", "接入 Claude Code 时写入的 ANTHROPIC_MODEL")
     .action(
       (options: {
         name: string;
         url: string;
         headers: string;
         bodyParams: string;
+        anthropicModel?: string;
       }) => {
         const cfg = readConfig();
         const newTarget: Target = {
@@ -55,6 +57,7 @@ export const configCommand = (program: Command) => {
           url: options.url,
           headers: JSON.parse(options.headers),
           bodyParams: JSON.parse(options.bodyParams),
+          anthropicModel: options.anthropicModel,
         };
 
         cfg.targets.push(newTarget);
@@ -65,6 +68,9 @@ export const configCommand = (program: Command) => {
 
         console.log(chalk.green(`已添加目标: ${newTarget.name}`));
         console.log(`  ID: ${newTarget.id}`);
+        if (newTarget.anthropicModel) {
+          console.log(`  ANTHROPIC_MODEL: ${newTarget.anthropicModel}`);
+        }
       },
     );
 
