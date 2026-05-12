@@ -50,6 +50,9 @@ export const proxyRequest = async (
   const fullUrl = req.search ? `${targetUrl}${req.search}` : targetUrl;
 
   // 构建合并后的请求头（过滤掉 hop-by-hop 头和会导致冲突的头）
+  // 注意：必须剥离 accept-encoding，否则 undici 不会自动解压上游响应，
+  // 导致 body.getReader() / text() 拿到的是原始压缩字节（gzip/br/zstd），
+  // 写入日志后表现为乱码。
   const hopByHopHeaders = new Set([
     "host",
     "connection",
@@ -59,6 +62,8 @@ export const proxyRequest = async (
     "upgrade",
     "proxy-authorization",
     "proxy-connection",
+    "accept-encoding",
+    "content-length",
   ]);
   const forwardHeaders: Record<string, string> = {};
   for (const [key, value] of Object.entries(req.headers)) {
@@ -145,9 +150,17 @@ export const proxyRequest = async (
   const isStream = resContentType.includes("text/event-stream");
 
   // 构建响应头
+  // 剥离 content-encoding / content-length：undici 已经把响应体解压成明文，
+  // 我们再原样返回明文给下游客户端，若保留这两个头会让客户端误以为还需要解压。
+  const stripResHeaders = new Set([
+    "transfer-encoding",
+    "connection",
+    "content-encoding",
+    "content-length",
+  ]);
   const resHeaders: Record<string, string> = {};
   upstreamRes.headers.forEach((value, key) => {
-    if (!["transfer-encoding", "connection"].includes(key.toLowerCase())) {
+    if (!stripResHeaders.has(key.toLowerCase())) {
       resHeaders[key] = value;
     }
   });
