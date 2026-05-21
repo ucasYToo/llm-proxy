@@ -15,7 +15,7 @@ export type {
   LogStatus,
   LogCollection,
   TokenUsage,
-} from "./config/types";
+} from "./interfaces";
 
 // 日志存储
 export {

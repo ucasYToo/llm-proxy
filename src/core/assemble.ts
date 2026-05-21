@@ -3,7 +3,7 @@
  * 从 route.ts 中提取的纯数据处理逻辑
  */
 
-import type { TokenUsage } from "../config/types";
+import type { TokenUsage } from "../interfaces";
 
 /**
  * 从响应体中提取 token 用量（支持 Anthropic 和 OpenAI 格式）

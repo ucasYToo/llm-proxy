@@ -1,84 +1,97 @@
-/* Modal */
+/* ── Modal ── */
+
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(26, 26, 26, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
+  backdrop-filter: blur(2px);
 }
 
 .modal {
-  background: #fff;
-  border-radius: 12px;
-  width: min(600px, 95vw);
-  padding: 24px;
+  background: var(--bg-card);
+  border-radius: 6px;
+  width: min(620px, 95vw);
+  padding: 32px;
   max-height: 90vh;
   overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border);
 }
 
 .modal h2 {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 16px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  letter-spacing: -0.02em;
 }
 
 .modalFooter {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
 }
 
-/* Forms */
+/* ── Forms ── */
+
 .formGroup {
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .modal label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  margin-bottom: 4px;
-  color: #374151;
+  margin-bottom: 6px;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .modal input[type="text"],
 .modal textarea {
   width: 100%;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 12px;
   font-size: 13px;
-  font-family: inherit;
+  font-family: var(--font-body);
 }
 
 .modal input[type="text"]:focus,
 .modal textarea:focus {
-  outline: 2px solid #2563eb;
-  outline-offset: -1px;
-  border-color: transparent;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .modal textarea {
   resize: vertical;
   min-height: 80px;
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 .formHint {
   font-size: 11px;
-  color: #9ca3af;
-  margin-top: 3px;
+  color: var(--text-muted);
+  margin-top: 4px;
 }
 
-/* KV editor */
+/* ── KV Editor ── */
+
 .kvList {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .kvRow {
@@ -95,27 +108,80 @@
   flex-shrink: 0;
 }
 
-/* Quick key tags */
+/* ── Quick Key Tags ── */
+
 .quickKeys {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .quickKeyBtn {
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   padding: 2px 8px;
-  border: 1px dashed #d1d5db;
-  border-radius: 4px;
-  background: #f9fafb;
-  color: #6b7280;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s var(--ease);
 }
 
 .quickKeyBtn:hover {
-  border-color: #2563eb;
-  color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+  border-style: solid;
+}
+
+/* ── Auth Row ── */
+
+.authRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.authTypeSelect {
+  flex-shrink: 0;
+  width: 130px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: var(--font-body);
+  background: var(--bg-card);
+}
+
+.authValueInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.authHeaderNameInput {
+  margin-top: 6px;
+}
+
+.legacyAuthNotice {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--warning-light);
+  border: 1px solid #e8dcc0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--warning);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.legacyAuthNotice code {
+  background: rgba(255, 255, 255, 0.6);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: var(--font-mono);
 }

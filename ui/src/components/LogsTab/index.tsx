@@ -5,7 +5,7 @@ import {
   extractLastMessageLines,
   extractResponseLines,
 } from "../../lib/contentExtractor";
-import { formatTime } from "../../lib/format";
+import { formatTime, formatTTFT, formatTPS } from "../../lib/format";
 import { LogDetailPanel } from "../LogDetailPanel";
 import styles from "./index.module.css";
 
@@ -375,6 +375,8 @@ const LogsTab = ({ config }: LogsTabProps) => {
                   <th style={{ width: 60 }}>状态</th>
                   <th style={{ width: 100 }}>Token</th>
                   <th style={{ width: 80 }}>耗时</th>
+                  <th style={{ width: 70 }}>首包</th>
+                  <th style={{ width: 80 }}>TPS</th>
                 </tr>
               </thead>
               <tbody>
@@ -481,6 +483,28 @@ const LogsTab = ({ config }: LogsTabProps) => {
                       </td>
                       <td style={{ color: "#6b7280", whiteSpace: "nowrap" }}>
                         {log.durationMs}ms
+                      </td>
+                      <td
+                        style={{
+                          color: "#6b7280",
+                          whiteSpace: "nowrap",
+                          fontSize: 12,
+                        }}
+                      >
+                        {formatTTFT(log.firstChunkMs)}
+                      </td>
+                      <td
+                        style={{
+                          color: "#6b7280",
+                          whiteSpace: "nowrap",
+                          fontSize: 12,
+                        }}
+                      >
+                        {formatTPS(
+                          log.tokenUsage?.outputTokens,
+                          log.durationMs,
+                          log.firstChunkMs,
+                        )}
                       </td>
                     </tr>
                   );

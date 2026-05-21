@@ -1,176 +1,214 @@
-/* Log toolbar */
+/* ── Log Toolbar ── */
+
 .logToolbar {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
-/* Density toggle */
+/* ── Density Toggle ── */
+
 .densityToggle {
   display: flex;
-  gap: 2px;
-  background: #f3f4f6;
+  gap: 0;
+  background: var(--bg-subtle);
   padding: 2px;
-  border-radius: 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
+
 .densityBtn {
   padding: 4px 8px;
   font-size: 12px;
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 4px;
-  color: #6b7280;
-}
-.densityBtn.active {
-  background: #fff;
-  color: #374151;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: var(--font-body);
 }
 
-/* Auto refresh */
+.densityBtn.active {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Auto Refresh ── */
+
 .autoRefreshLabel {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-secondary);
   cursor: pointer;
 }
+
 .autoRefreshLabel input[type="checkbox"] {
   margin: 0;
 }
+
 .refreshIndicator {
-  color: #10b981;
+  color: var(--success);
   font-size: 10px;
   animation: pulse 2s infinite;
 }
+
 @keyframes pulse {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.5;
+    opacity: 0.4;
   }
 }
 
-/* Pagination */
+/* ── Pagination ── */
+
 .paginationControls {
   display: flex;
   align-items: center;
   gap: 6px;
 }
+
 .paginationControls .btnGhost {
   padding: 4px 10px;
   font-size: 12px;
 }
+
 .pageSelect {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 8px;
   font-size: 12px;
-  background: #fff;
-  color: #374151;
+  background: var(--bg-card);
+  color: var(--text);
+  font-family: var(--font-body);
 }
 
-/* Log table */
+/* ── Log Table ── */
+
 .logTableWrap {
   overflow-x: auto;
   max-height: calc(100vh - 180px);
   overflow-y: auto;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
 }
+
 .logTableWrap table {
   width: 100%;
   border-collapse: collapse;
 }
+
 .logTableWrap th,
 .logTableWrap td {
   text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
 }
+
 .logTableWrap th {
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   text-transform: uppercase;
-  color: #9ca3af;
+  color: var(--text-muted);
   font-weight: 600;
-  background: #fff;
+  letter-spacing: 0.08em;
+  background: var(--bg-card);
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 1px 0 #e5e5e5;
-}
-.logTableWrap tr:hover td {
-  background: #fafafa;
-}
-.logTableWrap tr.selected td {
-  background: #eff6ff !important;
+  box-shadow: 0 1px 0 var(--border);
 }
 
-/* Status badges for log status */
+.logTableWrap tr:hover td {
+  background: var(--bg-subtle);
+}
+
+.logTableWrap tr.selected td {
+  background: var(--accent-light) !important;
+}
+
+/* ── Status Badges ── */
+
 .statusBadge {
   display: inline-block;
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 3px;
   white-space: nowrap;
 }
+
 .statusBadge.pending {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--warning-light);
+  color: var(--warning);
 }
+
 .statusBadge.streaming {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #edf4ff;
+  color: #2563eb;
   animation: pulse 1.5s infinite;
 }
+
 .statusBadge.completed {
-  background: #d1fae5;
-  color: #065f46;
+  background: var(--success-light);
+  color: var(--success);
 }
+
 .statusBadge.error {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--error-light);
+  color: var(--error);
 }
+
 .statusBadge.unknown {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
 }
+
 .methodBadge {
   display: inline-block;
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: #e0f2fe;
-  color: #0369a1;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
-/* Density modes */
+/* ── Density Modes ── */
+
 .logTableWrap .rowCompact td {
-  padding: 4px 10px;
-}
-.logTableWrap .rowComfortable td {
-  padding: 10px;
+  padding: 6px 12px;
 }
 
-/* Time cell */
+.logTableWrap .rowComfortable td {
+  padding: 12px;
+}
+
+/* ── Time Cell ── */
+
 .timeCell {
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
-/* Log preview in table */
+/* ── Log Preview in Table ── */
+
 .logTableWrap td {
   vertical-align: top;
 }
+
 .logPreviewRow {
   display: flex;
   align-items: flex-start;
@@ -178,39 +216,47 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
 .logPreviewRow + .logPreviewRow {
   margin-top: 6px;
 }
+
 .logPreviewLabel {
   flex-shrink: 0;
   width: 32px;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   padding: 2px 4px;
   border-radius: 3px;
   text-align: center;
-  background: #e5e7eb;
-  color: #6b7280;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
 }
+
 .logPreviewRow:first-child .logPreviewLabel {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--accent-light);
+  color: var(--accent);
 }
+
 .logPreviewRow:last-child .logPreviewLabel {
-  background: #d1fae5;
-  color: #047857;
+  background: var(--success-light);
+  color: var(--success);
 }
+
 .logPreviewContent {
   flex: 1;
   min-width: 0;
 }
+
 .logPreviewLine {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #374151;
+  color: var(--text-secondary);
   word-break: break-all;
 }
+
 .logPreviewLine + .logPreviewLine {
   margin-top: 2px;
 }

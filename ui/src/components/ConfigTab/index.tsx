@@ -21,8 +21,9 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
   const [newChannelId, setNewChannelId] = useState("");
 
   const channels = config.channels ?? [];
+  const port = config.serverPort ?? 1998;
 
-  const isProxyApplied = !!config.claudeCodeOriginalBaseUrl;
+  const isProxyApplied = !!config.claudeCodeChannelId;
 
   const handleApplyProxy = async (channelId: string) => {
     const channelName = config.channels?.find((c) => c.id === channelId)?.name ?? channelId;
@@ -33,7 +34,7 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
     if (!confirm(msg)) return;
     setClaudeCodeLoading(true);
     try {
-      await applyClaudeCodeProxy(1998, channelId);
+      await applyClaudeCodeProxy(channelId);
       onRefresh();
     } catch (e) {
       alert("操作失败：" + String(e));
@@ -42,8 +43,17 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
     }
   };
 
-  const handleRestoreProxy = async () => {
-    if (!confirm("将还原 Claude Code 的 ANTHROPIC_BASE_URL 为原始地址，确认继续？")) return;
+  const handleRestoreProxy = async (channelId: string) => {
+    const channel = config.channels?.find((c) => c.id === channelId);
+    const target = channel
+      ? config.targets.find((t) => t.id === channel.activeTarget)
+      : undefined;
+    if (!target) {
+      alert(`通道「${channel?.name ?? channelId}」未选择活动目标，无法直连。`);
+      return;
+    }
+    const modelInfo = target.anthropicModel ? `，model = ${target.anthropicModel}` : "";
+    if (!confirm(`将把 Claude Code 的 ANTHROPIC_BASE_URL 改为 ${target.url}${modelInfo}（直连，跳过本代理），确认继续？`)) return;
     setClaudeCodeLoading(true);
     try {
       await restoreClaudeCodeProxy();
@@ -82,9 +92,9 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
     captureRawStreamEvents: false,
   };
 
-  const handleLogCollectionChange = async (
-    key: keyof LogCollection,
-    value: boolean,
+  const handleLogCollectionChange = async <K extends keyof LogCollection>(
+    key: K,
+    value: LogCollection[K],
   ) => {
     const updated = { ...logCollection, [key]: value };
     await fetch("/api/set", {
@@ -347,8 +357,8 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
               const activeTarget = config.targets.find((t) => t.id === ch.activeTarget);
               const isThisChannelApplied = isProxyApplied && config.claudeCodeChannelId === ch.id;
               const proxyUrl = ch.id === "default"
-                ? "http://localhost:1998/proxy"
-                : `http://localhost:1998/${ch.id}/proxy`;
+                ? `http://localhost:${port}/proxy`
+                : `http://localhost:${port}/${ch.id}/proxy`;
               return (
                 <div key={ch.id} className={`${styles.channelCard}${isThisChannelApplied ? ` ${styles.connected}` : ""}`}>
                   <div className={styles.channelHeader}>
@@ -403,10 +413,15 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                           {isThisChannelApplied && (
                             <button
                               className="btnGhost btnSm"
-                              onClick={handleRestoreProxy}
+                              onClick={() => handleRestoreProxy(ch.id)}
                               disabled={claudeCodeLoading}
+                              title={
+                                activeTarget
+                                  ? `将 Claude Code 切到直连：${activeTarget.url}${activeTarget.anthropicModel ? ` (${activeTarget.anthropicModel})` : ""}`
+                                  : "通道未选择活动目标，无法直连"
+                              }
                             >
-                              {claudeCodeLoading ? "还原中…" : "还原"}
+                              {claudeCodeLoading ? "切换中…" : "直连"}
                             </button>
                           )}
                           <button
@@ -468,8 +483,25 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
       <div className={styles.section}>
         <p className={styles.sectionTitle}>日志采集配置</p>
         <p className={styles.hint}>
-          控制日志中存储的数据范围。关闭可选项可显著减小日志文件体积（最多保留 300 条）。
+          控制日志中存储的数据范围与上限。日志存储已迁移到 SQLite（~/.claude-proxy/logs.db）。
         </p>
+        <div className={styles.maxEntriesRow}>
+          <label htmlFor="maxEntries">最大保留条数</label>
+          <input
+            id="maxEntries"
+            type="number"
+            min={1}
+            max={100000}
+            defaultValue={logCollection.maxEntries ?? 300}
+            onBlur={(e) => {
+              const n = Number(e.target.value);
+              if (!Number.isFinite(n) || n < 1) return;
+              if (n === (logCollection.maxEntries ?? 300)) return;
+              handleLogCollectionChange("maxEntries", n);
+            }}
+          />
+          <span className={styles.toggleDesc}>超过将按 timestamp 倒序删除最旧的记录</span>
+        </div>
         <div className={styles.toggleList}>
           <label className={styles.toggleItem}>
             <input
@@ -513,11 +545,11 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
         <div className={styles.codeBlockGroup}>
           <div>
             <div className={styles.codeBlockLabel}>默认通道（向后兼容）</div>
-            <pre className={styles.codeBlock}>http://localhost:1998/proxy</pre>
+            <pre className={styles.codeBlock}>http://localhost:{port}/proxy</pre>
           </div>
           <div>
             <div className={styles.codeBlockLabel}>指定通道（推荐）</div>
-            <pre className={styles.codeBlock}>http://localhost:1998/{"{channelId}"}/proxy</pre>
+            <pre className={styles.codeBlock}>http://localhost:{port}/{"{channelId}"}/proxy</pre>
           </div>
         </div>
         <p className={styles.guideFooter}>

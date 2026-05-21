@@ -1,66 +1,38 @@
-/* Layout */
-.app {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px 16px;
-}
-.appHeader {
+/* ── Shell Layout ── */
+
+.shell {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-.appHeader h1 {
-  font-size: 20px;
-  font-weight: 700;
-}
-.badge {
-  background: #10b981;
-  color: #fff;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
+  height: 100dvh;
+  overflow: hidden;
 }
 
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 24px;
-}
-.tabBtn {
-  padding: 10px 20px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 14px;
-  color: #6b7280;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  font-weight: 500;
-  transition: color 0.15s ease;
-}
-.tabBtn:hover {
-  color: #374151;
-}
-.tabBtn.active {
-  color: #111827;
-  border-bottom-color: #111827;
-  font-weight: 600;
+.content {
+  flex: 1;
+  height: 100%;
+  margin-left: var(--sidebar-w);
+  min-width: 0;
+  overflow-y: auto;
+  transition: margin-left 0.25s var(--ease);
 }
 
-/* Responsive */
+.contentInner {
+  padding: 40px 64px 60px;
+}
+
+/* Dashboard 专用：纵向 flex 容器，高度锚定视口，让子元素自动填满 */
+.flexCol {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── Responsive ── */
+
 @media (max-width: 768px) {
-  .app {
-    padding: 12px;
+  .content {
+    margin-left: var(--sidebar-w-collapsed);
   }
-  .appHeader {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .appHeader h1 {
-    font-size: 18px;
+  .contentInner {
+    padding: 24px 16px 40px;
   }
 }

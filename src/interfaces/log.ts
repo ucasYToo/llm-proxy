@@ -1,44 +1,3 @@
-export interface Target {
-  id: string;
-  name: string;
-  /** Base URL，包含路径前缀，例如 https://api.openai.com/v1 */
-  url: string;
-  /** 额外的请求头，会合并到每个代理请求中 */
-  headers: Record<string, string>;
-  /** 额外的 Body 字段，会合并到每个代理请求体中 */
-  bodyParams: Record<string, unknown>;
-  /** 接入 Claude Code 时写入的 ANTHROPIC_MODEL 值 */
-  anthropicModel?: string;
-}
-
-export interface LogCollection {
-  /** 是否采集原始请求 body（来自客户端，未合并 bodyParams 前）。默认 false */
-  captureOriginalBody: boolean;
-  /** 是否采集原始流式事件数组（SSE 原始 data 列表）。默认 false */
-  captureRawStreamEvents: boolean;
-}
-
-export interface Channel {
-  id: string;
-  name: string;
-  /** 该通道当前选择的活动目标 ID */
-  activeTarget: string;
-}
-
-export interface Config {
-  activeTarget: string;
-  targets: Target[];
-  logCollection: LogCollection;
-  /** 备份的 Claude Code 原始 ANTHROPIC_BASE_URL，用于一键还原 */
-  claudeCodeOriginalBaseUrl?: string;
-  /** 备份的 Claude Code 原始 ANTHROPIC_MODEL，用于一键还原 */
-  claudeCodeOriginalModel?: string;
-  /** 当前接入 Claude Code 的通道 ID */
-  claudeCodeChannelId?: string;
-  /** 通道配置列表 */
-  channels: Channel[];
-}
-
 export interface TokenUsage {
   inputTokens?: number;
   outputTokens?: number;
@@ -87,4 +46,6 @@ export interface LogEntry {
   startTime?: string;
   /** 提取的 token 使用量（从响应中提取） */
   tokenUsage?: TokenUsage;
+  /** Claude Code 客户端发送的 session id（来自 x-claude-code-session-id header） */
+  sessionId?: string | null;
 }

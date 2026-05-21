@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LogEntry, DiffEntry } from "../../lib/api";
-import { statusClass, formatValue } from "../../lib/format";
+import { statusClass, formatValue, formatTTFT, formatTPS } from "../../lib/format";
 import { JsonViewer } from "../JsonViewer";
 import styles from "./index.module.css";
 
@@ -171,6 +171,14 @@ export function LogDetailPanel({
               {log.tokenUsage.cacheCreationTokens != null && ` | 缓存创建 ${log.tokenUsage.cacheCreationTokens}`}
             </span>
           )}
+          <span>
+            <strong>首包：</strong>
+            {formatTTFT(log.firstChunkMs)}
+          </span>
+          <span>
+            <strong>TPS：</strong>
+            {formatTPS(log.tokenUsage?.outputTokens, log.durationMs, log.firstChunkMs)}
+          </span>
         </div>
 
         {/* 错误提示 */}

@@ -6,7 +6,7 @@ import {
   assembleAnthropicResponse,
   assembleOpenAIResponse,
 } from "./assemble";
-import type { LogStatus } from "../config/types";
+import type { LogStatus } from "../interfaces";
 
 export interface ProxyRequest {
   method: string;
@@ -73,6 +73,28 @@ export const proxyRequest = async (
   }
   Object.assign(forwardHeaders, target.headers);
 
+  if (target.auth?.value) {
+    const { type, headerName, value } = target.auth;
+    const matchKey =
+      type === "bearer"
+        ? "authorization"
+        : type === "x-api-key"
+          ? "x-api-key"
+          : (headerName?.toLowerCase() ?? "");
+    if (matchKey) {
+      for (const k of Object.keys(forwardHeaders)) {
+        if (k.toLowerCase() === matchKey) delete forwardHeaders[k];
+      }
+    }
+    if (type === "bearer") {
+      forwardHeaders["Authorization"] = `Bearer ${value}`;
+    } else if (type === "x-api-key") {
+      forwardHeaders["x-api-key"] = value;
+    } else if (type === "custom" && headerName) {
+      forwardHeaders[headerName] = value;
+    }
+  }
+
   // 构建合并后的请求体
   let requestBody: unknown = undefined;
   let originalBody: unknown = undefined;
@@ -108,6 +130,13 @@ export const proxyRequest = async (
   // 捕获修改后的请求头用于日志记录
   const modifiedHeaders: Record<string, string> = { ...forwardHeaders };
 
+  const sessionHeaderKey = Object.keys(originalHeaders).find(
+    (k) => k.toLowerCase() === "x-claude-code-session-id",
+  );
+  const sessionId = sessionHeaderKey
+    ? (originalHeaders[sessionHeaderKey] ?? null)
+    : null;
+
   // 1. 请求开始时立即创建日志（状态为 pending）
   createLog({
     id: logId,
@@ -125,6 +154,7 @@ export const proxyRequest = async (
     responseBody: null,
     durationMs: 0,
     status: "pending" as LogStatus,
+    sessionId,
   });
 
   let upstreamRes: Response;

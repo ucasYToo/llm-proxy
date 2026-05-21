@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { Config, Target, Channel } from "./types";
+import type { Config, Target, Channel } from "../interfaces";
 
 const CONFIG_DIR = path.join(process.env.HOME || "~", ".claude-proxy");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");

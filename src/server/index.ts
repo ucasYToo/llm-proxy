@@ -4,6 +4,29 @@ import path from "path";
 import fs from "fs-extra";
 import { setupApiRoutes } from "./routes";
 import { setupProxyRoutes } from "./proxy";
+import { onLogChange } from "../storage/logs";
+import { broadcast } from "./sse";
+import * as caffeinate from "../system/caffeinate";
+import { setServerPort } from "./state";
+
+let cleanupRegistered = false;
+
+const registerCleanupOnce = (): void => {
+  if (cleanupRegistered) return;
+  cleanupRegistered = true;
+  const stopAll = () => {
+    caffeinate.stop();
+  };
+  process.on("exit", stopAll);
+  process.on("SIGINT", () => {
+    stopAll();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    stopAll();
+    process.exit(0);
+  });
+};
 
 export interface ServerOptions {
   port: number;
@@ -31,11 +54,22 @@ export const startServer = async (
     next();
   });
 
+  // 记录实际端口，供路由层和 UI 读取
+  setServerPort(options.port);
+
   // 设置 API 路由
   setupApiRoutes(app);
 
   // 设置代理路由
   setupProxyRoutes(app);
+
+  // 把日志变更通过 SSE 推送到前端
+  onLogChange((entry, kind) => {
+    broadcast("log", { kind, entry });
+  });
+
+  // 确保进程退出时清理 caffeinate 子进程
+  registerCleanupOnce();
 
   // 健康检查
   app.get("/health", (req: Request, res: Response) => {

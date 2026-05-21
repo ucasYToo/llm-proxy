@@ -1,11 +1,11 @@
 .jsonViewer {
-  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 10px 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 14px;
   overflow: auto;
 }
 
@@ -17,18 +17,21 @@
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  padding: 1px 0;
+  padding: 1px 2px;
   border-radius: 3px;
   cursor: default;
 }
+
 .row:hover {
   background: rgba(0, 0, 0, 0.03);
 }
+
 .row:hover .copyBtn {
   opacity: 1;
 }
 
-/* 折叠/展开箭头 */
+/* ── Toggle Arrow ── */
+
 .toggle {
   flex-shrink: 0;
   width: 14px;
@@ -37,61 +40,73 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 10px;
   user-select: none;
   border-radius: 2px;
 }
+
 .toggle:hover {
-  color: #374151;
+  color: var(--text);
   background: rgba(0, 0, 0, 0.06);
 }
+
 .togglePlaceholder {
   flex-shrink: 0;
   width: 14px;
 }
 
-/* key */
+/* ── Key ── */
+
 .key {
-  color: #7c3aed;
+  color: var(--accent);
   flex-shrink: 0;
 }
+
 .colon {
-  color: #9ca3af;
+  color: var(--text-muted);
   margin-right: 4px;
   flex-shrink: 0;
 }
 
-/* value 类型颜色 */
+/* ── Value Type Colors ── */
+
 .valString {
-  color: #059669;
+  color: var(--success);
   word-break: break-all;
 }
+
 .valNumber {
   color: #2563eb;
 }
+
 .valBoolean {
-  color: #d97706;
+  color: var(--warning);
   font-weight: 600;
 }
+
 .valNull {
-  color: #9ca3af;
+  color: var(--text-muted);
   font-style: italic;
 }
+
 .valBracket {
-  color: #374151;
+  color: var(--text);
   font-weight: 600;
 }
+
 .valCollapsed {
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 11px;
   cursor: pointer;
 }
+
 .valCollapsed:hover {
-  color: #374151;
+  color: var(--text);
 }
 
-/* 复制按钮 */
+/* ── Copy Button ── */
+
 .copyBtn {
   opacity: 0;
   flex-shrink: 0;
@@ -99,28 +114,32 @@
   padding: 0 4px;
   height: 16px;
   font-size: 10px;
-  border: 1px solid #d1d5db;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
   border-radius: 3px;
-  background: #fff;
-  color: #6b7280;
+  background: var(--bg-card);
+  color: var(--text-secondary);
   cursor: pointer;
   line-height: 14px;
   transition: opacity 0.1s, color 0.1s, border-color 0.1s;
   align-self: center;
 }
+
 .copyBtn:hover {
-  color: #2563eb;
-  border-color: #2563eb;
-}
-.copyBtnDone {
-  opacity: 1 !important;
-  color: #059669 !important;
-  border-color: #059669 !important;
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
-/* 子节点缩进 */
+.copyBtnDone {
+  opacity: 1 !important;
+  color: var(--success) !important;
+  border-color: var(--success) !important;
+}
+
+/* ── Children Indent ── */
+
 .children {
   padding-left: 18px;
-  border-left: 1px solid #e5e7eb;
+  border-left: 1px solid var(--border);
   margin-left: 6px;
 }

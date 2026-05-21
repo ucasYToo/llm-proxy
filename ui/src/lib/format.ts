@@ -47,3 +47,30 @@ export const statusClass = (status: number): string => {
   if (status >= 200 && status < 300) return "statusOk";
   return "statusErr";
 };
+
+/** 首包延迟格式化（TTFT） */
+export const formatTTFT = (ms?: number): string => {
+  if (ms == null || ms <= 0) return "-";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+};
+
+/** 每秒生成 token 数（TPS）— 仅计算 decode 阶段 */
+export const formatTPS = (
+  outputTokens?: number,
+  durationMs?: number,
+  firstChunkMs?: number,
+): string => {
+  if (
+    outputTokens == null ||
+    outputTokens <= 0 ||
+    durationMs == null ||
+    firstChunkMs == null
+  ) {
+    return "-";
+  }
+  const decodeMs = durationMs - firstChunkMs;
+  if (decodeMs <= 0) return "-";
+  const tps = (outputTokens / decodeMs) * 1000;
+  return tps >= 100 ? `${Math.round(tps)}` : tps.toFixed(1);
+};

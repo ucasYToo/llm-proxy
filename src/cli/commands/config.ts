@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { readConfig, writeConfig, getActiveTarget, getChannels, addChannel, deleteChannel, setChannelActiveTarget } from "../../config/store";
-import type { Target, Channel } from "../../config/types";
+import type { Target, Channel } from "../../interfaces";
 import { v4 as uuidv4 } from "uuid";
 
 export const configCommand = (program: Command) => {

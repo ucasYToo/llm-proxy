@@ -2,16 +2,35 @@ import { useCallback, useEffect, useState } from "react";
 import type { Config } from "./lib/api";
 import ConfigTab from "./components/ConfigTab/index";
 import LogsTab from "./components/LogsTab/index";
+import DashboardTab from "./components/DashboardTab/index";
+import Sidebar, { type Tab } from "./components/Sidebar/index";
 import styles from "./App.module.css";
 
-type Tab = "config" | "logs";
+const VALID_TABS = new Set<Tab>(["config", "logs", "dashboard"]);
+
+const tabFromHash = (): Tab => {
+  const raw = window.location.hash.replace(/^#/, "") as Tab;
+  return VALID_TABS.has(raw) ? raw : "config";
+};
 
 const App = () => {
-  const [tab, setTab] = useState<Tab>("config");
+  const [tab, setTab] = useState<Tab>(tabFromHash);
+
+  useEffect(() => {
+    const onHashChange = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  const handleTabChange = (next: Tab) => {
+    window.location.hash = next;
+    setTab(next);
+  };
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [config, setConfig] = useState<Config>({
     activeTarget: "",
     targets: [],
+    channels: [],
     logCollection: {
       captureOriginalBody: false,
       captureRawStreamEvents: false,
@@ -42,45 +61,27 @@ const App = () => {
   };
 
   return (
-    <main className={styles.app}>
-      <div className={styles.appHeader}>
-        <h1>LLM Proxy</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {activeTarget ? (
-            <span className={styles.badge}>{activeTarget.name}</span>
-          ) : (
-            <span style={{ color: "#9ca3af", fontSize: 12 }}>未选择目标</span>
+    <div className={styles.shell}>
+      <Sidebar
+        tab={tab}
+        onTabChange={handleTabChange}
+        activeTargetName={activeTarget?.name}
+        onShutdown={handleShutdown}
+        isShuttingDown={isShuttingDown}
+      />
+
+      <main className={styles.content}>
+        <div className={`${styles.contentInner}${tab === "dashboard" ? ` ${styles.flexCol}` : ""}`}>
+          {tab === "config" && (
+            <ConfigTab config={config} onRefresh={fetchConfig} />
           )}
-          <button
-            className="btnDanger btnSm"
-            onClick={handleShutdown}
-            disabled={isShuttingDown}
-          >
-            {isShuttingDown ? "关闭中…" : "关闭服务"}
-          </button>
+          {tab === "logs" && <LogsTab config={config} />}
+          {tab === "dashboard" && (
+            <DashboardTab config={config} onRefresh={fetchConfig} />
+          )}
         </div>
-      </div>
-
-      <div className={styles.tabs}>
-        <button
-          className={`${styles.tabBtn}${tab === "config" ? ` ${styles.active}` : ""}`}
-          onClick={() => setTab("config")}
-        >
-          配置
-        </button>
-        <button
-          className={`${styles.tabBtn}${tab === "logs" ? ` ${styles.active}` : ""}`}
-          onClick={() => setTab("logs")}
-        >
-          日志
-        </button>
-      </div>
-
-      {tab === "config" && (
-        <ConfigTab config={config} onRefresh={fetchConfig} />
-      )}
-      {tab === "logs" && <LogsTab config={config} />}
-    </main>
+      </main>
+    </div>
   );
 };
 
