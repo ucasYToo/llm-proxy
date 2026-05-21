@@ -1,9 +1,9 @@
 {
   "name": "llm-proxy-view",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "LLM Proxy CLI - 代理转发和日志管理工具",
   "bin": {
-    "claude-proxy": "./bin/cli.js"
+    "claude-proxy": "bin/cli.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ucasYToo/llm-proxy.git"
+    "url": "git+https://github.com/ucasYToo/llm-proxy.git"
   },
   "keywords": [
     "claude",
@@ -42,6 +42,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.10.0",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "cors": "^2.8.5",
