@@ -38,11 +38,18 @@ export interface DingTalkConfig {
   secret?: string;
 }
 
+export interface FeishuConfig {
+  enabled?: boolean;
+  webhookUrl?: string;
+  secret?: string;
+}
+
 export interface NotificationSettings {
   stop?: boolean;
   subagentStop?: boolean;
   notification?: boolean;
   dingtalk?: DingTalkConfig;
+  feishu?: FeishuConfig;
 }
 
 export interface Config {
@@ -350,6 +357,21 @@ export async function testDingTalk(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error ?? "钉钉测试发送失败");
+  }
+}
+
+export async function testFeishu(
+  webhookUrl?: string,
+  secret?: string,
+): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "testFeishu", webhookUrl, secret }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "飞书测试发送失败");
   }
 }
 

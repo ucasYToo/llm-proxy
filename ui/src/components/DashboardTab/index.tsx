@@ -15,6 +15,7 @@ import {
   fetchCaffeinate,
   setCaffeinate,
   testDingTalk,
+  testFeishu,
   updateNotifications,
   clearHooks,
 } from "../../lib/api";
@@ -26,6 +27,7 @@ import { useEventFilter } from "./useEventFilter";
 import SessionList from "./SessionList";
 import EventStream from "./EventStream";
 import DingTalkPanel from "./DingTalkPanel";
+import FeishuPanel from "./FeishuPanel";
 import ProjectCard from "./ProjectCard";
 import styles from "./index.module.css";
 
@@ -48,11 +50,13 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     active: false,
   });
   const [dingtalkOpen, setDingtalkOpen] = useState(false);
+  const [feishuOpen, setFeishuOpen] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   const filter = useEventFilter();
   const notifications: NotificationSettings = config.notifications ?? {};
   const dingtalk = notifications.dingtalk ?? {};
+  const feishu = notifications.feishu ?? {};
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -232,6 +236,42 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
       alert("钉钉测试失败：" + String(e));
     } finally {
       setDingTesting(false);
+    }
+  };
+
+  const [feishuSaving, setFeishuSaving] = useState(false);
+  const [feishuTesting, setFeishuTesting] = useState(false);
+
+  const handleToggleFeishu = async (enabled: boolean) => {
+    try {
+      await updateNotifications({ feishu: { enabled } });
+      onRefresh();
+    } catch (e) {
+      alert("更新飞书通知失败：" + String(e));
+    }
+  };
+
+  const handleSaveFeishu = async (webhookUrl: string, secret: string) => {
+    setFeishuSaving(true);
+    try {
+      await updateNotifications({ feishu: { webhookUrl, secret } });
+      onRefresh();
+    } catch (e) {
+      alert("保存飞书配置失败：" + String(e));
+    } finally {
+      setFeishuSaving(false);
+    }
+  };
+
+  const handleTestFeishu = async (webhookUrl: string, secret: string) => {
+    setFeishuTesting(true);
+    try {
+      await testFeishu(webhookUrl, secret);
+      alert("已发送测试消息，请到飞书群确认");
+    } catch (e) {
+      alert("飞书测试失败：" + String(e));
+    } finally {
+      setFeishuTesting(false);
     }
   };
 
@@ -422,6 +462,24 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           </button>
         </div>
 
+        <div className={styles.toggleGroup}>
+          <label className={styles.toggleChip} title="开启后，被勾选的事件会同时推送飞书群机器人">
+            <input
+              type="checkbox"
+              checked={!!feishu.enabled}
+              onChange={(e) => void handleToggleFeishu(e.target.checked)}
+            />
+            飞书
+          </label>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => setFeishuOpen((v) => !v)}
+          >
+            {feishuOpen ? "收起" : "配置"}
+          </button>
+        </div>
+
         <div className={styles.toolbarSpacer} />
 
         {selectedSession && (
@@ -442,6 +500,16 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           testing={dingTesting}
           onSave={handleSaveDingTalk}
           onTest={handleTestDingTalk}
+        />
+      )}
+
+      {feishuOpen && (
+        <FeishuPanel
+          config={feishu}
+          saving={feishuSaving}
+          testing={feishuTesting}
+          onSave={handleSaveFeishu}
+          onTest={handleTestFeishu}
         />
       )}
 

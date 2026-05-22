@@ -10,6 +10,7 @@ import { readClaudeSettings, writeClaudeSettings } from "../lib/claude-settings"
 import { addClient, broadcast } from "./sse";
 import { notify } from "../notify/macos";
 import { sendDingTalkMarkdown } from "../notify/dingtalk";
+import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
@@ -302,6 +303,25 @@ export const setupApiRoutes = (app: Express) => {
           }
         });
       }
+
+      const feishu = notifications?.feishu;
+      if (feishu?.enabled && feishu.webhookUrl) {
+        const text = [
+          `${title} · ${eventLabel}`,
+          `session: ${sessionTail}`,
+          projectName ? `project: ${projectName}` : null,
+          `time: ${new Date().toLocaleString()}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        void sendFeishuText(feishu.webhookUrl, feishu.secret ?? "", text).then(
+          (r) => {
+            if (!r.ok) {
+              console.warn(`[feishu] 发送失败: ${r.error}`);
+            }
+          },
+        );
+      }
     }
 
     res.json({ ok: true, id: entry.id });
@@ -582,12 +602,35 @@ export const setupApiRoutes = (app: Express) => {
         break;
       }
 
+      case "testFeishu": {
+        const { webhookUrl, secret } = req.body as {
+          webhookUrl?: string;
+          secret?: string;
+        };
+        const url = webhookUrl ?? config.notifications?.feishu?.webhookUrl ?? "";
+        const sec = secret ?? config.notifications?.feishu?.secret ?? "";
+        const r = await sendFeishuText(
+          url,
+          sec,
+          `Claude Code 飞书通知测试\n配置生效 ✅\n\ntime: ${new Date().toLocaleString()}`,
+        );
+        if (!r.ok) {
+          res.status(400).json({ error: r.error ?? "send failed" });
+          return;
+        }
+        res.json({ ok: true });
+        break;
+      }
+
       case "updateNotifications": {
         const { notifications } = req.body as { notifications: NotificationSettings };
         const prev = config.notifications ?? {};
         const next: NotificationSettings = { ...prev, ...notifications };
         if (notifications.dingtalk) {
           next.dingtalk = { ...(prev.dingtalk ?? {}), ...notifications.dingtalk };
+        }
+        if (notifications.feishu) {
+          next.feishu = { ...(prev.feishu ?? {}), ...notifications.feishu };
         }
         config.notifications = next;
         writeConfig(config);

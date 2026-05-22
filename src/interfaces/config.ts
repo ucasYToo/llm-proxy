@@ -59,15 +59,26 @@ export interface DingTalkConfig {
   secret?: string;
 }
 
+export interface FeishuConfig {
+  /** 是否启用飞书通知（与 stop/subagentStop/notification 开关共同决定是否发送） */
+  enabled?: boolean;
+  /** 飞书自定义机器人 webhook 完整地址 */
+  webhookUrl?: string;
+  /** 飞书机器人签名校验 secret（机器人安全设置里启用"签名校验"得到） */
+  secret?: string;
+}
+
 export interface NotificationSettings {
-  /** Stop 事件 -> 触发通知（macOS + 钉钉） */
+  /** Stop 事件 -> 触发通知（macOS + 钉钉 + 飞书） */
   stop?: boolean;
-  /** SubagentStop 事件 -> 触发通知（macOS + 钉钉） */
+  /** SubagentStop 事件 -> 触发通知（macOS + 钉钉 + 飞书） */
   subagentStop?: boolean;
-  /** Notification 事件 -> 触发通知（macOS + 钉钉） */
+  /** Notification 事件 -> 触发通知（macOS + 钉钉 + 飞书） */
   notification?: boolean;
   /** 钉钉配置，与上面三个事件开关协同工作 */
   dingtalk?: DingTalkConfig;
+  /** 飞书配置，与上面三个事件开关协同工作 */
+  feishu?: FeishuConfig;
 }
 
 /* ── Config ── */

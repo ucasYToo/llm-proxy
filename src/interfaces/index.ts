@@ -5,6 +5,7 @@ export type {
   Channel,
   LogCollection,
   DingTalkConfig,
+  FeishuConfig,
   NotificationSettings,
   Config,
 } from "./config";
