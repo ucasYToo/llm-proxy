@@ -534,6 +534,28 @@ export const setupApiRoutes = (app: Express) => {
         break;
       }
 
+      case "importTargets": {
+        const { targets } = req.body as { targets: Omit<Target, "id">[] };
+        if (!Array.isArray(targets)) {
+          res.status(400).json({ error: "targets must be an array" });
+          return;
+        }
+        const added: Target[] = [];
+        for (const t of targets) {
+          if (!t.name || !t.url) continue;
+          const { id: _, ...rest } = t as Target;
+          const newTarget: Target = { id: uuidv4(), ...rest };
+          config.targets.push(newTarget);
+          added.push(newTarget);
+        }
+        if (!config.activeTarget && added.length > 0) {
+          config.activeTarget = added[0].id;
+        }
+        writeConfig(config);
+        res.json({ ok: true, added: added.length });
+        break;
+      }
+
       case "updateLogCollection": {
         const { logCollection } = req.body as { logCollection: LogCollection };
         config.logCollection = {

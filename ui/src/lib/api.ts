@@ -225,6 +225,17 @@ export async function deleteTarget(targetId: string): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete target");
 }
 
+export async function importTargets(targets: Omit<Target, "id">[]): Promise<number> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "importTargets", targets }),
+  });
+  if (!res.ok) throw new Error("Failed to import targets");
+  const data = await res.json();
+  return data.added;
+}
+
 export async function clearLogs(): Promise<void> {
   const res = await fetch("/api/query?type=logs", { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to clear logs");

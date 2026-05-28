@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Config, Target, LogCollection, Channel } from "../../lib/api";
-import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget } from "../../lib/api";
+import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget, importTargets } from "../../lib/api";
 import TargetForm from "../TargetForm/index";
 import styles from "./index.module.css";
 
@@ -19,6 +19,11 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
   const [editChannelName, setEditChannelName] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelId, setNewChannelId] = useState("");
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importJson, setImportJson] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
 
   const channels = config.channels ?? [];
   const port = config.serverPort ?? 1998;
@@ -203,21 +208,91 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
     setEditChannelName("");
   };
 
+  const handleExport = () => {
+    setSelectedTargets(new Set());
+    setShowExportModal(true);
+  };
+
+  const handleExportConfirm = async () => {
+    const targetsToExport = config.targets.filter((t) => selectedTargets.has(t.id));
+    if (targetsToExport.length === 0) return;
+
+    const json = JSON.stringify(targetsToExport, null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      alert(`已复制 ${targetsToExport.length} 个目标到剪贴板`);
+      setShowExportModal(false);
+    } catch {
+      prompt("请手动复制以下内容：", json);
+    }
+  };
+
+  const toggleTargetSelection = (id: string) => {
+    const newSet = new Set(selectedTargets);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedTargets(newSet);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedTargets.size === config.targets.length) {
+      setSelectedTargets(new Set());
+    } else {
+      setSelectedTargets(new Set(config.targets.map((t) => t.id)));
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importJson.trim()) return;
+    try {
+      const targets = JSON.parse(importJson);
+      if (!Array.isArray(targets)) {
+        alert("格式错误：需要是 JSON 数组");
+        return;
+      }
+      setImportLoading(true);
+      const added = await importTargets(targets);
+      alert(`成功导入 ${added} 个目标`);
+      setShowImportModal(false);
+      setImportJson("");
+      onRefresh();
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        alert("JSON 格式错误：" + e.message);
+      } else {
+        alert("导入失败：" + String(e));
+      }
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   return (
     <div>
       {/* 转发目标 */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <span className={styles.sectionTitle}>转发目标</span>
-          <button
-            className="btnPrimary btnSm"
-            onClick={() => {
-              setEditTarget(undefined);
-              setShowForm(true);
-            }}
-          >
-            + 添加目标
-          </button>
+          <div className={styles.headerActions}>
+            <button className="btnGhost btnSm" onClick={handleExport} disabled={config.targets.length === 0}>
+              导出
+            </button>
+            <button className="btnGhost btnSm" onClick={() => setShowImportModal(true)}>
+              导入
+            </button>
+            <button
+              className="btnPrimary btnSm"
+              onClick={() => {
+                setEditTarget(undefined);
+                setShowForm(true);
+              }}
+            >
+              + 添加目标
+            </button>
+          </div>
         </div>
 
         {config.targets.length === 0 ? (
@@ -617,6 +692,78 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
           请求路径会直接拼接到该通道选中目标的 Base URL 后，配置的 Headers 和 Body 参数会自动合并进每次请求。
         </p>
       </div>
+
+      {/* 导入弹窗 */}
+      {showImportModal && (
+        <div className={styles.modalOverlay} onClick={() => !importLoading && setShowImportModal(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <span className={styles.modalTitle}>导入目标配置</span>
+              <button className={styles.modalClose} onClick={() => setShowImportModal(false)} disabled={importLoading}>×</button>
+            </div>
+            <p className={styles.modalDesc}>
+              粘贴从其他设备导出的 JSON 配置。支持粘贴完整目标数组或单个目标对象。
+            </p>
+            <textarea
+              className={styles.modalTextarea}
+              value={importJson}
+              onChange={(e) => setImportJson(e.target.value)}
+              placeholder={`[\n  {\n    "name": "OpenAI",\n    "url": "https://api.openai.com/v1",\n    "auth": { "type": "bearer", "value": "sk-xxx" }\n  }\n]`}
+              disabled={importLoading}
+              rows={12}
+            />
+            <div className={styles.modalActions}>
+              <button className="btnGhost" onClick={() => setShowImportModal(false)} disabled={importLoading}>
+                取消
+              </button>
+              <button className="btnPrimary" onClick={handleImport} disabled={importLoading || !importJson.trim()}>
+                {importLoading ? "导入中..." : "导入"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 导出选择弹窗 */}
+      {showExportModal && (
+        <div className={styles.modalOverlay} onClick={() => setShowExportModal(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <span className={styles.modalTitle}>导出目标配置</span>
+              <button className={styles.modalClose} onClick={() => setShowExportModal(false)}>×</button>
+            </div>
+            <div className={styles.exportList}>
+              <label className={styles.exportSelectAll}>
+                <input
+                  type="checkbox"
+                  checked={selectedTargets.size === config.targets.length}
+                  onChange={toggleSelectAll}
+                />
+                <span>全选（{selectedTargets.size}/{config.targets.length}）</span>
+              </label>
+              {config.targets.map((t) => (
+                <label key={t.id} className={styles.exportItem}>
+                  <input
+                    type="checkbox"
+                    checked={selectedTargets.has(t.id)}
+                    onChange={() => toggleTargetSelection(t.id)}
+                  />
+                  <span className={styles.exportItemName}>{t.name}</span>
+                  <span className={styles.exportItemUrl}>{t.url}</span>
+                </label>
+              ))}
+            </div>
+            <div className={styles.modalActions}>
+              <button className="btnGhost" onClick={() => setShowExportModal(false)}>
+                取消
+              </button>
+              <button className="btnPrimary" onClick={handleExportConfirm} disabled={selectedTargets.size === 0}>
+                复制到剪贴板
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <TargetForm

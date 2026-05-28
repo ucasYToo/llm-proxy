@@ -1,25 +1,27 @@
 # claude-proxy
 
-LLM Proxy CLI - 代理转发和日志管理工具。将 LLM API 请求通过本地代理服务器转发到上游服务，支持 Claude Code hook 集成、多通道管理、通知推送和 Web 控制台。
+LLM Proxy CLI — 为 Claude Code 设计的本地代理网关，支持多目标路由、费用追踪、实时通知和 Web 控制台。
 
 ## 功能特性
 
-- **请求代理** - 转发请求到上游 LLM API，支持代理模式和直连模式
-- **Claude Code Hook 集成** - 自动注册 hook 到 Claude Code，捕获会话事件
-- **多通道管理** - 支持多个独立通道，每个通道绑定不同的上游目标
-- **实时通知** - macOS 系统通知 + 钉钉机器人推送（Stop / SubagentStop / Notification 事件）
-- **Web 控制台** - 内置 Dashboard，实时 SSE 事件流、日志查看、配置管理
-- **流式响应** - SSE 流式响应的拦截、解析和组装
-- **日志记录** - 完整的请求/响应日志（SQLite 存储），包括 token 使用量统计
-- **防休眠** - 可选的 caffeinate 机制，防止 Mac 在任务执行期间休眠
+- **请求代理** — 转发 LLM API 请求到上游服务，支持直连和代理两种模式
+- **多通道管理** — 多个独立路由通道，每个通道绑定不同上游目标，可独立切换
+- **费用追踪** — 自动记录每次请求的 token 用量与费用（USD），支持按会话 / 目标 / 模型 / 时间段聚合统计
+- **预算控制** — 设置每日 / 每月预算上限，超出阈值自动告警
+- **macOS 状态栏** — 原生 Swift 应用，实时显示当前模型、今日费用和请求状态
+- **会话分析** — 会话健康度评估、Token 时间线、工具调用热力图、子代理瀑布图
+- **Claude Code Hook** — 自动注册 hook，捕获完整会话生命周期事件
+- **实时通知** — macOS 系统通知 / 钉钉机器人 / 飞书机器人，多通道独立配置
+- **Web 控制台** — 内置 Dashboard，实时 SSE 事件流、费用分析、配置管理
+- **防休眠** — 可选 caffeinate，Mac 长时间任务不休眠
 
 ## 安装
 
 ```bash
-npm install -g .
+npm install -g llm-proxy-view
 ```
 
-或本地运行：
+或本地开发运行：
 
 ```bash
 npm install
@@ -27,9 +29,19 @@ npm run build
 node bin/cli.js --help
 ```
 
-## 使用方法
+## 快速开始
 
-### 启动代理服务器
+```bash
+# 1. 启动服务
+claude-proxy start
+
+# 2. 打开 Web 控制台（默认 http://localhost:1998）
+# 3. 在「配置」页添加上游目标（如 OpenAI / Anthropic）
+# 4. 点击「接入代理」将 Claude Code 指向代理
+# 5. 开始使用 Claude Code，请求自动经过代理记录
+```
+
+## 启动选项
 
 ```bash
 claude-proxy start [options]
@@ -37,128 +49,118 @@ claude-proxy start [options]
 
 | 选项 | 描述 | 默认值 |
 |------|------|--------|
-| `-p, --port <number>` | 监听端口 | 1998 |
-| `--host <address>` | 绑定地址 | localhost |
-| `--ui` | 启用 Web UI（默认开启） | true |
+| `-p, --port <number>` | 监听端口 | `1998` |
+| `--host <address>` | 绑定地址 | `localhost` |
+| `--ui` | 启用 Web UI | `true` |
+| `--no-statusbar` | 禁用 macOS 状态栏应用 | 启用 |
 
-### Web 控制台
+## Web 控制台
 
-启动服务后访问 `http://localhost:1998`（默认端口），即可打开 Web 控制台。左侧边栏有三个页面：**配置**、**日志**、**Dashboard**。
+启动服务后访问 `http://localhost:1998`，包含以下页面：
 
-#### 配置页
+### 配置页
 
 管理上游目标、通道和 Claude Code 集成。
 
 **添加上游目标：**
 
-1. 点击「添加目标」按钮
-2. 填写表单：
-   - **名称** - 目标的显示名（如 "OpenAI"、"Claude"）
-   - **URL** - 上游 API 地址（如 `https://api.openai.com/v1`）
-   - **认证方式** - 支持 Bearer Token / API Key / 自定义 Header，填入对应的 token 值
-   - **模型映射**（可选）- 当请求的 model 字段匹配时，自动替换为目标模型（如统一映射到 `claude-opus-4-7`）
-   - **Body 参数**（可选）- 额外注入到请求 body 的 JSON 字段（如 `{"temperature": 0.7}`）
-3. 保存后，在目标列表中点击「设为活动」即可切换当前使用的上游
+1. 点击「添加目标」
+2. 填写名称、URL、认证方式（Bearer Token / API Key / 自定义 Header）
+3. 可选配置模型映射和额外 Body 参数
+4. 保存后在目标列表中点击「设为活动」切换上游
 
 **通道管理：**
 
-通道是代理的路由入口，每个通道绑定一个活动目标。可以在通道卡片上：
+每个通道是一个独立的路由入口，绑定一个活动目标：
 
-- 点击「接入代理」把 Claude Code 的 `ANTHROPIC_BASE_URL` 指向该通道的代理地址
-- 点击「直连」恢复 Claude Code 直连上游（绕过代理）
-- 点击「编辑」修改通道名称
-- 点击「删除」移除通道
-
-> 提示：切换通道的活动目标后，如果该通道已接入 Claude Code，代理会自动联动更新。
+- **接入代理** — 将 Claude Code 的 `ANTHROPIC_BASE_URL` 指向该通道的代理地址
+- **切到直连** — 恢复 Claude Code 直连上游，绕过代理
+- 切换通道的活动目标后，已接入的 Claude Code 会自动联动更新
 
 **日志采集设置：**
 
-在配置页底部可以开关：
-- **捕获原始请求体** - 记录未脱敏的请求/响应 body
-- **捕获原始 SSE 流** - 记录完整的 SSE 事件流（调试用，可能较大）
+- **捕获原始请求体** — 记录未脱敏的请求/响应 body
+- **捕获原始 SSE 流** — 记录完整的 SSE 事件流
 
-#### 日志页
+### 日志页
 
-查看所有代理转发的请求/响应记录。支持：
+查看所有代理请求记录，支持按目标筛选、实时 SSE 推送、点击展开详情查看完整请求头和 token 用量。
 
-- 按上游目标名称筛选
-- 点击单条日志展开详情面板，查看完整的请求头、请求体、响应体和 token 用量
-- 实时自动刷新（新日志通过 SSE 推送，无需手动刷新）
+### Dashboard 页
 
-#### Dashboard 页
+实时监控 Claude Code 会话活动，按项目分组展示。
 
-实时监控 Claude Code 的会话活动，按项目（工作目录）分组展示。
+**通知设置：**
 
-**工具栏设置：**
+| 通道 | 支持的事件 | 配置项 |
+|------|-----------|--------|
+| macOS 系统通知 | Stop / SubagentStop / Notification | 按事件独立勾选 |
+| 钉钉机器人 | 同上 | webhook accessToken + secret |
+| 飞书机器人 | 同上 | webhook URL + 签名密钥 |
 
-- **macOS 通知** - 勾选 Stop / SubagentStop / Notification，对应事件触发时会弹出系统通知
-- **防止睡眠**（仅 macOS）- 开启后启动 `caffeinate`，锁屏/合盖也保持系统不睡眠，适合长时间任务
-- **钉钉机器人** - 勾选启用后点击「配置」，填入 webhook 的 accessToken 和 secret，可点击「发送测试消息」验证
-- **飞书机器人** - 勾选启用后点击「配置」，填入 webhook URL 和签名密钥（可选），同样支持测试
+> 各通道的通知事件独立配置，互不影响。推送内容包含事件类型和最后一条 assistant 回复。
 
-> 钉钉/飞书推送的事件和 macOS 通知一致（Stop / SubagentStop / Notification），并附带最后一条 assistant 回复内容。
+**其他设置：**
 
-**事件浏览：**
+- **防休眠**（仅 macOS）— 启动 `caffeinate`，锁屏 / 合盖保持系统不睡眠
+- **事件过滤** — 按事件类型过滤、关键词搜索
 
-- 概览视图按项目分组，每个卡片显示该项目下的最近事件
-- 点击项目卡片进入会话列表，选择具体会话查看完整时间线（hook 事件 + 代理日志混合排序）
-- 顶部工具栏支持按事件类型过滤（如只看 `PostToolUse`）和关键词搜索
-- 点击事件条目展开详情面板，查看完整的 hook payload 或请求/响应详情
-- 点击「← 返回概览」回到项目分组视图
+### 分析页
 
-**关闭服务：** 点击左侧边栏底部的「关闭服务」按钮，会弹出确认对话框。服务关闭后需要重新 `claude-proxy start` 启动。
+费用与性能分析面板：
 
-### Hook 管理
+- **费用概览** — 今日 / 本周 / 本月总费用，预算使用进度
+- **费用趋势图** — 按时间维度的费用折线图
+- **模型分布** — 各模型费用占比
+- **目标费用表** — 按上游目标聚合的费用统计
+- **Top 会话** — 费用最高的会话列表
 
-将本工具的 HTTP hook 注册到 Claude Code（写入 `~/.claude/settings.json`），捕获会话事件。
+### 会话分析面板
+
+点击会话进入深度分析：
+
+- **健康度仪表盘** — 成功率、缓存命中率、平均延迟、错误率
+- **Token 时间线** — 每次请求的 token 用量变化趋势
+- **工具热力图** — 各工具调用频次分布
+- **子代理瀑布图** — 子代理的启动 / 结束时间线
+
+### 状态栏面板
+
+macOS 状态栏应用的配置与状态展示，显示实时费用、当前模型和运行状态。
+
+## Hook 管理
+
+将 HTTP hook 注册到 Claude Code，自动捕获会话事件：
 
 ```bash
-claude-proxy hook install   # 注册 hook
-claude-proxy hook status    # 查看已注册的 hook
-claude-proxy hook uninstall # 移除所有 hook
+claude-proxy hook install    # 注册 hook
+claude-proxy hook status     # 查看已注册 hook
+claude-proxy hook uninstall  # 移除所有 hook
 ```
 
-注册的 hook 事件：`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `SubagentStart`, `SubagentStop`, `Stop`, `SessionEnd`
+注册的事件：`SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` / `Notification` / `SubagentStart` / `SubagentStop` / `Stop` / `SessionEnd`
 
-### 配置管理
-
-```bash
-claude-proxy config <action> [options]
-```
-
-**目标操作：**
-
-| 命令 | 描述 |
-|------|------|
-| `list` | 列出所有目标 |
-| `add` | 添加新目标 |
-| `set-active` | 设置活动目标 |
-| `delete` | 删除目标 |
-| `show` | 显示当前配置 |
-
-添加目标示例：
+## 配置管理
 
 ```bash
-claude-proxy config add \
-  --name "OpenAI" \
+# 目标操作
+claude-proxy config list                                    # 列出所有目标
+claude-proxy config add --name "OpenAI" \                   # 添加目标
   --url "https://api.openai.com/v1" \
   --headers '{"Authorization":"Bearer sk-xxx"}' \
-  --body-params '{"temperature":0.7}' \
   --anthropic-model "claude-opus-4-7"
+claude-proxy config set-active <target-id>                  # 设置活动目标
+claude-proxy config delete <target-id>                      # 删除目标
+
+# 通道管理
+claude-proxy config channel list                            # 列出所有通道
+claude-proxy config channel add --name "测试"                # 添加通道
+claude-proxy config channel set-active \                    # 设置通道活动目标
+  --channel <channelId> --target <targetName>
+claude-proxy config channel delete --channel <channelId>    # 删除通道
 ```
 
-**通道管理：**
-
-```bash
-claude-proxy config channel list                  # 列出所有通道
-claude-proxy config channel add --name "测试"      # 添加通道
-claude-proxy config channel set-active \
-  --channel <channelId> --target <targetName>     # 设置通道的活动目标
-claude-proxy config channel delete \
-  --channel <channelId>                           # 删除通道
-```
-
-### 日志查看
+## 日志查看
 
 ```bash
 claude-proxy logs [options]
@@ -167,9 +169,9 @@ claude-proxy clear-logs
 
 | 选项 | 描述 | 默认值 |
 |------|------|--------|
-| `-l, --limit <number>` | 限制条数 | 20 |
-| `-t, --target <name>` | 按目标筛选 | - |
-| `--json` | JSON 格式输出 | false |
+| `-l, --limit <number>` | 限制条数 | `20` |
+| `-t, --target <name>` | 按目标筛选 | — |
+| `--json` | JSON 格式输出 | `false` |
 
 ## API 端点
 
@@ -180,122 +182,53 @@ claude-proxy clear-logs
 | GET | `/api/query?type=logs` | 查询日志 |
 | GET | `/api/query?type=hooks` | 查询 hook 事件 |
 | GET | `/api/query?type=sessions` | 查询最近会话 |
-| GET | `/api/query?type=session-timeline` | 查询会话时间线（hook+log） |
+| GET | `/api/query?type=session-timeline` | 查询会话时间线 |
 | GET | `/api/query?type=caffeinate` | 查询防休眠状态 |
+| GET | `/api/query?type=cost-summary` | 查询费用汇总 |
+| GET | `/api/query?type=cost-trend` | 查询费用趋势 |
+| GET | `/api/query?type=cost-session` | 查询会话费用明细 |
+| GET | `/api/query?type=session-analytics` | 查询会话分析数据 |
+| GET | `/api/query?type=pricing` | 查询定价信息 |
 | GET | `/api/events` | SSE 实时事件流 |
-| POST | `/api/hooks/:event` | Claude Code hook 回调入口 |
+| POST | `/api/hooks/:event` | Claude Code hook 回调 |
 | POST | `/api/set` | 修改配置 |
 | DELETE | `/api/query?type=logs` | 清空日志 |
 | DELETE | `/api/query?type=hooks` | 清空 hook 事件 |
+| DELETE | `/api/query?type=cost` | 清空费用记录 |
 | POST | `/api/shutdown` | 关闭服务器 |
 | ALL | `/:channelId?/proxy/*` | 代理请求（按通道） |
 
-### 代理请求示例
-
-```bash
-# 默认通道
-curl http://localhost:1998/proxy/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}]}'
-
-# 指定通道
-curl http://localhost:1998/my-channel/proxy/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}]}'
-```
-
 ## 配置存储
+
+所有数据存储在 `~/.claude-proxy/` 目录，使用 SQLite 格式：
 
 ```
 ~/.claude-proxy/
-├ config.sqlite   # 配置和日志（SQLite）
-└ ...
+├── config.sqlite    # 配置、日志、费用记录
+└── ...
 ```
-
-### 配置结构
-
-```json
-{
-  "activeTarget": "target-id",
-  "claudeCodeChannelId": "default",
-  "targets": [
-    {
-      "id": "uuid",
-      "name": "OpenAI",
-      "url": "https://api.openai.com/v1",
-      "headers": {},
-      "bodyParams": {},
-      "anthropicModel": "claude-opus-4-7",
-      "auth": {
-        "type": "bearer",
-        "headerName": "Authorization",
-        "value": "sk-xxx"
-      }
-    }
-  ],
-  "channels": [
-    {
-      "id": "default",
-      "name": "默认通道",
-      "activeTarget": "target-id"
-    }
-  ],
-  "logCollection": {
-    "captureOriginalBody": false,
-    "captureRawStreamEvents": false
-  },
-  "notifications": {
-    "stop": true,
-    "subagentStop": true,
-    "notification": true,
-    "dingtalk": {
-      "enabled": false,
-      "accessToken": "",
-      "secret": ""
-    }
-  }
-}
-```
-
-## Claude Code 集成
-
-通过 `hook install` 注册后，claude-proxy 会自动接管 Claude Code 的环境变量。在 Web UI 中可以：
-
-- **接入代理**：将 Claude Code 的 `ANTHROPIC_BASE_URL` 指向代理，请求经过代理转发并记录日志
-- **切到直连**：恢复 Claude Code 直连上游，绕过代理
-- **切换目标**：更换通道的活动目标后，自动联动更新 Claude Code 配置
-- **防休眠**：开启 caffeinate 防止 Mac 在长时间任务中休眠
-
-## 通知系统
-
-### macOS 系统通知
-
-在 Web UI 中启用后，以下事件会推送系统通知：
-- **Stop** - 主任务完成
-- **SubagentStop** - 子代理完成
-- **Notification** - Claude Code 通知
-
-### 钉钉机器人
-
-配置钉钉机器人 webhook 后，同样的事件会推送到钉钉群，并附带最后一条 assistant 回复内容。
 
 ## 开发
 
 ```bash
-npm run build     # 构建
-npm run dev       # 开发模式
-npm run dev:ui    # UI 开发模式
-npm test          # 测试
+npm install
+npm run dev          # 后端开发模式（tsx）
+npm run dev:ui       # UI 开发模式（vite）
+npm run build        # 构建
+npm run build:swift  # 编译 macOS 状态栏应用
+npm run build:all    # 构建全部（后端 + UI + Swift）
+npm test             # 测试
 ```
 
 ## 技术栈
 
-- **Node.js** + **TypeScript** - 运行时与类型安全
-- **Express.js** - HTTP 服务器
-- **better-sqlite3** - SQLite 数据存储
-- **Commander.js** + **chalk** + **ora** - CLI 框架
-- **React** + **Vite** - Web 控制台
-- **SSE** - 实时事件推送
+- **Node.js** + **TypeScript** — 运行时与类型安全
+- **Express.js** — HTTP 服务器
+- **better-sqlite3** — SQLite 数据存储
+- **Commander.js** + **chalk** + **ora** — CLI 框架
+- **React** + **Vite** — Web 控制台
+- **Swift** — macOS 状态栏原生应用
+- **SSE** — 实时事件推送
 
 ## 许可证
 
