@@ -2,7 +2,7 @@ import { Express, Request, Response } from "express";
 import path from "path";
 import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTarget, getChannels } from "../config/store";
 import { queryLogs, clearLogs } from "../storage/logs";
-import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations } from "../storage/hooks";
+import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations, getActiveSessionStatus } from "../storage/hooks";
 import {
   aggregateCostBySession,
   aggregateCostByTimeRange,
@@ -216,6 +216,23 @@ export const setupApiRoutes = (app: Express) => {
       const limit =
         req.query.limit === undefined ? undefined : Number(req.query.limit);
       res.json({ sessions: recentSessions(withinMs, limit) });
+      return;
+    }
+
+    if (type === "status") {
+      const activeSessions = getActiveSessionStatus();
+      // 聚合状态：waiting > running > idle
+      let overall: "idle" | "running" | "waiting" = "idle";
+      for (const s of activeSessions) {
+        if (s.status === "waiting") {
+          overall = "waiting";
+          break;
+        }
+        if (s.status === "running") {
+          overall = "running";
+        }
+      }
+      res.json({ status: overall, activeSessions });
       return;
     }
 

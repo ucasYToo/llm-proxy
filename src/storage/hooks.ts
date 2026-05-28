@@ -504,3 +504,77 @@ export const getSubagentRelations = (sessionId: string): SubagentRelation[] => {
     };
   });
 };
+
+export type SessionStatus = "idle" | "running" | "waiting";
+
+export interface ActiveSessionStatus {
+  sessionId: string;
+  status: SessionStatus;
+  lastEventAt: string;
+  lastEventName: string;
+}
+
+/**
+ * 获取活跃会话的状态（用于红绿灯指示）。
+ *
+ * 逻辑：
+ * - idle: 没有活跃会话（最近 5 分钟内无事件，或所有会话已 Stop/SessionEnd）
+ * - waiting: 某个活跃会话的最后事件是 PreToolUse（等待用户确认）
+ * - running: 有活跃会话且正在正常执行
+ */
+export const getActiveSessionStatus = (
+  withinMs = 5 * 60 * 1000,
+): ActiveSessionStatus[] => {
+  const since = new Date(Date.now() - withinMs).toISOString();
+  const db = getDb();
+
+  // 获取最近有活动的会话
+  const sessions = db
+    .prepare(
+      `SELECT sessionId, MAX(createdAt) AS lastEventAt
+       FROM hooks
+       WHERE sessionId IS NOT NULL AND createdAt >= ?
+       GROUP BY sessionId`,
+    )
+    .all(since) as Array<{ sessionId: string; lastEventAt: string }>;
+
+  if (sessions.length === 0) return [];
+
+  const results: ActiveSessionStatus[] = [];
+
+  const lastEventStmt = db.prepare(
+    `SELECT eventName FROM hooks
+     WHERE sessionId = ?
+     ORDER BY createdAt DESC LIMIT 1`,
+  );
+
+  const hasEndStmt = db.prepare(
+    `SELECT 1 FROM hooks
+     WHERE sessionId = ? AND eventName IN ('Stop', 'SessionEnd')
+     LIMIT 1`,
+  );
+
+  for (const s of sessions) {
+    // 检查会话是否已终止
+    const ended = hasEndStmt.get(s.sessionId);
+    if (ended) continue;
+
+    // 获取最后事件
+    const last = lastEventStmt.get(s.sessionId) as
+      | { eventName: string }
+      | undefined;
+    const lastEventName = last?.eventName ?? "";
+
+    // PreToolUse 表示等待用户确认
+    const status: SessionStatus = lastEventName === "PreToolUse" ? "waiting" : "running";
+
+    results.push({
+      sessionId: s.sessionId,
+      status,
+      lastEventAt: s.lastEventAt,
+      lastEventName,
+    });
+  }
+
+  return results;
+};
