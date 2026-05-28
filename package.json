@@ -1,6 +1,6 @@
 {
   "name": "llm-proxy-view",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "LLM Proxy CLI - 代理转发和日志管理工具",
   "bin": {
     "claude-proxy": "bin/cli.js"
@@ -19,12 +19,11 @@
   "files": [
     "dist",
     "bin",
-    "ui-dist",
-    "app/macos-status-bar/.build/release/StatusBarApp"
+    "ui-dist"
   ],
   "scripts": {
     "build": "rm -rf dist ui-dist && tsc && chmod +x bin/cli.js && vite build",
-    "build:swift": "cd app/macos-status-bar && swift build -c release",
+    "build:swift": "cd app/macos-status-bar && swift build -c release && cp .build/release/StatusBarApp ../../bin/StatusBarApp",
     "build:all": "npm run build && npm run build:swift || true",
     "dev": "tsx src/cli/index.ts",
     "dev:ui": "vite",

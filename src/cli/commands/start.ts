@@ -64,8 +64,8 @@ export const startCommand = (program: Command) => {
 
 function launchStatusBarApp(port: number) {
   const candidates = [
-    path.resolve(__dirname, "../../app/macos-status-bar/.build/release/StatusBarApp"),
-    path.resolve(__dirname, "../../../app/macos-status-bar/.build/release/StatusBarApp"),
+    path.resolve(__dirname, "../../../bin/StatusBarApp"),
+    path.resolve(__dirname, "../../../../bin/StatusBarApp"),
   ];
 
   const appPath = candidates.find((p) => fs.existsSync(p));
