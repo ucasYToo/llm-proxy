@@ -1,0 +1,439 @@
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ── Header (single compact bar) ── */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.statusDotOpen {
+  background: var(--success);
+  box-shadow: 0 0 0 2px var(--success-light);
+  animation: pulse 2s infinite;
+}
+
+.statusDotClosed {
+  background: var(--error);
+  box-shadow: 0 0 0 2px var(--error-light);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.statusText {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.headerSpacer {
+  flex: 1;
+}
+
+.headerTitle {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+  flex-shrink: 0;
+}
+
+.iconBtn:hover {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* ── Quick Controls Row ── */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-card);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.controls::-webkit-scrollbar {
+  display: none;
+}
+
+.controlChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s var(--ease);
+  flex-shrink: 0;
+}
+
+.controlChip:hover {
+  border-color: var(--text-muted);
+  color: var(--text-secondary);
+}
+
+.controlChipActive {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.controlChip input[type="checkbox"] {
+  margin: 0;
+  width: 10px;
+  height: 10px;
+}
+
+.controlSep {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 0 1px;
+}
+
+.controlBtn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s var(--ease);
+}
+
+.controlBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.controlBtnDanger {
+  composes: controlBtn;
+}
+
+.controlBtnDanger:hover {
+  border-color: var(--error);
+  color: var(--error);
+  background: var(--error-light);
+}
+
+.warnBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: white;
+  font-size: 7px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── Main Layout ── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 155px 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.layoutCollapsed {
+  grid-template-columns: 30px 1fr;
+}
+
+/* ── Mini Sidebar (collapsed) ── */
+
+.miniSidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-card);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.miniSidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.miniToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+  transition: all 0.15s var(--ease);
+}
+
+.miniToggle:hover {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.miniIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: var(--bg-subtle);
+  border-radius: 5px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s var(--ease);
+}
+
+.miniIcon:hover {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.miniIconActive {
+  color: var(--bg-card) !important;
+  background: var(--accent) !important;
+  box-shadow: 0 1px 3px rgba(217, 119, 87, 0.3);
+}
+
+/* ── Collapse toggle in expanded sidebar ── */
+
+.collapseToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s var(--ease);
+}
+
+.collapseToggle:hover {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* ── Session Sidebar overrides ── */
+
+.sessionPane {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--bg-card);
+}
+
+/* ── Event Pane ── */
+
+.eventPane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ── Notification config panels ── */
+
+.configSection {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-subtle);
+  flex-shrink: 0;
+}
+
+/* ── Compact overrides ── */
+
+.sessionPane :global(.sessionList) {
+  border: none;
+  border-radius: 0;
+}
+
+.panel :global(.filterBar) {
+  padding: 4px 8px;
+  gap: 3px;
+}
+
+.panel :global(.filterChips) {
+  gap: 2px;
+}
+
+.panel :global(.eventStream) {
+  border: none;
+  border-radius: 0;
+}
+
+.panel :global(.eventStreamHeader) {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.panel :global(.eventStreamCount) {
+  font-size: 9px;
+}
+
+.panel :global(.eventItem) {
+  padding: 3px 8px;
+  gap: 4px;
+  grid-template-columns: 42px 12px 1fr auto;
+  font-size: 11px;
+}
+
+.panel :global(.eventTime) {
+  font-size: 9px;
+  letter-spacing: -0.03em;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.panel :global(.logMeta) {
+  display: none;
+}
+
+.panel :global(.logStatus) {
+  font-size: 10px;
+}
+
+.panel :global(.eventSession) {
+  display: none;
+}
+
+.panel :global(.eventCwd) {
+  display: none;
+}
+
+.panel :global(.sessionList) {
+  padding: 4px;
+  gap: 1px;
+}
+
+.panel :global(.sessionListHeader) {
+  font-size: 9px;
+  padding: 2px 6px 3px;
+}
+
+.panel :global(.sessionItem) {
+  padding: 4px 6px;
+  gap: 1px;
+}
+
+.panel :global(.sessionItemNested) {
+  padding: 3px 6px;
+}
+
+.panel :global(.sessionItemTitle) {
+  font-size: 11px;
+}
+
+.panel :global(.sessionItemMeta) {
+  font-size: 9px;
+}
+
+.panel :global(.sessionGroupHeader) {
+  padding: 4px 6px;
+}
+
+.panel :global(.sessionGroupTitle) {
+  font-size: 11px;
+}
+
+.panel :global(.sessionGroupCwd) {
+  display: none;
+}
+
+.panel :global(.sessionGroupCount) {
+  font-size: 9px;
+}
+
+.panel :global(.sessionGroupBody) {
+  padding-left: 6px;
+  margin-left: 8px;
+}
+
+.panel :global(.sessionItemTitleText) {
+  font-size: 10px;
+}
+
+.panel :global(.emptyHint) {
+  padding: 12px 6px;
+  font-size: 10px;
+}

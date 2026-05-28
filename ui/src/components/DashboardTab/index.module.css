@@ -94,6 +94,29 @@
   flex: 1;
 }
 
+.warnDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.notifyEventsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 /* ── DingTalk Panel ── */
 
 .dingPanel {
@@ -279,15 +302,31 @@
 
 .sessionItemNested {
   padding: 6px 8px;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
+  gap: 3px;
 }
 
-.sessionItemBullet {
-  color: var(--border);
-  margin-right: 4px;
+.sessionItemNestedTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sessionItemTitleText {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionItemSidInline {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 
 .sessionItemSid {
@@ -448,6 +487,21 @@
   background: var(--accent-light);
 }
 
+.filterChipIcon {
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.filterChipIcon:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
 .filterSearch {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -467,6 +521,12 @@
   background: var(--bg-card);
 }
 
+.filterSearchCompact {
+  width: 90px;
+  font-size: 10px;
+  padding: 3px 6px;
+}
+
 .filterSearch::placeholder {
   color: var(--text-muted);
 }
@@ -481,10 +541,10 @@
 
 .eventItem {
   display: grid;
-  grid-template-columns: 80px 18px 1fr auto auto auto;
+  grid-template-columns: 50px 18px 1fr auto auto auto;
   gap: 10px;
   align-items: center;
-  padding: 8px 16px;
+  padding: 8px 8px;
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
   font-size: 12px;

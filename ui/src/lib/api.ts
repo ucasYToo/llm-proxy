@@ -8,6 +8,26 @@ export interface TargetAuth {
   value: string;
 }
 
+export interface ModelPricing {
+  /** USD per 1M input tokens */
+  inputPer1M: number;
+  /** USD per 1M output tokens */
+  outputPer1M: number;
+  /** USD per 1M cache read tokens */
+  cacheReadPer1M: number;
+  /** USD per 1M cache write tokens */
+  cacheWritePer1M: number;
+}
+
+export type PricingSource = "override" | "exact" | "family" | "default";
+
+export interface ResolvedPricingResponse {
+  model: string | null;
+  pricing: ModelPricing;
+  source: PricingSource;
+  matchedKey: string | null;
+}
+
 export interface Target {
   id: string;
   name: string;
@@ -17,6 +37,8 @@ export interface Target {
   anthropicModel?: string;
   /** 认证配置（推荐方式）。若设置，会按 type 派生 header 并覆盖 headers 中同名键 */
   auth?: TargetAuth;
+  /** 可选：每个 target 的定价覆盖（USD per 1M tokens） */
+  pricing?: Partial<ModelPricing>;
 }
 
 export interface Channel {
@@ -32,24 +54,41 @@ export interface LogCollection {
   maxEntries?: number;
 }
 
+export interface ChannelEvents {
+  stop?: boolean;
+  subagentStop?: boolean;
+  notification?: boolean;
+}
+
+export interface MacosNotifyConfig {
+  enabled?: boolean;
+  events?: ChannelEvents;
+}
+
 export interface DingTalkConfig {
   enabled?: boolean;
   accessToken?: string;
   secret?: string;
+  events?: ChannelEvents;
 }
 
 export interface FeishuConfig {
   enabled?: boolean;
   webhookUrl?: string;
   secret?: string;
+  events?: ChannelEvents;
 }
 
 export interface NotificationSettings {
-  stop?: boolean;
-  subagentStop?: boolean;
-  notification?: boolean;
+  macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
   feishu?: FeishuConfig;
+  /** @deprecated 老扁平字段，仅做兼容读取 */
+  stop?: boolean;
+  /** @deprecated */
+  subagentStop?: boolean;
+  /** @deprecated */
+  notification?: boolean;
 }
 
 export interface Config {
@@ -281,12 +320,18 @@ export type TimelineEntry =
   | { kind: "hook"; at: string; hook: HookEntry }
   | { kind: "log"; at: string; log: LogEntry };
 
+export type SessionTitleSource = "transcript" | "prompt" | null;
+
 export interface SessionSummary {
   sessionId: string;
   lastEventAt: string;
   lastEventName: string;
   eventCount: number;
   cwd: string | null;
+  /** Claude Code 自动生成的会话标题，缺失时退化为首条用户消息 */
+  title: string | null;
+  /** title 的来源：transcript = ai-title 事件；prompt = 首条用户消息 */
+  titleSource: SessionTitleSource;
 }
 
 export async function fetchHooks(params: {
@@ -397,4 +442,140 @@ export async function updateNotifications(notifications: NotificationSettings): 
   if (!res.ok) throw new Error("Failed to update notifications");
   const data = await res.json();
   return data.notifications;
+}
+
+// ── Cost Analytics ──
+
+export interface BudgetStatus {
+  dailyUsed: number;
+  dailyLimit?: number;
+  dailyPct: number;
+  monthlyUsed: number;
+  monthlyLimit?: number;
+  monthlyPct: number;
+  alertLevel: "ok" | "warning" | "exceeded";
+}
+
+export interface TargetCostSummary {
+  targetId: string;
+  targetName: string;
+  totalCostUsd: number;
+  totalTokens: number;
+  requestCount: number;
+}
+
+export interface ModelCostSummary {
+  model: string;
+  totalCostUsd: number;
+  totalTokens: number;
+  requestCount: number;
+}
+
+export interface TimeRangeCostPoint {
+  period: string;
+  totalCostUsd: number;
+  totalTokens: number;
+  requestCount: number;
+}
+
+export interface CostSummaryData {
+  budget: BudgetStatus;
+  totalCost: number;
+  todayCost: number;
+  byTarget: TargetCostSummary[];
+  byModel: ModelCostSummary[];
+  recentTrend: TimeRangeCostPoint[];
+}
+
+export async function fetchCostSummary(): Promise<CostSummaryData> {
+  const res = await fetch("/api/query?type=cost-summary");
+  if (!res.ok) throw new Error("Failed to fetch cost summary");
+  return res.json();
+}
+
+/* ── Session Analytics ── */
+
+export interface SessionCostSummary {
+  sessionId: string;
+  totalCostUsd: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
+  requestCount: number;
+  avgDurationMs: number;
+  avgFirstChunkMs: number;
+}
+
+export interface ToolUsageStats {
+  toolName: string;
+  callCount: number;
+  totalDurationMs: number;
+  avgDurationMs: number;
+  errorCount: number;
+}
+
+export interface TokenTimeSeriesPoint {
+  timestamp: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+}
+
+export interface SubagentRelation {
+  agentId: string;
+  agentType: string;
+  parentSessionId: string;
+  parentToolName: string | null;
+  startedAt: string;
+  stoppedAt: string | null;
+  durationMs: number | null;
+}
+
+export interface HealthMetrics {
+  successRate: number;
+  cacheEfficiency: number | null;
+  avgFirstChunkMs: number | null;
+  errorRate: number;
+  toolSuccessRate: number | null;
+  requestCount: number;
+}
+
+export interface SessionAnalyticsData {
+  costSummary: SessionCostSummary | null;
+  health: HealthMetrics | null;
+  toolUsage: ToolUsageStats[];
+  tokenTimeSeries: TokenTimeSeriesPoint[];
+  subagents: SubagentRelation[];
+}
+
+export async function fetchSessionAnalytics(
+  sessionId: string,
+): Promise<SessionAnalyticsData> {
+  const res = await fetch(
+    `/api/query?type=session-analytics&sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  if (!res.ok) throw new Error("Failed to fetch session analytics");
+  return res.json();
+}
+
+export async function fetchPricing(model?: string): Promise<ResolvedPricingResponse> {
+  const search = new URLSearchParams({ type: "pricing" });
+  if (model) search.set("model", model);
+  const res = await fetch(`/api/query?${search}`);
+  if (!res.ok) throw new Error("Failed to fetch pricing");
+  return res.json();
+}
+
+export async function updateBudget(
+  budget: { dailyLimitUsd?: number; monthlyLimitUsd?: number; alertThresholdPct?: number },
+): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "updateBudget", budget }),
+  });
+  if (!res.ok) throw new Error("Failed to update budget");
 }

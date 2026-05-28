@@ -57,20 +57,33 @@ const SessionList = ({
             )}
             {!collapsed && (
               <div className={styles.sessionGroupBody}>
-                {group.sessions.map((s) => (
-                  <button
-                    key={s.sessionId}
-                    className={`${styles.sessionItem} ${styles.sessionItemNested}${selectedSession === s.sessionId ? ` ${styles.sessionItemActive}` : ""}`}
-                    onClick={() => onSelectSession(s.sessionId)}
-                    title={s.sessionId}
-                  >
-                    <div className={styles.sessionItemMeta}>
-                      <span className={styles.sessionItemBullet}>└</span>
-                      {s.eventCount} 事件 · {s.lastEventName || "—"} · {formatTime(s.lastEventAt)}
-                    </div>
-                    <div className={styles.sessionItemSid}>{shortSession(s.sessionId)}</div>
-                  </button>
-                ))}
+                {group.sessions.map((s) => {
+                  const hasTitle = !!s.title;
+                  const displayTitle = s.title ?? shortSession(s.sessionId);
+                  const tooltip = hasTitle
+                    ? `${s.title}\n${s.sessionId}`
+                    : s.sessionId;
+                  return (
+                    <button
+                      key={s.sessionId}
+                      className={`${styles.sessionItem} ${styles.sessionItemNested}${selectedSession === s.sessionId ? ` ${styles.sessionItemActive}` : ""}`}
+                      onClick={() => onSelectSession(s.sessionId)}
+                      title={tooltip}
+                    >
+                      <div className={styles.sessionItemNestedTop}>
+                        <span className={styles.sessionItemTitleText}>{displayTitle}</span>
+                      </div>
+                      <div className={styles.sessionItemMeta}>
+                        {s.eventCount} 事件 · {s.lastEventName || "—"} · {formatTime(s.lastEventAt)}
+                        {hasTitle && (
+                          <span className={styles.sessionItemSidInline}>
+                            {" · "}{shortSession(s.sessionId)}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

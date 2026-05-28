@@ -21,6 +21,7 @@ import {
 } from "../../lib/api";
 import { LogDetailPanel } from "../LogDetailPanel";
 import { HookDetailPanel } from "../HookDetailPanel";
+import SessionAnalyticsPanel from "../SessionAnalyticsPanel";
 import type { SseStatus, SessionGroup, SelectedDetail } from "./types";
 import { basename, cwdFromEntry, MAX_BUFFER, UNKNOWN_GROUP_KEY } from "./utils";
 import { useEventFilter } from "./useEventFilter";
@@ -28,6 +29,7 @@ import SessionList from "./SessionList";
 import EventStream from "./EventStream";
 import DingTalkPanel from "./DingTalkPanel";
 import FeishuPanel from "./FeishuPanel";
+import MacosNotifyPanel from "./MacosNotifyPanel";
 import ProjectCard from "./ProjectCard";
 import styles from "./index.module.css";
 
@@ -51,12 +53,21 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
   });
   const [dingtalkOpen, setDingtalkOpen] = useState(false);
   const [feishuOpen, setFeishuOpen] = useState(false);
+  const [macosOpen, setMacosOpen] = useState(false);
+  const [analyticsSessionId, setAnalyticsSessionId] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   const filter = useEventFilter();
   const notifications: NotificationSettings = config.notifications ?? {};
+  const macos = notifications.macos ?? {};
   const dingtalk = notifications.dingtalk ?? {};
   const feishu = notifications.feishu ?? {};
+
+  const eventsAnyOn = (e?: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) =>
+    !!(e?.stop || e?.subagentStop || e?.notification);
+  const macosArmed = !!macos.enabled && eventsAnyOn(macos.events);
+  const dingtalkArmed = !!dingtalk.enabled && eventsAnyOn(dingtalk.events) && !!dingtalk.accessToken && !!dingtalk.secret;
+  const feishuArmed = !!feishu.enabled && eventsAnyOn(feishu.events) && !!feishu.webhookUrl && !!feishu.secret;
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -194,17 +205,28 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     };
   }, [selectedSession, refreshSessions]);
 
-  const handleToggle = async (key: keyof NotificationSettings, value: boolean) => {
+  const [dingSaving, setDingSaving] = useState(false);
+  const [dingTesting, setDingTesting] = useState(false);
+  const [feishuSaving, setFeishuSaving] = useState(false);
+  const [feishuTesting, setFeishuTesting] = useState(false);
+
+  const handleToggleMacos = async (enabled: boolean) => {
     try {
-      await updateNotifications({ [key]: value });
+      await updateNotifications({ macos: { enabled } });
       onRefresh();
     } catch (e) {
-      alert("更新通知设置失败：" + String(e));
+      alert("更新 macOS 通知失败：" + String(e));
     }
   };
 
-  const [dingSaving, setDingSaving] = useState(false);
-  const [dingTesting, setDingTesting] = useState(false);
+  const handleChangeMacosEvents = async (events: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) => {
+    try {
+      await updateNotifications({ macos: { events } });
+      onRefresh();
+    } catch (e) {
+      alert("更新 macOS 事件失败：" + String(e));
+    }
+  };
 
   const handleToggleDingTalk = async (enabled: boolean) => {
     try {
@@ -212,6 +234,15 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
       onRefresh();
     } catch (e) {
       alert("更新钉钉通知失败：" + String(e));
+    }
+  };
+
+  const handleChangeDingtalkEvents = async (events: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) => {
+    try {
+      await updateNotifications({ dingtalk: { events } });
+      onRefresh();
+    } catch (e) {
+      alert("更新钉钉事件失败：" + String(e));
     }
   };
 
@@ -239,15 +270,21 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     }
   };
 
-  const [feishuSaving, setFeishuSaving] = useState(false);
-  const [feishuTesting, setFeishuTesting] = useState(false);
-
   const handleToggleFeishu = async (enabled: boolean) => {
     try {
       await updateNotifications({ feishu: { enabled } });
       onRefresh();
     } catch (e) {
       alert("更新飞书通知失败：" + String(e));
+    }
+  };
+
+  const handleChangeFeishuEvents = async (events: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) => {
+    try {
+      await updateNotifications({ feishu: { events } });
+      onRefresh();
+    } catch (e) {
+      alert("更新飞书事件失败：" + String(e));
     }
   };
 
@@ -404,31 +441,84 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         </div>
 
         <div className={styles.toggleGroup}>
-          <span className={styles.toggleGroupLabel}>macOS 通知：</span>
-          <label className={styles.toggleChip}>
+          <span className={styles.toggleGroupLabel}>通知：</span>
+          <label
+            className={styles.toggleChip}
+            title={
+              !!macos.enabled && !macosArmed
+                ? "已启用但未勾选任何事件，点配置进去选"
+                : "macOS 系统通知（含声音）"
+            }
+          >
             <input
               type="checkbox"
-              checked={!!notifications.stop}
-              onChange={(e) => handleToggle("stop", e.target.checked)}
+              checked={!!macos.enabled}
+              onChange={(e) => void handleToggleMacos(e.target.checked)}
             />
-            Stop
+            macOS
+            {!!macos.enabled && !macosArmed && (
+              <span className={styles.warnDot} title="未勾选事件">!</span>
+            )}
           </label>
-          <label className={styles.toggleChip}>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => setMacosOpen((v) => !v)}
+          >
+            {macosOpen ? "收起" : "配置"}
+          </button>
+
+          <label
+            className={styles.toggleChip}
+            title={
+              !!dingtalk.enabled && !dingtalkArmed
+                ? "已启用但缺少事件勾选 / token / secret，点配置补全"
+                : "钉钉群机器人"
+            }
+          >
             <input
               type="checkbox"
-              checked={!!notifications.subagentStop}
-              onChange={(e) => handleToggle("subagentStop", e.target.checked)}
+              checked={!!dingtalk.enabled}
+              onChange={(e) => void handleToggleDingTalk(e.target.checked)}
             />
-            SubagentStop
+            钉钉
+            {!!dingtalk.enabled && !dingtalkArmed && (
+              <span className={styles.warnDot} title="未完成配置">!</span>
+            )}
           </label>
-          <label className={styles.toggleChip}>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => setDingtalkOpen((v) => !v)}
+          >
+            {dingtalkOpen ? "收起" : "配置"}
+          </button>
+
+          <label
+            className={styles.toggleChip}
+            title={
+              !!feishu.enabled && !feishuArmed
+                ? "已启用但缺少事件勾选 / webhook URL / secret，点配置补全"
+                : "飞书群机器人"
+            }
+          >
             <input
               type="checkbox"
-              checked={!!notifications.notification}
-              onChange={(e) => handleToggle("notification", e.target.checked)}
+              checked={!!feishu.enabled}
+              onChange={(e) => void handleToggleFeishu(e.target.checked)}
             />
-            Notification
+            飞书
+            {!!feishu.enabled && !feishuArmed && (
+              <span className={styles.warnDot} title="未完成配置">!</span>
+            )}
           </label>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => setFeishuOpen((v) => !v)}
+          >
+            {feishuOpen ? "收起" : "配置"}
+          </button>
         </div>
 
         {caffeinate.supported && (
@@ -444,54 +534,37 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           </div>
         )}
 
-        <div className={styles.toggleGroup}>
-          <label className={styles.toggleChip} title="开启后，被勾选的事件会同时推送钉钉群机器人">
-            <input
-              type="checkbox"
-              checked={!!dingtalk.enabled}
-              onChange={(e) => void handleToggleDingTalk(e.target.checked)}
-            />
-            钉钉
-          </label>
-          <button
-            type="button"
-            className="btnGhost btnSm"
-            onClick={() => setDingtalkOpen((v) => !v)}
-          >
-            {dingtalkOpen ? "收起" : "配置"}
-          </button>
-        </div>
-
-        <div className={styles.toggleGroup}>
-          <label className={styles.toggleChip} title="开启后，被勾选的事件会同时推送飞书群机器人">
-            <input
-              type="checkbox"
-              checked={!!feishu.enabled}
-              onChange={(e) => void handleToggleFeishu(e.target.checked)}
-            />
-            飞书
-          </label>
-          <button
-            type="button"
-            className="btnGhost btnSm"
-            onClick={() => setFeishuOpen((v) => !v)}
-          >
-            {feishuOpen ? "收起" : "配置"}
-          </button>
-        </div>
-
         <div className={styles.toolbarSpacer} />
 
         {selectedSession && (
-          <button className="btnGhost btnSm" onClick={() => setSelectedSession(null)}>
-            ← 返回概览
-          </button>
+          <>
+            {!analyticsSessionId && (
+              <button className="btnGhost btnSm" onClick={() => setAnalyticsSessionId(selectedSession)}>
+                📊 会话分析
+              </button>
+            )}
+            {analyticsSessionId && (
+              <button className="btnGhost btnSm" onClick={() => setAnalyticsSessionId(null)}>
+                ← 返回事件流
+              </button>
+            )}
+            <button className="btnGhost btnSm" onClick={() => { setSelectedSession(null); setAnalyticsSessionId(null); }}>
+              ← 返回项目列表
+            </button>
+          </>
         )}
 
         <button className="btnGhost btnSm" onClick={handleClear}>
           清空记录
         </button>
       </div>
+
+      {macosOpen && (
+        <MacosNotifyPanel
+          events={macos.events}
+          onChange={(next) => void handleChangeMacosEvents(next)}
+        />
+      )}
 
       {dingtalkOpen && (
         <DingTalkPanel
@@ -500,6 +573,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           testing={dingTesting}
           onSave={handleSaveDingTalk}
           onTest={handleTestDingTalk}
+          onChangeEvents={(next) => void handleChangeDingtalkEvents(next)}
         />
       )}
 
@@ -510,6 +584,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           testing={feishuTesting}
           onSave={handleSaveFeishu}
           onTest={handleTestFeishu}
+          onChangeEvents={(next) => void handleChangeFeishuEvents(next)}
         />
       )}
 
@@ -559,23 +634,31 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
             selectedSession={selectedSession}
             collapsedGroups={collapsedGroups}
             eventCount={events.length + globalLogs.length}
-            onSelectSession={setSelectedSession}
+            onSelectSession={(sid) => { setSelectedSession(sid); setAnalyticsSessionId(null); }}
             onToggleGroup={toggleGroup}
           />
 
-          <EventStream
-            selectedSession={selectedSession}
-            sessions={sessions}
-            timeline={visibleTimeline}
-            filterPreset={filter.filterPreset}
-            enabledTypes={filter.enabledTypes}
-            filterSearch={filter.filterSearch}
-            selectedDetail={selectedDetail}
-            onSelectDetail={setSelectedDetail}
-            onSetPreset={filter.setPreset}
-            onToggleType={filter.toggleType}
-            onSearchChange={filter.setFilterSearch}
-          />
+          {analyticsSessionId ? (
+            <SessionAnalyticsPanel
+              sessionId={analyticsSessionId}
+              onClose={() => setAnalyticsSessionId(null)}
+            />
+          ) : (
+            <EventStream
+              selectedSession={selectedSession}
+              sessions={sessions}
+              timeline={visibleTimeline}
+              filterPreset={filter.filterPreset}
+              enabledTypes={filter.enabledTypes}
+              filterSearch={filter.filterSearch}
+              selectedDetail={selectedDetail}
+              targetCount={config.targets.length}
+              onSelectDetail={setSelectedDetail}
+              onSetPreset={filter.setPreset}
+              onToggleType={filter.toggleType}
+              onSearchChange={filter.setFilterSearch}
+            />
+          )}
         </div>
       )}
 

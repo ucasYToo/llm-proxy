@@ -1,3 +1,5 @@
+import type { ModelPricing } from "../cost/pricing";
+
 /* ── Auth ── */
 
 export type TargetAuthType = "bearer" | "x-api-key" | "custom";
@@ -26,6 +28,8 @@ export interface Target {
   anthropicModel?: string;
   /** 认证配置（推荐方式）。若设置，会按 type 派生 header 并覆盖 headers 中同名键 */
   auth?: TargetAuth;
+  /** 可选：每个 target 的定价覆盖（USD per 1M tokens） */
+  pricing?: Partial<ModelPricing>;
 }
 
 /* ── Channel ── */
@@ -50,35 +54,63 @@ export interface LogCollection {
 
 /* ── Notifications ── */
 
+/** 每个通知渠道可独立勾选要响应的 hook 事件 */
+export interface ChannelEvents {
+  stop?: boolean;
+  subagentStop?: boolean;
+  notification?: boolean;
+}
+
+export interface MacosNotifyConfig {
+  /** 总开关：false 时整个 macOS 通知关闭，不管 events 怎么勾 */
+  enabled?: boolean;
+  events?: ChannelEvents;
+}
+
 export interface DingTalkConfig {
-  /** 是否启用钉钉通知（与 stop/subagentStop/notification 开关共同决定是否发送） */
+  /** 总开关 */
   enabled?: boolean;
   /** 钉钉机器人 access_token（来自 webhook URL 的 ?access_token=...） */
   accessToken?: string;
   /** 钉钉机器人加签 secret（机器人安全设置里启用"加签"得到） */
   secret?: string;
+  /** 该渠道要响应的事件（与 macOS 完全独立） */
+  events?: ChannelEvents;
 }
 
 export interface FeishuConfig {
-  /** 是否启用飞书通知（与 stop/subagentStop/notification 开关共同决定是否发送） */
+  /** 总开关 */
   enabled?: boolean;
-  /** 飞书自定义机器人 webhook 完整地址 */
+  /** 飞书自定义机器人完整 webhook URL */
   webhookUrl?: string;
-  /** 飞书机器人签名校验 secret（机器人安全设置里启用"签名校验"得到） */
+  /** 飞书签名校验 secret */
   secret?: string;
+  /** 该渠道要响应的事件 */
+  events?: ChannelEvents;
 }
 
 export interface NotificationSettings {
-  /** Stop 事件 -> 触发通知（macOS + 钉钉 + 飞书） */
-  stop?: boolean;
-  /** SubagentStop 事件 -> 触发通知（macOS + 钉钉 + 飞书） */
-  subagentStop?: boolean;
-  /** Notification 事件 -> 触发通知（macOS + 钉钉 + 飞书） */
-  notification?: boolean;
-  /** 钉钉配置，与上面三个事件开关协同工作 */
+  macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
-  /** 飞书配置，与上面三个事件开关协同工作 */
   feishu?: FeishuConfig;
+
+  /** @deprecated 老版本扁平字段，仅做兼容读取；startup migration 会迁移到 macos.events 然后被删除 */
+  stop?: boolean;
+  /** @deprecated 同上 */
+  subagentStop?: boolean;
+  /** @deprecated 同上 */
+  notification?: boolean;
+}
+
+/* ── Budget ── */
+
+export interface BudgetConfig {
+  /** 每日预算上限（USD） */
+  dailyLimitUsd?: number;
+  /** 每月预算上限（USD） */
+  monthlyLimitUsd?: number;
+  /** 告警阈值百分比（默认 80） */
+  alertThresholdPct?: number;
 }
 
 /* ── Config ── */
@@ -97,6 +129,8 @@ export interface Config {
   channels: Channel[];
   /** Claude Code hook 事件的通知开关（默认全部 off） */
   notifications?: NotificationSettings;
+  /** 预算配置 */
+  budget?: BudgetConfig;
   /** 服务端实际监听端口（仅 API 响应附带，不持久化） */
   serverPort?: number;
 }

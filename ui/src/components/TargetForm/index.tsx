@@ -1,5 +1,12 @@
-import { useMemo, useState } from "react";
-import type { Target, TargetAuth, TargetAuthType } from "../../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  ModelPricing,
+  ResolvedPricingResponse,
+  Target,
+  TargetAuth,
+  TargetAuthType,
+} from "../../lib/api";
+import { fetchPricing } from "../../lib/api";
 import styles from "./index.module.css";
 
 interface TargetFormProps {
@@ -28,6 +35,30 @@ const recordFromKV = (pairs: KVPair[]): Record<string, string> => {
     if (key.trim()) result[key.trim()] = value;
   }
   return result;
+};
+
+const pricingFieldToString = (v: number | undefined): string =>
+  v === undefined || v === null ? "" : String(v);
+
+const parsePricingField = (s: string): number | undefined => {
+  const trimmed = s.trim();
+  if (!trimmed) return undefined;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+};
+
+const sourceLabel = (resolved: ResolvedPricingResponse | null): string => {
+  if (!resolved) return "加载中…";
+  switch (resolved.source) {
+    case "exact":
+      return `精确匹配 ${resolved.matchedKey}`;
+    case "family":
+      return `家族兜底 ${resolved.matchedKey}`;
+    case "default":
+      return "通用默认（按 Sonnet 4 估算）";
+    case "override":
+      return "已覆盖";
+  }
 };
 
 const detectLegacyAuth = (headers: Record<string, string>): TargetAuth | null => {
@@ -59,6 +90,32 @@ const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
       ? kvFromRecord(initial.bodyParams as Record<string, string>)
       : [{ key: "", value: "" }],
   );
+
+  const { pricing: initialPricing = {} } = initial ?? {};
+  const {
+    inputPer1M: initInput,
+    outputPer1M: initOutput,
+    cacheReadPer1M: initCacheRead,
+    cacheWritePer1M: initCacheWrite,
+  } = initialPricing;
+
+  const [inputPer1M, setInputPer1M] = useState(pricingFieldToString(initInput));
+  const [outputPer1M, setOutputPer1M] = useState(pricingFieldToString(initOutput));
+  const [cacheReadPer1M, setCacheReadPer1M] = useState(pricingFieldToString(initCacheRead));
+  const [cacheWritePer1M, setCacheWritePer1M] = useState(pricingFieldToString(initCacheWrite));
+
+  const [resolvedDefault, setResolvedDefault] =
+    useState<ResolvedPricingResponse | null>(null);
+
+  useEffect(() => {
+    const trimmed = anthropicModel.trim();
+    const timer = setTimeout(() => {
+      fetchPricing(trimmed || undefined)
+        .then(setResolvedDefault)
+        .catch(() => setResolvedDefault(null));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [anthropicModel]);
 
   const legacyAuth = useMemo(() => {
     if (auth) return null;
@@ -117,6 +174,19 @@ const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
     }
   };
 
+  const buildPricingOverride = (): Partial<ModelPricing> | undefined => {
+    const result: Partial<ModelPricing> = {};
+    const i = parsePricingField(inputPer1M);
+    const o = parsePricingField(outputPer1M);
+    const cr = parsePricingField(cacheReadPer1M);
+    const cw = parsePricingField(cacheWritePer1M);
+    if (i !== undefined) result.inputPer1M = i;
+    if (o !== undefined) result.outputPer1M = o;
+    if (cr !== undefined) result.cacheReadPer1M = cr;
+    if (cw !== undefined) result.cacheWritePer1M = cw;
+    return Object.keys(result).length > 0 ? result : undefined;
+  };
+
   const handleSave = () => {
     if (!name.trim() || !url.trim()) return;
     const headersRecord = recordFromKV(headers);
@@ -144,6 +214,7 @@ const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
       bodyParams: parsedBody,
       anthropicModel: anthropicModel.trim() || undefined,
       auth: finalAuth,
+      pricing: buildPricingOverride(),
     });
   };
 
@@ -305,6 +376,64 @@ const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
           <p className={styles.formHint}>
             接入 Claude Code 时会将该值写入 ~/.claude/settings.json 的 ANTHROPIC_MODEL 字段
           </p>
+        </div>
+
+        <div className={styles.formGroup}>
+          <label>
+            价格覆盖（可选，USD per 1M tokens）
+            <span className={styles.pricingSourceTag}>
+              默认来源：{sourceLabel(resolvedDefault)}
+            </span>
+          </label>
+          <p className={styles.formHint}>
+            留空使用系统默认单价（占位符即默认值）。任一字段填值即生效，仅覆盖填写的那一项。
+          </p>
+          <div className={styles.pricingGrid}>
+            <div className={styles.pricingRow}>
+              <span>Input</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={inputPer1M}
+                placeholder={resolvedDefault ? String(resolvedDefault.pricing.inputPer1M) : "—"}
+                onChange={(e) => setInputPer1M(e.target.value)}
+              />
+            </div>
+            <div className={styles.pricingRow}>
+              <span>Output</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={outputPer1M}
+                placeholder={resolvedDefault ? String(resolvedDefault.pricing.outputPer1M) : "—"}
+                onChange={(e) => setOutputPer1M(e.target.value)}
+              />
+            </div>
+            <div className={styles.pricingRow}>
+              <span>CacheRead</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={cacheReadPer1M}
+                placeholder={resolvedDefault ? String(resolvedDefault.pricing.cacheReadPer1M) : "—"}
+                onChange={(e) => setCacheReadPer1M(e.target.value)}
+              />
+            </div>
+            <div className={styles.pricingRow}>
+              <span>CacheWrite</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={cacheWritePer1M}
+                placeholder={resolvedDefault ? String(resolvedDefault.pricing.cacheWritePer1M) : "—"}
+                onChange={(e) => setCacheWritePer1M(e.target.value)}
+              />
+            </div>
+          </div>
         </div>
 
         <div className={styles.modalFooter}>

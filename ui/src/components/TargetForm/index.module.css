@@ -185,3 +185,60 @@
   font-size: 11px;
   font-family: var(--font-mono);
 }
+
+/* ── Pricing Override ── */
+
+.pricingGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.pricingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pricingRow span {
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 86px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.pricingRow input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.pricingRow input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.pricingRow input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.pricingSourceTag {
+  display: inline-block;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  margin-left: 6px;
+}

@@ -39,13 +39,11 @@ export const sendFeishuText = async (
       msg_type: "text",
       content: { text },
     };
-
     if (secret) {
       const { timestamp, sign } = generateSignature(secret);
       body.timestamp = String(timestamp);
       body.sign = sign;
     }
-
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

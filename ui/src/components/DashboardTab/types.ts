@@ -24,6 +24,9 @@ export type SelectedDetail =
 export type EventTypeFilter =
   | "PreToolUse"
   | "PostToolUse"
+  | "PostToolUseFailure"
+  | "StopFailure"
+  | "PermissionDenied"
   | "Stop"
   | "UserPromptSubmit"
   | "SubagentStart"
@@ -37,6 +40,9 @@ export type FilterPreset = "compact" | "all" | "custom";
 export const ALL_EVENT_TYPES: EventTypeFilter[] = [
   "PreToolUse",
   "PostToolUse",
+  "PostToolUseFailure",
+  "StopFailure",
+  "PermissionDenied",
   "Stop",
   "UserPromptSubmit",
   "SubagentStart",
@@ -48,6 +54,8 @@ export const ALL_EVENT_TYPES: EventTypeFilter[] = [
 
 export const COMPACT_EVENT_TYPES: Set<EventTypeFilter> = new Set([
   "PostToolUse",
+  "PostToolUseFailure",
+  "StopFailure",
   "Stop",
   "SubagentStop",
   "Notification",
@@ -57,6 +65,9 @@ export const COMPACT_EVENT_TYPES: Set<EventTypeFilter> = new Set([
 export const EVENT_TYPE_LABELS: Record<EventTypeFilter, string> = {
   PreToolUse: "工具执行前",
   PostToolUse: "工具执行后",
+  PostToolUseFailure: "工具执行失败",
+  StopFailure: "API 错误",
+  PermissionDenied: "权限拒绝",
   Stop: "任务完成",
   UserPromptSubmit: "用户输入",
   SubagentStart: "子代理启动",

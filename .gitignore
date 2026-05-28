@@ -27,3 +27,6 @@ __mockdef
 
 # Logs
 npm-debug.log
+
+# Swift build
+app/macos-status-bar/.build/

@@ -1,0 +1,183 @@
+import AppKit
+
+final class StatusBarController {
+    private let statusItem: NSStatusItem
+    private let panel: FloatingPanel
+    private let webViewPanel: WebViewPanel
+    private var pollTimer: Timer?
+    private var eventMonitor: Any?
+    private let apiBaseURL = "http://localhost:\(PortConfig.port)"
+
+    init() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        panel = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 700))
+        webViewPanel = WebViewPanel(frame: .zero)
+
+        configureStatusItem()
+        panel.setContentSubview(webViewPanel)
+        startPolling()
+    }
+
+    func teardown() {
+        pollTimer?.invalidate()
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+    }
+
+    private func configureStatusItem() {
+        guard let button = statusItem.button else { return }
+
+        let image = NSImage(systemSymbolName: "arrow.up.arrow.down.circle", accessibilityDescription: "LLM Proxy")
+        image?.isTemplate = true
+        button.image = image
+        button.imagePosition = .imageLeading
+        button.title = " --"
+        button.target = self
+        button.action = #selector(handleClick(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    }
+
+    private func startPolling() {
+        fetchTokens()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.fetchTokens()
+        }
+    }
+
+    private func fetchTokens() {
+        guard let url = URL(string: "\(apiBaseURL)/api/query?type=cost-summary") else { return }
+
+        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard
+                    let data,
+                    let httpResponse = response as? HTTPURLResponse,
+                    httpResponse.statusCode == 200
+                else {
+                    self.statusItem.button?.title = " --"
+                    return
+                }
+                self.parseCostSummary(data)
+            }
+        }
+        task.resume()
+    }
+
+    private func parseCostSummary(_ data: Data) {
+        guard
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let byTarget = json["byTarget"] as? [[String: Any]]
+        else {
+            statusItem.button?.title = " --"
+            return
+        }
+
+        var totalTokens = 0
+        for target in byTarget {
+            totalTokens += target["totalTokens"] as? Int ?? 0
+        }
+
+        statusItem.button?.title = " \(formatTokens(totalTokens))"
+    }
+
+    private func formatTokens(_ count: Int) -> String {
+        if count < 1_000 {
+            return "\(count)"
+        } else if count < 1_000_000 {
+            let k = Double(count) / 1_000
+            return k >= 100 ? "\(Int(k))K" : String(format: "%.1fK", k)
+        } else {
+            let m = Double(count) / 1_000_000
+            return m >= 100 ? "\(Int(m))M" : String(format: "%.1fM", m)
+        }
+    }
+
+    @objc
+    private func handleClick(_ sender: Any?) {
+        guard let event = NSApp.currentEvent else {
+            togglePanel()
+            return
+        }
+
+        switch event.type {
+        case .rightMouseUp:
+            showContextMenu()
+        default:
+            togglePanel()
+        }
+    }
+
+    private func togglePanel() {
+        if panel.isVisible {
+            closePanel()
+        } else {
+            openPanel()
+        }
+    }
+
+    private func openPanel() {
+        guard let button = statusItem.button else { return }
+
+        webViewPanel.loadIfNeeded()
+        panel.position(relativeTo: button)
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+        startEventMonitor()
+    }
+
+    private func closePanel() {
+        panel.orderOut(nil)
+        stopEventMonitor()
+    }
+
+    private func showContextMenu() {
+        let menu = NSMenu()
+
+        let openItem = NSMenuItem(title: "打开面板", action: #selector(openPanelFromMenu), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let browserItem = NSMenuItem(title: "浏览器打开", action: #selector(openInBrowser), keyEquivalent: "b")
+        browserItem.target = self
+        menu.addItem(browserItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    @objc private func openPanelFromMenu() { openPanel() }
+
+    @objc private func openInBrowser() {
+        if let url = URL(string: apiBaseURL) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func quit() { NSApp.terminate(nil) }
+
+    private func startEventMonitor() {
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.closePanel()
+            }
+        }
+    }
+
+    private func stopEventMonitor() {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
+    }
+}

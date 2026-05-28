@@ -4,9 +4,12 @@ export type {
   Target,
   Channel,
   LogCollection,
+  ChannelEvents,
+  MacosNotifyConfig,
   DingTalkConfig,
   FeishuConfig,
   NotificationSettings,
+  BudgetConfig,
   Config,
 } from "./config";
 
