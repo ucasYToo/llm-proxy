@@ -1,7 +1,7 @@
 import { useState } from "react";
 import styles from "./index.module.css";
 
-export type Tab = "config" | "logs" | "dashboard";
+export type Tab = "config" | "logs" | "dashboard" | "analytics";
 
 interface Props {
   tab: Tab;
@@ -43,6 +43,17 @@ const navItems: { id: Tab; label: string; icon: JSX.Element }[] = [
         <rect x="11" y="2" width="7" height="4" rx="1" />
         <rect x="2" y="11" width="7" height="4" rx="1" />
         <rect x="11" y="8" width="7" height="10" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    id: "analytics",
+    label: "分析",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="3,16 7,10 11,13 17,4" />
+        <line x1="3" y1="18" x2="17" y2="18" />
+        <line x1="3" y1="2" x2="3" y2="18" />
       </svg>
     ),
   },

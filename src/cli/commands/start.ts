@@ -1,6 +1,9 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
+import { spawn } from "child_process";
+import path from "path";
+import fs from "fs";
 import { startServer } from "../../server";
 
 export const startCommand = (program: Command) => {
@@ -10,7 +13,8 @@ export const startCommand = (program: Command) => {
     .option("-p, --port <number>", "监听端口", "1998")
     .option("--host <address>", "绑定地址", "localhost")
     .option("--ui", "启用 Web UI (服务静态构建文件)")
-    .action(async (options: { port: string; host: string; ui: boolean }) => {
+    .option("--no-statusbar", "禁用 macOS 状态栏应用")
+    .action(async (options: { port: string; host: string; ui: boolean; statusbar: boolean }) => {
       const port = parseInt(options.port, 10);
       const host = options.host;
       const ui = options.ui || true;
@@ -36,6 +40,10 @@ export const startCommand = (program: Command) => {
         console.log(`  POST /api/set                 - 修改配置`);
         console.log(`  ALL  /proxy/*                 - 代理请求`);
 
+        if (options.statusbar && process.platform === "darwin") {
+          launchStatusBarApp(port);
+        }
+
         console.log("\n按 Ctrl+C 停止服务器");
 
         // 处理优雅关闭
@@ -53,3 +61,20 @@ export const startCommand = (program: Command) => {
       }
     });
 };
+
+function launchStatusBarApp(port: number) {
+  const candidates = [
+    path.resolve(__dirname, "../../app/macos-status-bar/.build/release/StatusBarApp"),
+    path.resolve(__dirname, "../../../app/macos-status-bar/.build/release/StatusBarApp"),
+  ];
+
+  const appPath = candidates.find((p) => fs.existsSync(p));
+  if (!appPath) return;
+
+  const child = spawn(appPath, ["--port", String(port)], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  console.log(chalk.dim("  状态栏应用已启动"));
+}

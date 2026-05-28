@@ -6,6 +6,7 @@ import { setupApiRoutes } from "./routes";
 import { setupProxyRoutes } from "./proxy";
 import { onLogChange } from "../storage/logs";
 import { broadcast } from "./sse";
+import { initCostCapture } from "../cost/capture";
 import * as caffeinate from "../system/caffeinate";
 import { setServerPort } from "./state";
 
@@ -67,6 +68,9 @@ export const startServer = async (
   onLogChange((entry, kind) => {
     broadcast("log", { kind, entry });
   });
+
+  // 初始化成本捕获（监听日志完成事件写入 cost_records）
+  initCostCapture();
 
   // 确保进程退出时清理 caffeinate 子进程
   registerCleanupOnce();

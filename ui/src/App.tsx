@@ -3,18 +3,21 @@ import type { Config } from "./lib/api";
 import ConfigTab from "./components/ConfigTab/index";
 import LogsTab from "./components/LogsTab/index";
 import DashboardTab from "./components/DashboardTab/index";
+import AnalyticsTab from "./components/AnalyticsTab/index";
+import StatusBarPanel from "./components/StatusBarPanel/index";
 import Sidebar, { type Tab } from "./components/Sidebar/index";
 import styles from "./App.module.css";
 
-const VALID_TABS = new Set<Tab>(["config", "logs", "dashboard"]);
+type AppTab = Tab | "panel";
+const VALID_TABS = new Set<AppTab>(["config", "logs", "dashboard", "analytics", "panel"]);
 
-const tabFromHash = (): Tab => {
-  const raw = window.location.hash.replace(/^#/, "") as Tab;
+const tabFromHash = (): AppTab => {
+  const raw = window.location.hash.replace(/^#/, "") as AppTab;
   return VALID_TABS.has(raw) ? raw : "config";
 };
 
 const App = () => {
-  const [tab, setTab] = useState<Tab>(tabFromHash);
+  const [tab, setTab] = useState<AppTab>(tabFromHash);
 
   useEffect(() => {
     const onHashChange = () => setTab(tabFromHash());
@@ -22,7 +25,7 @@ const App = () => {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  const handleTabChange = (next: Tab) => {
+  const handleTabChange = (next: AppTab) => {
     window.location.hash = next;
     setTab(next);
   };
@@ -60,10 +63,14 @@ const App = () => {
     setTimeout(() => window.location.reload(), 3000);
   };
 
+  if (tab === "panel") {
+    return <StatusBarPanel />;
+  }
+
   return (
     <div className={styles.shell}>
       <Sidebar
-        tab={tab}
+        tab={tab as Tab}
         onTabChange={handleTabChange}
         activeTargetName={activeTarget?.name}
         onShutdown={handleShutdown}
@@ -71,7 +78,7 @@ const App = () => {
       />
 
       <main className={styles.content}>
-        <div className={`${styles.contentInner}${tab === "dashboard" ? ` ${styles.flexCol}` : ""}`}>
+        <div className={`${styles.contentInner}${tab === "dashboard" || tab === "analytics" ? ` ${styles.flexCol}` : ""}`}>
           {tab === "config" && (
             <ConfigTab config={config} onRefresh={fetchConfig} />
           )}
@@ -79,6 +86,7 @@ const App = () => {
           {tab === "dashboard" && (
             <DashboardTab config={config} onRefresh={fetchConfig} />
           )}
+          {tab === "analytics" && <AnalyticsTab />}
         </div>
       </main>
     </div>

@@ -49,6 +49,27 @@ const MIGRATIONS: string[] = [
   `ALTER TABLE hooks ADD COLUMN projectRoot TEXT`,
   `ALTER TABLE logs ADD COLUMN sessionId TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_logs_session_ts ON logs(sessionId, timestamp DESC)`,
+  `CREATE TABLE IF NOT EXISTS cost_records (
+    id TEXT PRIMARY KEY,
+    logId TEXT,
+    timestamp TEXT NOT NULL,
+    sessionId TEXT,
+    targetId TEXT NOT NULL,
+    targetName TEXT NOT NULL,
+    model TEXT,
+    inputTokens INTEGER NOT NULL DEFAULT 0,
+    outputTokens INTEGER NOT NULL DEFAULT 0,
+    totalTokens INTEGER NOT NULL DEFAULT 0,
+    cacheReadTokens INTEGER NOT NULL DEFAULT 0,
+    cacheCreationTokens INTEGER NOT NULL DEFAULT 0,
+    costUsd REAL NOT NULL DEFAULT 0,
+    durationMs INTEGER NOT NULL DEFAULT 0,
+    firstChunkMs INTEGER,
+    status TEXT NOT NULL DEFAULT 'completed'
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_cost_session ON cost_records(sessionId, timestamp DESC);
+   CREATE INDEX IF NOT EXISTS idx_cost_ts ON cost_records(timestamp DESC);
+   CREATE INDEX IF NOT EXISTS idx_cost_target_ts ON cost_records(targetId, timestamp DESC)`,
 ];
 
 let dbInstance: Database.Database | null = null;

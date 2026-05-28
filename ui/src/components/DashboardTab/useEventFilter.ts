@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { TimelineEntry } from "../../lib/api";
 import {
   type EventTypeFilter,
@@ -15,12 +15,18 @@ export const useEventFilter = () => {
   const [filterSearch, setFilterSearch] = useState("");
 
   const setPreset = (preset: "compact" | "all") => {
-    setFilterPreset(preset);
-    setEnabledTypes(
-      preset === "compact"
-        ? new Set(COMPACT_EVENT_TYPES)
-        : new Set(ALL_EVENT_TYPES),
-    );
+    if (preset === "all" && filterPreset === "all" && enabledTypes.size === ALL_EVENT_TYPES.length) {
+      // Already all selected → toggle to none
+      setFilterPreset("all");
+      setEnabledTypes(new Set());
+    } else {
+      setFilterPreset(preset);
+      setEnabledTypes(
+        preset === "compact"
+          ? new Set(COMPACT_EVENT_TYPES)
+          : new Set(ALL_EVENT_TYPES),
+      );
+    }
   };
 
   const toggleType = (type: EventTypeFilter) => {

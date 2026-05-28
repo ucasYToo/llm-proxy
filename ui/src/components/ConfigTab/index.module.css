@@ -445,6 +445,46 @@
   line-height: 1.6;
 }
 
+/* ── Budget Settings ── */
+
+.budgetGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.budgetField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.budgetField label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.budgetField input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  background: var(--bg);
+  color: var(--text);
+  transition: border-color 0.15s var(--ease);
+}
+
+.budgetField input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.budgetField input::placeholder {
+  color: var(--text-muted);
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 768px) {

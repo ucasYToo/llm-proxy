@@ -2,15 +2,27 @@ import { Express, Request, Response } from "express";
 import path from "path";
 import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTarget, getChannels } from "../config/store";
 import { queryLogs, clearLogs } from "../storage/logs";
-import { insertHook, queryHooks, recentSessions, clearHooks } from "../storage/hooks";
+import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations } from "../storage/hooks";
+import {
+  aggregateCostBySession,
+  aggregateCostByTimeRange,
+  aggregateCostByTarget,
+  aggregateCostByModel,
+  getBudgetStatus,
+  queryCostRecords,
+  getTokenTimeSeries,
+  clearCostRecords,
+} from "../storage/cost";
+import { computeHealthScore } from "../cost/health";
+import { resolvePricingDetailed } from "../cost/pricing";
 import { parseHookPayload } from "../interfaces";
-import type { Target, LogCollection, Channel, NotificationSettings, Config } from "../interfaces";
+import type { Target, LogCollection, Channel, NotificationSettings, Config, BudgetConfig } from "../interfaces";
 import { v4 as uuidv4 } from "uuid";
 import { readClaudeSettings, writeClaudeSettings } from "../lib/claude-settings";
+import { readAiTitle } from "../lib/transcript";
 import { addClient, broadcast } from "./sse";
 import { notify } from "../notify/macos";
 import { sendDingTalkMarkdown } from "../notify/dingtalk";
-import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
@@ -35,19 +47,24 @@ const buildDirectEnv = (
     delete newEnv.ANTHROPIC_MODEL;
   }
 
-  // 3. API_KEY: 认证信息
+  // 3. 认证信息：bearer → ANTHROPIC_AUTH_TOKEN（三方代理）；x-api-key → ANTHROPIC_API_KEY（Anthropic 官方）
   if (target.auth?.value) {
     const { type, headerName, value } = target.auth;
     if (type === "bearer") {
-      newEnv.ANTHROPIC_API_KEY = value;
+      newEnv.ANTHROPIC_AUTH_TOKEN = value;
+      delete newEnv.ANTHROPIC_API_KEY;
     } else if (type === "x-api-key") {
       newEnv.ANTHROPIC_API_KEY = value;
+      delete newEnv.ANTHROPIC_AUTH_TOKEN;
     } else if (type === "custom" && headerName) {
       // custom header: 写入 settings.env 的自定义 key
       newEnv[headerName] = value;
+      delete newEnv.ANTHROPIC_API_KEY;
+      delete newEnv.ANTHROPIC_AUTH_TOKEN;
     }
   } else {
     delete newEnv.ANTHROPIC_API_KEY;
+    delete newEnv.ANTHROPIC_AUTH_TOKEN;
   }
 
   // 4. hasCompletedOnboarding: 方便首次使用三方模型
@@ -79,18 +96,23 @@ const buildProxyEnv = (
     delete newEnv.ANTHROPIC_MODEL;
   }
 
-  // 3. API_KEY: 认证信息（保持与直连一致）
+  // 3. 认证信息（与直连一致）：bearer → ANTHROPIC_AUTH_TOKEN；x-api-key → ANTHROPIC_API_KEY
   if (target.auth?.value) {
     const { type, headerName, value } = target.auth;
     if (type === "bearer") {
-      newEnv.ANTHROPIC_API_KEY = value;
+      newEnv.ANTHROPIC_AUTH_TOKEN = value;
+      delete newEnv.ANTHROPIC_API_KEY;
     } else if (type === "x-api-key") {
       newEnv.ANTHROPIC_API_KEY = value;
+      delete newEnv.ANTHROPIC_AUTH_TOKEN;
     } else if (type === "custom" && headerName) {
       newEnv[headerName] = value;
+      delete newEnv.ANTHROPIC_API_KEY;
+      delete newEnv.ANTHROPIC_AUTH_TOKEN;
     }
   } else {
     delete newEnv.ANTHROPIC_API_KEY;
+    delete newEnv.ANTHROPIC_AUTH_TOKEN;
   }
 
   // 4. hasCompletedOnboarding: 方便首次使用三方模型
@@ -204,7 +226,99 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | caffeinate" });
+    if (type === "cost-summary") {
+      const config = readConfig();
+      const budget = config.budget ?? {};
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const budgetStatus = getBudgetStatus(
+        budget.dailyLimitUsd,
+        budget.monthlyLimitUsd,
+        budget.alertThresholdPct,
+      );
+
+      // Total cost (all time)
+      const allRecords = queryCostRecords({ limit: 1, offset: 0 });
+      const totalCost = queryCostRecords({ limit: 100000, offset: 0 }).records.reduce(
+        (sum, r) => sum + r.costUsd,
+        0,
+      );
+
+      // Today's cost
+      const todayRecords = queryCostRecords({ since: todayStart, limit: 100000 });
+      const todayCost = todayRecords.records.reduce((sum, r) => sum + r.costUsd, 0);
+
+      const byTarget = aggregateCostByTarget();
+      const byModel = aggregateCostByModel();
+      const recentTrend = aggregateCostByTimeRange({
+        since: thirtyDaysAgo,
+        granularity: "day",
+      });
+
+      res.json({
+        budget: budgetStatus,
+        totalCost,
+        todayCost,
+        byTarget,
+        byModel,
+        recentTrend,
+      });
+      return;
+    }
+
+    if (type === "cost-trend") {
+      const since = (req.query.since as string) ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const until = (req.query.until as string) ?? undefined;
+      const granularity = (req.query.granularity as string) ?? "day";
+      const validGranularity = ["hour", "day", "week"].includes(granularity)
+        ? (granularity as "hour" | "day" | "week")
+        : "day";
+      const result = aggregateCostByTimeRange({ since, until, granularity: validGranularity });
+      res.json(result);
+      return;
+    }
+
+    if (type === "cost-session") {
+      const sessionId = (req.query.sessionId as string) ?? "";
+      if (!sessionId) {
+        res.status(400).json({ error: "sessionId is required" });
+        return;
+      }
+      const summary = aggregateCostBySession(sessionId);
+      const health = computeHealthScore(sessionId);
+      const records = queryCostRecords({ sessionId, limit: 500 }).records;
+      const tokenTimeSeries = getTokenTimeSeries(sessionId);
+      res.json({ summary, health, records, tokenTimeSeries });
+      return;
+    }
+
+    if (type === "session-analytics") {
+      const sessionId = (req.query.sessionId as string) ?? "";
+      if (!sessionId) {
+        res.status(400).json({ error: "sessionId is required" });
+        return;
+      }
+      const costSummary = aggregateCostBySession(sessionId);
+      const health = computeHealthScore(sessionId);
+      const toolUsage = aggregateToolUsage(sessionId);
+      const tokenTimeSeries = getTokenTimeSeries(sessionId);
+      const subagents = getSubagentRelations(sessionId);
+      res.json({ costSummary, health, toolUsage, tokenTimeSeries, subagents });
+      return;
+    }
+
+    if (type === "pricing") {
+      const model = (req.query.model as string) ?? "";
+      const { pricing, source, matchedKey } = resolvePricingDetailed(
+        model || undefined,
+      );
+      res.json({ model: model || null, pricing, source, matchedKey });
+      return;
+    }
+
+    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | caffeinate | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
   });
 
   // SSE：实时事件流
@@ -219,9 +333,15 @@ export const setupApiRoutes = (app: Express) => {
     const hookPayload = parseHookPayload(rawBody);
 
     const sessionId = hookPayload?.session_id ?? null;
+    const toolEvents = new Set([
+      "PreToolUse",
+      "PostToolUse",
+      "PostToolUseFailure",
+      "PermissionDenied",
+    ]);
     const toolName =
-      hookPayload && (hookPayload.hook_event_name === "PreToolUse" || hookPayload.hook_event_name === "PostToolUse")
-        ? hookPayload.tool_name
+      hookPayload && toolEvents.has(hookPayload.hook_event_name)
+        ? (hookPayload as { tool_name?: string }).tool_name ?? null
         : null;
     const cwd = hookPayload?.cwd ?? null;
 
@@ -236,54 +356,74 @@ export const setupApiRoutes = (app: Express) => {
     broadcast("hook", entry);
 
     const { notifications } = readConfig();
-    const shouldNotify =
-      (event === "Stop" && notifications?.stop) ||
-      (event === "SubagentStop" && notifications?.subagentStop) ||
-      (event === "Notification" && notifications?.notification);
+    const evtKey: "stop" | "subagentStop" | "notification" | null =
+      event === "Stop"
+        ? "stop"
+        : event === "SubagentStop"
+          ? "subagentStop"
+          : event === "Notification"
+            ? "notification"
+            : null;
 
-    if (shouldNotify && hookPayload) {
+    const macos = notifications?.macos;
+    const ding = notifications?.dingtalk;
+    const macosOn = !!evtKey && !!macos?.enabled && !!macos?.events?.[evtKey];
+    const dingOn = !!evtKey && !!ding?.enabled && !!ding?.events?.[evtKey];
+
+    if ((macosOn || dingOn) && hookPayload && evtKey) {
       const projectName = projectBasename(entry.projectRoot ?? entry.cwd);
       const sessionTail = sessionId ? sessionId.slice(-6) : "unknown";
       const title = projectName
         ? `Claude Code · ${projectName}`
         : "Claude Code";
 
+      // 从 transcript 抓 ai-title；可能为 null（早期 session / 还没生成）
+      const aiTitle = readAiTitle(hookPayload.transcript_path);
+      // macOS body 空间有限，截断到 ~50 字
+      const aiTitleShort =
+        aiTitle && aiTitle.length > 50 ? `${aiTitle.slice(0, 50)}…` : aiTitle;
+      const bodyTail = aiTitleShort ?? `session ${sessionTail}`;
+
       let body: string;
       let sound: string;
       let eventLabel: string;
 
       if (hookPayload.hook_event_name === "Stop") {
-        body = `任务完成 · session ${sessionTail}`;
+        body = `任务完成 · ${bodyTail}`;
         sound = "Glass";
         eventLabel = "任务完成";
       } else if (hookPayload.hook_event_name === "SubagentStop") {
-        body = `子代理完成 · session ${sessionTail}`;
+        body = `子代理完成 · ${bodyTail}`;
         sound = "Tink";
         eventLabel = "子代理完成";
       } else if (hookPayload.hook_event_name === "Notification") {
         const msg = hookPayload.message || "Claude Code notification";
-        body = `${msg} · session ${sessionTail}`;
+        body = `${msg} · ${bodyTail}`;
         sound = "Ping";
         eventLabel = msg;
       } else {
-        body = `${event} · session ${sessionTail}`;
+        body = `${event} · ${bodyTail}`;
         sound = "Ping";
         eventLabel = event;
       }
 
-      notify(title, body, sound);
+      if (macosOn) {
+        notify(title, body, sound);
+      }
 
-      const ding = notifications?.dingtalk;
-      if (ding?.enabled && ding.accessToken && ding.secret) {
+      if (dingOn && ding?.accessToken && ding.secret) {
         const lastAssistant =
           hookPayload.hook_event_name === "Stop" || hookPayload.hook_event_name === "SubagentStop"
             ? hookPayload.last_assistant_message
             : null;
+        const sessionLine = aiTitle
+          ? `- 会话: ${aiTitle} (\`${sessionTail}\`)`
+          : `- session: \`${sessionTail}\``;
         const md = [
           `### ${title}`,
           `**${eventLabel}** (${event})`,
           "",
-          `- session: \`${sessionTail}\``,
+          sessionLine,
           projectName ? `- project: \`${projectName}\`` : null,
           `- time: ${new Date().toLocaleString()}`,
           lastAssistant
@@ -302,25 +442,6 @@ export const setupApiRoutes = (app: Express) => {
             console.warn(`[dingtalk] 发送失败: ${r.error}`);
           }
         });
-      }
-
-      const feishu = notifications?.feishu;
-      if (feishu?.enabled && feishu.webhookUrl) {
-        const text = [
-          `${title} · ${eventLabel}`,
-          `session: ${sessionTail}`,
-          projectName ? `project: ${projectName}` : null,
-          `time: ${new Date().toLocaleString()}`,
-        ]
-          .filter(Boolean)
-          .join("\n");
-        void sendFeishuText(feishu.webhookUrl, feishu.secret ?? "", text).then(
-          (r) => {
-            if (!r.ok) {
-              console.warn(`[feishu] 发送失败: ${r.error}`);
-            }
-          },
-        );
       }
     }
 
@@ -444,18 +565,23 @@ export const setupApiRoutes = (app: Express) => {
           delete newEnv.ANTHROPIC_MODEL;
         }
 
-        // 3. API_KEY: 认证信息（保持与直连一致）
+        // 3. 认证信息（与直连一致）：bearer → ANTHROPIC_AUTH_TOKEN；x-api-key → ANTHROPIC_API_KEY
         if (activeTarget?.auth?.value) {
           const { type, headerName, value } = activeTarget.auth;
           if (type === "bearer") {
-            newEnv.ANTHROPIC_API_KEY = value;
+            newEnv.ANTHROPIC_AUTH_TOKEN = value;
+            delete newEnv.ANTHROPIC_API_KEY;
           } else if (type === "x-api-key") {
             newEnv.ANTHROPIC_API_KEY = value;
+            delete newEnv.ANTHROPIC_AUTH_TOKEN;
           } else if (type === "custom" && headerName) {
             newEnv[headerName] = value;
+            delete newEnv.ANTHROPIC_API_KEY;
+            delete newEnv.ANTHROPIC_AUTH_TOKEN;
           }
         } else {
           delete newEnv.ANTHROPIC_API_KEY;
+          delete newEnv.ANTHROPIC_AUTH_TOKEN;
         }
 
         // 4. hasCompletedOnboarding: 方便首次使用三方模型
@@ -602,39 +728,39 @@ export const setupApiRoutes = (app: Express) => {
         break;
       }
 
-      case "testFeishu": {
-        const { webhookUrl, secret } = req.body as {
-          webhookUrl?: string;
-          secret?: string;
-        };
-        const url = webhookUrl ?? config.notifications?.feishu?.webhookUrl ?? "";
-        const sec = secret ?? config.notifications?.feishu?.secret ?? "";
-        const r = await sendFeishuText(
-          url,
-          sec,
-          `Claude Code 飞书通知测试\n配置生效 ✅\n\ntime: ${new Date().toLocaleString()}`,
-        );
-        if (!r.ok) {
-          res.status(400).json({ error: r.error ?? "send failed" });
-          return;
-        }
-        res.json({ ok: true });
-        break;
-      }
-
       case "updateNotifications": {
         const { notifications } = req.body as { notifications: NotificationSettings };
         const prev = config.notifications ?? {};
         const next: NotificationSettings = { ...prev, ...notifications };
-        if (notifications.dingtalk) {
-          next.dingtalk = { ...(prev.dingtalk ?? {}), ...notifications.dingtalk };
+        if (notifications.macos) {
+          next.macos = {
+            ...(prev.macos ?? {}),
+            ...notifications.macos,
+            events: notifications.macos.events
+              ? { ...(prev.macos?.events ?? {}), ...notifications.macos.events }
+              : prev.macos?.events,
+          };
         }
-        if (notifications.feishu) {
-          next.feishu = { ...(prev.feishu ?? {}), ...notifications.feishu };
+        if (notifications.dingtalk) {
+          next.dingtalk = {
+            ...(prev.dingtalk ?? {}),
+            ...notifications.dingtalk,
+            events: notifications.dingtalk.events
+              ? { ...(prev.dingtalk?.events ?? {}), ...notifications.dingtalk.events }
+              : prev.dingtalk?.events,
+          };
         }
         config.notifications = next;
         writeConfig(config);
         res.json({ ok: true, notifications: config.notifications });
+        break;
+      }
+
+      case "updateBudget": {
+        const { budget } = req.body as { budget: BudgetConfig };
+        config.budget = { ...(config.budget ?? {}), ...budget };
+        writeConfig(config);
+        res.json({ ok: true, budget: config.budget });
         break;
       }
 
@@ -659,7 +785,13 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    res.status(400).json({ error: "type must be logs or hooks" });
+    if (type === "cost") {
+      clearCostRecords();
+      res.json({ ok: true });
+      return;
+    }
+
+    res.status(400).json({ error: "type must be logs, hooks, or cost" });
   });
 
   // 关闭服务

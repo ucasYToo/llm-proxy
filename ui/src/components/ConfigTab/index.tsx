@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Config, Target, LogCollection, Channel } from "../../lib/api";
-import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget } from "../../lib/api";
+import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget } from "../../lib/api";
 import TargetForm from "../TargetForm/index";
 import styles from "./index.module.css";
 
@@ -533,6 +533,67 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
               </div>
             </div>
           </label>
+        </div>
+      </div>
+
+      {/* 预算设置 */}
+      <div className={styles.section}>
+        <p className={styles.sectionTitle}>预算设置</p>
+        <p className={styles.hint}>
+          设置每日/每月费用上限，超出阈值时会收到通知。留空表示不设置预算。
+        </p>
+        <div className={styles.budgetGrid}>
+          <div className={styles.budgetField}>
+            <label htmlFor="dailyLimit">每日上限 (USD)</label>
+            <input
+              id="dailyLimit"
+              type="number"
+              min={0}
+              step={0.01}
+              placeholder="例如: 10.00"
+              defaultValue={config.budget?.dailyLimitUsd ?? ""}
+              onBlur={(e) => {
+                const n = e.target.value ? Number(e.target.value) : undefined;
+                if (n !== undefined && (!Number.isFinite(n) || n < 0)) return;
+                void updateBudget({ dailyLimitUsd: n });
+                onRefresh();
+              }}
+            />
+          </div>
+          <div className={styles.budgetField}>
+            <label htmlFor="monthlyLimit">每月上限 (USD)</label>
+            <input
+              id="monthlyLimit"
+              type="number"
+              min={0}
+              step={0.01}
+              placeholder="例如: 200.00"
+              defaultValue={config.budget?.monthlyLimitUsd ?? ""}
+              onBlur={(e) => {
+                const n = e.target.value ? Number(e.target.value) : undefined;
+                if (n !== undefined && (!Number.isFinite(n) || n < 0)) return;
+                void updateBudget({ monthlyLimitUsd: n });
+                onRefresh();
+              }}
+            />
+          </div>
+          <div className={styles.budgetField}>
+            <label htmlFor="alertThreshold">告警阈值 (%)</label>
+            <input
+              id="alertThreshold"
+              type="number"
+              min={1}
+              max={100}
+              placeholder="80"
+              defaultValue={config.budget?.alertThresholdPct ?? 80}
+              onBlur={(e) => {
+                const n = Number(e.target.value);
+                if (!Number.isFinite(n) || n < 1 || n > 100) return;
+                void updateBudget({ alertThresholdPct: n });
+                onRefresh();
+              }}
+            />
+          </div>
         </div>
       </div>
 

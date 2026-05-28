@@ -13,6 +13,9 @@ interface Props {
   enabledTypes: Set<EventTypeFilter>;
   filterSearch: string;
   selectedDetail: SelectedDetail | null;
+  /** 当前可用的 target 数量；为 1 时事件行不再渲染 target 标签 */
+  targetCount: number;
+  compactFilter?: boolean;
   onSelectDetail: (d: SelectedDetail | null) => void;
   onSetPreset: (p: "compact" | "all") => void;
   onToggleType: (t: EventTypeFilter) => void;
@@ -27,6 +30,8 @@ const EventStream = ({
   enabledTypes,
   filterSearch,
   selectedDetail,
+  targetCount,
+  compactFilter = false,
   onSelectDetail,
   onSetPreset,
   onToggleType,
@@ -35,6 +40,9 @@ const EventStream = ({
   const headerTitle = selectedSession
     ? `${basename(sessions.find((s) => s.sessionId === selectedSession)?.cwd) || shortSession(selectedSession)} 时间轴`
     : "全局事件流（实时）";
+
+  const scoped = !!selectedSession;
+  const hideTarget = targetCount <= 1;
 
   return (
     <section className={styles.eventStream}>
@@ -47,6 +55,7 @@ const EventStream = ({
         preset={filterPreset}
         enabledTypes={enabledTypes}
         search={filterSearch}
+        compact={compactFilter}
         onSetPreset={onSetPreset}
         onToggleType={onToggleType}
         onSearchChange={onSearchChange}
@@ -65,6 +74,7 @@ const EventStream = ({
                   key={`h-${item.hook.id}`}
                   entry={item.hook}
                   isActive={selectedDetail?.kind === "hook" && selectedDetail.entry.id === item.hook.id}
+                  scoped={scoped}
                   onClick={() => onSelectDetail({ kind: "hook", entry: item.hook })}
                 />
               );
@@ -74,6 +84,8 @@ const EventStream = ({
                 key={`l-${item.log.id}`}
                 entry={item.log}
                 isActive={selectedDetail?.kind === "log" && selectedDetail.entry.id === item.log.id}
+                scoped={scoped}
+                hideTarget={hideTarget}
                 onClick={() => onSelectDetail({ kind: "log", entry: item.log })}
               />
             );
@@ -87,10 +99,13 @@ const EventStream = ({
 export const HookRow = ({
   entry,
   isActive,
+  scoped = false,
   onClick,
 }: {
   entry: HookEntry;
   isActive: boolean;
+  /** scoped=true：已选中某个 session，sid / folder 重复显示无意义，隐藏 */
+  scoped?: boolean;
   onClick: () => void;
 }) => {
   const folder = basename(cwdFromEntry(entry));
@@ -105,8 +120,10 @@ export const HookRow = ({
         <span className={styles.eventName}>{entry.eventName}</span>
         {entry.toolName && <span className={styles.eventTool}>{entry.toolName}</span>}
       </span>
-      {folder && <span className={styles.eventCwd}>{folder}</span>}
-      <span className={styles.eventSession}>{shortSession(entry.sessionId)}</span>
+      {!scoped && folder && <span className={styles.eventCwd}>{folder}</span>}
+      {!scoped && (
+        <span className={styles.eventSession}>{shortSession(entry.sessionId)}</span>
+      )}
     </li>
   );
 };
@@ -114,10 +131,14 @@ export const HookRow = ({
 export const LogRow = ({
   entry,
   isActive,
+  scoped = false,
+  hideTarget = false,
   onClick,
 }: {
   entry: LogEntry;
   isActive: boolean;
+  scoped?: boolean;
+  hideTarget?: boolean;
   onClick: () => void;
 }) => {
   const statusClass =
@@ -139,7 +160,9 @@ export const LogRow = ({
         <span className={styles.eventName}>
           {entry.method} {entry.path}
         </span>
-        <span className={styles.eventTool}>{entry.targetName}</span>
+        {!hideTarget && (
+          <span className={styles.eventTool}>{entry.targetName}</span>
+        )}
       </span>
       <span className={`${styles.logStatus} ${statusClass}`}>
         {entry.responseStatus || (entry.status ?? "—")}
@@ -151,7 +174,9 @@ export const LogRow = ({
           {formatTPS(entry.tokenUsage?.outputTokens, entry.durationMs, entry.firstChunkMs)}
         </span>
       </span>
-      <span className={styles.eventSession}>{shortSession(entry.sessionId)}</span>
+      {!scoped && (
+        <span className={styles.eventSession}>{shortSession(entry.sessionId)}</span>
+      )}
     </li>
   );
 };

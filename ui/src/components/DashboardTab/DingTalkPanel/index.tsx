@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DingTalkConfig } from "../../../lib/api";
+import type { ChannelEvents, DingTalkConfig } from "../../../lib/api";
 import styles from "../index.module.css";
 
 interface Props {
@@ -8,11 +8,13 @@ interface Props {
   testing: boolean;
   onSave: (accessToken: string, secret: string) => void;
   onTest: (accessToken: string, secret: string) => void;
+  onChangeEvents: (next: ChannelEvents) => void;
 }
 
-const DingTalkPanel = ({ config, saving, testing, onSave, onTest }: Props) => {
+const DingTalkPanel = ({ config, saving, testing, onSave, onTest, onChangeEvents }: Props) => {
   const [accessToken, setAccessToken] = useState(config.accessToken ?? "");
   const [secret, setSecret] = useState(config.secret ?? "");
+  const { stop = false, subagentStop = false, notification = false } = config.events ?? {};
 
   useEffect(() => {
     setAccessToken(config.accessToken ?? "");
@@ -24,7 +26,33 @@ const DingTalkPanel = ({ config, saving, testing, onSave, onTest }: Props) => {
       <div className={styles.dingPanelHint}>
         钉钉群机器人 → 群设置 → 智能群助手 → 添加机器人 → 自定义机器人。
         安全设置选择「加签」，把 webhook 里的 <code>access_token</code> 和加签 <code>secret</code> 填进来。
-        被勾选的事件触发时会同时推送到钉钉群。
+        勾选下方事件以选择哪些事件会推送到钉钉群。
+      </div>
+      <div className={styles.notifyEventsRow}>
+        <label className={styles.toggleChip}>
+          <input
+            type="checkbox"
+            checked={stop}
+            onChange={(e) => onChangeEvents({ stop: e.target.checked })}
+          />
+          Stop
+        </label>
+        <label className={styles.toggleChip}>
+          <input
+            type="checkbox"
+            checked={subagentStop}
+            onChange={(e) => onChangeEvents({ subagentStop: e.target.checked })}
+          />
+          SubagentStop
+        </label>
+        <label className={styles.toggleChip}>
+          <input
+            type="checkbox"
+            checked={notification}
+            onChange={(e) => onChangeEvents({ notification: e.target.checked })}
+          />
+          Notification
+        </label>
       </div>
       <div className={styles.dingPanelRow}>
         <label className={styles.dingPanelLabel}>access_token</label>
