@@ -23,6 +23,7 @@ import { readAiTitle } from "../lib/transcript";
 import { addClient, broadcast } from "./sse";
 import { notify } from "../notify/macos";
 import { sendDingTalkMarkdown } from "../notify/dingtalk";
+import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
@@ -367,10 +368,12 @@ export const setupApiRoutes = (app: Express) => {
 
     const macos = notifications?.macos;
     const ding = notifications?.dingtalk;
+    const feishu = notifications?.feishu;
     const macosOn = !!evtKey && !!macos?.enabled && !!macos?.events?.[evtKey];
     const dingOn = !!evtKey && !!ding?.enabled && !!ding?.events?.[evtKey];
+    const feishuOn = !!evtKey && !!feishu?.enabled && !!feishu?.events?.[evtKey];
 
-    if ((macosOn || dingOn) && hookPayload && evtKey) {
+    if ((macosOn || dingOn || feishuOn) && hookPayload && evtKey) {
       const projectName = projectBasename(entry.projectRoot ?? entry.cwd);
       const sessionTail = sessionId ? sessionId.slice(-6) : "unknown";
       const title = projectName
@@ -440,6 +443,30 @@ export const setupApiRoutes = (app: Express) => {
         ).then((r) => {
           if (!r.ok) {
             console.warn(`[dingtalk] 发送失败: ${r.error}`);
+          }
+        });
+      }
+
+      if (feishuOn && feishu?.webhookUrl) {
+        const lastAssistant =
+          hookPayload.hook_event_name === "Stop" || hookPayload.hook_event_name === "SubagentStop"
+            ? hookPayload.last_assistant_message
+            : null;
+        const lines = [
+          `${title}`,
+          `${eventLabel} (${event})`,
+          aiTitle ? `会话: ${aiTitle} (${sessionTail})` : `session: ${sessionTail}`,
+          projectName ? `project: ${projectName}` : null,
+          `time: ${new Date().toLocaleString()}`,
+          lastAssistant ? `\n最后回复:\n${lastAssistant}` : null,
+        ].filter(Boolean);
+        void sendFeishuText(
+          feishu.webhookUrl,
+          feishu.secret ?? "",
+          lines.join("\n"),
+        ).then((r) => {
+          if (!r.ok) {
+            console.warn(`[feishu] 发送失败: ${r.error}`);
           }
         });
       }
@@ -728,6 +755,26 @@ export const setupApiRoutes = (app: Express) => {
         break;
       }
 
+      case "testFeishu": {
+        const { webhookUrl, secret } = req.body as {
+          webhookUrl?: string;
+          secret?: string;
+        };
+        const url = webhookUrl ?? config.notifications?.feishu?.webhookUrl ?? "";
+        const sec = secret ?? config.notifications?.feishu?.secret ?? "";
+        const r = await sendFeishuText(
+          url,
+          sec,
+          `Claude Code 飞书通知测试 - 配置生效\n\ntime: ${new Date().toLocaleString()}`,
+        );
+        if (!r.ok) {
+          res.status(400).json({ error: r.error ?? "send failed" });
+          return;
+        }
+        res.json({ ok: true });
+        break;
+      }
+
       case "updateNotifications": {
         const { notifications } = req.body as { notifications: NotificationSettings };
         const prev = config.notifications ?? {};
@@ -748,6 +795,15 @@ export const setupApiRoutes = (app: Express) => {
             events: notifications.dingtalk.events
               ? { ...(prev.dingtalk?.events ?? {}), ...notifications.dingtalk.events }
               : prev.dingtalk?.events,
+          };
+        }
+        if (notifications.feishu) {
+          next.feishu = {
+            ...(prev.feishu ?? {}),
+            ...notifications.feishu,
+            events: notifications.feishu.events
+              ? { ...(prev.feishu?.events ?? {}), ...notifications.feishu.events }
+              : prev.feishu?.events,
           };
         }
         config.notifications = next;

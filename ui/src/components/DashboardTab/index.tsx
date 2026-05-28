@@ -15,6 +15,7 @@ import {
   fetchCaffeinate,
   setCaffeinate,
   testDingTalk,
+  testFeishu,
   updateNotifications,
   clearHooks,
 } from "../../lib/api";
@@ -27,6 +28,7 @@ import { useEventFilter } from "./useEventFilter";
 import SessionList from "./SessionList";
 import EventStream from "./EventStream";
 import DingTalkPanel from "./DingTalkPanel";
+import FeishuPanel from "./FeishuPanel";
 import MacosNotifyPanel from "./MacosNotifyPanel";
 import ProjectCard from "./ProjectCard";
 import styles from "./index.module.css";
@@ -50,6 +52,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     active: false,
   });
   const [dingtalkOpen, setDingtalkOpen] = useState(false);
+  const [feishuOpen, setFeishuOpen] = useState(false);
   const [macosOpen, setMacosOpen] = useState(false);
   const [analyticsSessionId, setAnalyticsSessionId] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -58,11 +61,13 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
   const notifications: NotificationSettings = config.notifications ?? {};
   const macos = notifications.macos ?? {};
   const dingtalk = notifications.dingtalk ?? {};
+  const feishu = notifications.feishu ?? {};
 
   const eventsAnyOn = (e?: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) =>
     !!(e?.stop || e?.subagentStop || e?.notification);
   const macosArmed = !!macos.enabled && eventsAnyOn(macos.events);
   const dingtalkArmed = !!dingtalk.enabled && eventsAnyOn(dingtalk.events) && !!dingtalk.accessToken && !!dingtalk.secret;
+  const feishuArmed = !!feishu.enabled && eventsAnyOn(feishu.events) && !!feishu.webhookUrl && !!feishu.secret;
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -202,6 +207,8 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
 
   const [dingSaving, setDingSaving] = useState(false);
   const [dingTesting, setDingTesting] = useState(false);
+  const [feishuSaving, setFeishuSaving] = useState(false);
+  const [feishuTesting, setFeishuTesting] = useState(false);
 
   const handleToggleMacos = async (enabled: boolean) => {
     try {
@@ -260,6 +267,48 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
       alert("钉钉测试失败：" + String(e));
     } finally {
       setDingTesting(false);
+    }
+  };
+
+  const handleToggleFeishu = async (enabled: boolean) => {
+    try {
+      await updateNotifications({ feishu: { enabled } });
+      onRefresh();
+    } catch (e) {
+      alert("更新飞书通知失败：" + String(e));
+    }
+  };
+
+  const handleChangeFeishuEvents = async (events: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) => {
+    try {
+      await updateNotifications({ feishu: { events } });
+      onRefresh();
+    } catch (e) {
+      alert("更新飞书事件失败：" + String(e));
+    }
+  };
+
+  const handleSaveFeishu = async (webhookUrl: string, secret: string) => {
+    setFeishuSaving(true);
+    try {
+      await updateNotifications({ feishu: { webhookUrl, secret } });
+      onRefresh();
+    } catch (e) {
+      alert("保存飞书配置失败：" + String(e));
+    } finally {
+      setFeishuSaving(false);
+    }
+  };
+
+  const handleTestFeishu = async (webhookUrl: string, secret: string) => {
+    setFeishuTesting(true);
+    try {
+      await testFeishu(webhookUrl, secret);
+      alert("已发送测试消息，请到飞书群确认");
+    } catch (e) {
+      alert("飞书测试失败：" + String(e));
+    } finally {
+      setFeishuTesting(false);
     }
   };
 
@@ -444,6 +493,32 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           >
             {dingtalkOpen ? "收起" : "配置"}
           </button>
+
+          <label
+            className={styles.toggleChip}
+            title={
+              !!feishu.enabled && !feishuArmed
+                ? "已启用但缺少事件勾选 / webhook URL / secret，点配置补全"
+                : "飞书群机器人"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={!!feishu.enabled}
+              onChange={(e) => void handleToggleFeishu(e.target.checked)}
+            />
+            飞书
+            {!!feishu.enabled && !feishuArmed && (
+              <span className={styles.warnDot} title="未完成配置">!</span>
+            )}
+          </label>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => setFeishuOpen((v) => !v)}
+          >
+            {feishuOpen ? "收起" : "配置"}
+          </button>
         </div>
 
         {caffeinate.supported && (
@@ -499,6 +574,17 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           onSave={handleSaveDingTalk}
           onTest={handleTestDingTalk}
           onChangeEvents={(next) => void handleChangeDingtalkEvents(next)}
+        />
+      )}
+
+      {feishuOpen && (
+        <FeishuPanel
+          config={feishu}
+          saving={feishuSaving}
+          testing={feishuTesting}
+          onSave={handleSaveFeishu}
+          onTest={handleTestFeishu}
+          onChangeEvents={(next) => void handleChangeFeishuEvents(next)}
         />
       )}
 

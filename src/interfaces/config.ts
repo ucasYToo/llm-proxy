@@ -78,9 +78,21 @@ export interface DingTalkConfig {
   events?: ChannelEvents;
 }
 
+export interface FeishuConfig {
+  /** 总开关 */
+  enabled?: boolean;
+  /** 飞书自定义机器人完整 webhook URL */
+  webhookUrl?: string;
+  /** 飞书签名校验 secret */
+  secret?: string;
+  /** 该渠道要响应的事件 */
+  events?: ChannelEvents;
+}
+
 export interface NotificationSettings {
   macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
+  feishu?: FeishuConfig;
 
   /** @deprecated 老版本扁平字段，仅做兼容读取；startup migration 会迁移到 macos.events 然后被删除 */
   stop?: boolean;
