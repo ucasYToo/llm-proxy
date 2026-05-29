@@ -45,6 +45,10 @@ export interface SessionCostSummary {
   requestCount: number;
   avgDurationMs: number;
   avgFirstChunkMs: number;
+  /** 流式请求的输出 token 总和（仅 firstChunkMs 有效且 duration>firstChunk） */
+  decodeOutputTokens: number;
+  /** 流式请求的 decode 时长总和（ms），= Σ(duration − firstChunk） */
+  totalDecodeMs: number;
 }
 
 export interface TimeRangeCostPoint {
@@ -227,7 +231,11 @@ export const aggregateCostBySession = (
         SUM(cacheCreationTokens) AS totalCacheCreationTokens,
         COUNT(*) AS requestCount,
         AVG(durationMs) AS avgDurationMs,
-        AVG(firstChunkMs) AS avgFirstChunkMs
+        AVG(firstChunkMs) AS avgFirstChunkMs,
+        SUM(CASE WHEN firstChunkMs IS NOT NULL AND durationMs > firstChunkMs
+                 THEN outputTokens ELSE 0 END) AS decodeOutputTokens,
+        SUM(CASE WHEN firstChunkMs IS NOT NULL AND durationMs > firstChunkMs
+                 THEN durationMs - firstChunkMs ELSE 0 END) AS totalDecodeMs
        FROM cost_records WHERE sessionId = ?`,
     )
     .get(sessionId) as Record<string, unknown> | undefined;
@@ -244,6 +252,8 @@ export const aggregateCostBySession = (
     requestCount: (row.requestCount as number) ?? 0,
     avgDurationMs: (row.avgDurationMs as number) ?? 0,
     avgFirstChunkMs: (row.avgFirstChunkMs as number) ?? 0,
+    decodeOutputTokens: (row.decodeOutputTokens as number) ?? 0,
+    totalDecodeMs: (row.totalDecodeMs as number) ?? 0,
   };
 };
 

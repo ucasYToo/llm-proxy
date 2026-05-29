@@ -559,157 +559,111 @@
   }
 }
 
-/* ── Import Modal ── */
+/* ── CWD Routes ── */
 
-.modalOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 20px;
-}
-
-.modal {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.cwdRouteList {
   width: 100%;
-  max-width: 520px;
-  max-height: 80vh;
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
-.modalHeader {
+.cwdRouteItem {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-light);
-}
-
-.modalTitle {
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.modalClose {
-  background: none;
-  border: none;
-  font-size: 20px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.modalClose:hover {
-  color: var(--text);
-}
-
-.modalDesc {
-  font-size: 13px;
-  color: var(--text-secondary);
-  padding: 16px 20px 0;
-  line-height: 1.5;
-}
-
-.modalTextarea {
-  margin: 12px 20px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  resize: vertical;
-  min-height: 200px;
-}
-
-.modalTextarea:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.modalTextarea:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.modalActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--border-light);
-}
-
-/* ── Export Modal ── */
-
-.exportList {
-  padding: 16px 20px;
-  max-height: 400px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   gap: 8px;
-}
-
-.exportSelectAll {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  padding: 6px 10px;
   background: var(--bg-subtle);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
+  border-radius: 3px;
+  font-size: 12px;
 }
 
-.exportSelectAll input {
-  width: 16px;
-  height: 16px;
+.cwdRoutePath {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+  flex: 1;
 }
 
-.exportItem {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.exportItem:hover {
-  background: var(--bg-subtle);
-}
-
-.exportItem input {
-  width: 16px;
-  height: 16px;
+.cwdRouteArrow {
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
-.exportItemName {
-  font-size: 13px;
+.cwdRouteTarget {
+  color: var(--accent);
   font-weight: 500;
-  color: var(--text);
-  min-width: 120px;
+  flex-shrink: 0;
 }
 
-.exportItemUrl {
+.cwdRouteDelete {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.cwdRouteDelete:hover {
+  color: var(--error);
+}
+
+.cwdRouteEmpty {
   font-size: 12px;
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.cwdRouteForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.cwdRouteForm select {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+}
+
+.cwdRouteSave,
+.cwdRouteCancel {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.cwdRouteSave {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.cwdRouteAdd {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cwdRouteAdd:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

@@ -2,7 +2,7 @@ import { Express, Request, Response } from "express";
 import path from "path";
 import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTarget, getChannels } from "../config/store";
 import { queryLogs, clearLogs } from "../storage/logs";
-import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations, getActiveSessionStatus } from "../storage/hooks";
+import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations, getActivityStatus } from "../storage/hooks";
 import {
   aggregateCostBySession,
   aggregateCostByTimeRange,
@@ -17,13 +17,13 @@ import { computeHealthScore } from "../cost/health";
 import { resolvePricingDetailed } from "../cost/pricing";
 import { parseHookPayload } from "../interfaces";
 import type { Target, LogCollection, Channel, NotificationSettings, Config, BudgetConfig } from "../interfaces";
+import { getKnownProjects, updateProjectRemark } from "../core/session";
 import { v4 as uuidv4 } from "uuid";
 import { readClaudeSettings, writeClaudeSettings } from "../lib/claude-settings";
 import { readAiTitle } from "../lib/transcript";
 import { addClient, broadcast } from "./sse";
 import { notify } from "../notify/macos";
 import { sendDingTalkMarkdown } from "../notify/dingtalk";
-import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
@@ -219,20 +219,8 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    if (type === "status") {
-      const activeSessions = getActiveSessionStatus();
-      // 聚合状态：waiting > running > idle
-      let overall: "idle" | "running" | "waiting" = "idle";
-      for (const s of activeSessions) {
-        if (s.status === "waiting") {
-          overall = "waiting";
-          break;
-        }
-        if (s.status === "running") {
-          overall = "running";
-        }
-      }
-      res.json({ status: overall, activeSessions });
+    if (type === "activity-status") {
+      res.json(getActivityStatus());
       return;
     }
 
@@ -241,6 +229,11 @@ export const setupApiRoutes = (app: Express) => {
         supported: caffeinate.isSupported(),
         active: caffeinate.isActive(),
       });
+      return;
+    }
+
+    if (type === "projects") {
+      res.json({ projects: getKnownProjects() });
       return;
     }
 
@@ -336,7 +329,7 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | caffeinate | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
+    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
   });
 
   // SSE：实时事件流
@@ -385,13 +378,11 @@ export const setupApiRoutes = (app: Express) => {
 
     const macos = notifications?.macos;
     const ding = notifications?.dingtalk;
-    const feishu = notifications?.feishu;
     const macosOn = !!evtKey && !!macos?.enabled && !!macos?.events?.[evtKey];
     const dingOn = !!evtKey && !!ding?.enabled && !!ding?.events?.[evtKey];
-    const feishuOn = !!evtKey && !!feishu?.enabled && !!feishu?.events?.[evtKey];
 
-    if ((macosOn || dingOn || feishuOn) && hookPayload && evtKey) {
-      const projectName = projectBasename(entry.projectRoot ?? entry.cwd);
+    if ((macosOn || dingOn) && hookPayload && evtKey) {
+      const projectName = projectBasename(entry.cwd);
       const sessionTail = sessionId ? sessionId.slice(-6) : "unknown";
       const title = projectName
         ? `Claude Code · ${projectName}`
@@ -463,30 +454,6 @@ export const setupApiRoutes = (app: Express) => {
           }
         });
       }
-
-      if (feishuOn && feishu?.webhookUrl) {
-        const lastAssistant =
-          hookPayload.hook_event_name === "Stop" || hookPayload.hook_event_name === "SubagentStop"
-            ? hookPayload.last_assistant_message
-            : null;
-        const lines = [
-          `${title}`,
-          `${eventLabel} (${event})`,
-          aiTitle ? `会话: ${aiTitle} (${sessionTail})` : `session: ${sessionTail}`,
-          projectName ? `project: ${projectName}` : null,
-          `time: ${new Date().toLocaleString()}`,
-          lastAssistant ? `\n最后回复:\n${lastAssistant}` : null,
-        ].filter(Boolean);
-        void sendFeishuText(
-          feishu.webhookUrl,
-          feishu.secret ?? "",
-          lines.join("\n"),
-        ).then((r) => {
-          if (!r.ok) {
-            console.warn(`[feishu] 发送失败: ${r.error}`);
-          }
-        });
-      }
     }
 
     res.json({ ok: true, id: entry.id });
@@ -548,28 +515,6 @@ export const setupApiRoutes = (app: Express) => {
         }
         writeConfig(config);
         res.json({ ok: true });
-        break;
-      }
-
-      case "importTargets": {
-        const { targets } = req.body as { targets: Omit<Target, "id">[] };
-        if (!Array.isArray(targets)) {
-          res.status(400).json({ error: "targets must be an array" });
-          return;
-        }
-        const added: Target[] = [];
-        for (const t of targets) {
-          if (!t.name || !t.url) continue;
-          const { id: _, ...rest } = t as Target;
-          const newTarget: Target = { id: uuidv4(), ...rest };
-          config.targets.push(newTarget);
-          added.push(newTarget);
-        }
-        if (!config.activeTarget && added.length > 0) {
-          config.activeTarget = added[0].id;
-        }
-        writeConfig(config);
-        res.json({ ok: true, added: added.length });
         break;
       }
 
@@ -758,6 +703,17 @@ export const setupApiRoutes = (app: Express) => {
         break;
       }
 
+      case "updateProjectRemark": {
+        const { cwd, remark } = req.body as { cwd: string; remark: string };
+        if (typeof cwd !== "string" || typeof remark !== "string") {
+          res.status(400).json({ error: "cwd and remark must be strings" });
+          return;
+        }
+        updateProjectRemark(cwd, remark);
+        res.json({ ok: true });
+        break;
+      }
+
       case "setChannelActive": {
         const { channelId, targetId } = req.body as { channelId: string; targetId: string };
         if (!config.targets.find((t) => t.id === targetId)) {
@@ -794,26 +750,6 @@ export const setupApiRoutes = (app: Express) => {
         break;
       }
 
-      case "testFeishu": {
-        const { webhookUrl, secret } = req.body as {
-          webhookUrl?: string;
-          secret?: string;
-        };
-        const url = webhookUrl ?? config.notifications?.feishu?.webhookUrl ?? "";
-        const sec = secret ?? config.notifications?.feishu?.secret ?? "";
-        const r = await sendFeishuText(
-          url,
-          sec,
-          `Claude Code 飞书通知测试 - 配置生效\n\ntime: ${new Date().toLocaleString()}`,
-        );
-        if (!r.ok) {
-          res.status(400).json({ error: r.error ?? "send failed" });
-          return;
-        }
-        res.json({ ok: true });
-        break;
-      }
-
       case "updateNotifications": {
         const { notifications } = req.body as { notifications: NotificationSettings };
         const prev = config.notifications ?? {};
@@ -834,15 +770,6 @@ export const setupApiRoutes = (app: Express) => {
             events: notifications.dingtalk.events
               ? { ...(prev.dingtalk?.events ?? {}), ...notifications.dingtalk.events }
               : prev.dingtalk?.events,
-          };
-        }
-        if (notifications.feishu) {
-          next.feishu = {
-            ...(prev.feishu ?? {}),
-            ...notifications.feishu,
-            events: notifications.feishu.events
-              ? { ...(prev.feishu?.events ?? {}), ...notifications.feishu.events }
-              : prev.feishu?.events,
           };
         }
         config.notifications = next;

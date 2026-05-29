@@ -41,10 +41,22 @@ export interface Target {
   pricing?: Partial<ModelPricing>;
 }
 
+export interface CwdRoute {
+  cwd: string;
+  targetId: string;
+}
+
 export interface Channel {
   id: string;
   name: string;
   activeTarget: string;
+  cwdRoutes?: CwdRoute[];
+}
+
+export interface Project {
+  cwd: string;
+  remark: string | null;
+  lastSeen: string;
 }
 
 export interface LogCollection {
@@ -72,17 +84,9 @@ export interface DingTalkConfig {
   events?: ChannelEvents;
 }
 
-export interface FeishuConfig {
-  enabled?: boolean;
-  webhookUrl?: string;
-  secret?: string;
-  events?: ChannelEvents;
-}
-
 export interface NotificationSettings {
   macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
-  feishu?: FeishuConfig;
   /** @deprecated 老扁平字段，仅做兼容读取 */
   stop?: boolean;
   /** @deprecated */
@@ -225,17 +229,6 @@ export async function deleteTarget(targetId: string): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete target");
 }
 
-export async function importTargets(targets: Omit<Target, "id">[]): Promise<number> {
-  const res = await fetch("/api/set", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "importTargets", targets }),
-  });
-  if (!res.ok) throw new Error("Failed to import targets");
-  const data = await res.json();
-  return data.added;
-}
-
 export async function clearLogs(): Promise<void> {
   const res = await fetch("/api/query?type=logs", { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to clear logs");
@@ -291,6 +284,22 @@ export async function deleteChannel(channelId: string): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete channel");
 }
 
+export async function getProjects(): Promise<Project[]> {
+  const res = await fetch("/api/query?type=projects");
+  if (!res.ok) throw new Error("Failed to fetch projects");
+  const data = await res.json();
+  return data.projects;
+}
+
+export async function updateProjectRemarkApi(cwd: string, remark: string): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "updateProjectRemark", cwd, remark }),
+  });
+  if (!res.ok) throw new Error("Failed to update project remark");
+}
+
 export const refreshClaudeCodeStatus = async (): Promise<{
   ok: boolean;
   detected: boolean;
@@ -339,6 +348,8 @@ export interface SessionSummary {
   lastEventName: string;
   eventCount: number;
   cwd: string | null;
+  /** session_cwds 表中针对该 cwd 的用户备注；没有则 null */
+  remark: string | null;
   /** Claude Code 自动生成的会话标题，缺失时退化为首条用户消息 */
   title: string | null;
   /** title 的来源：transcript = ai-title 事件；prompt = 首条用户消息 */
@@ -413,21 +424,6 @@ export async function testDingTalk(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error ?? "钉钉测试发送失败");
-  }
-}
-
-export async function testFeishu(
-  webhookUrl?: string,
-  secret?: string,
-): Promise<void> {
-  const res = await fetch("/api/set", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "testFeishu", webhookUrl, secret }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? "飞书测试发送失败");
   }
 }
 
@@ -516,6 +512,8 @@ export interface SessionCostSummary {
   requestCount: number;
   avgDurationMs: number;
   avgFirstChunkMs: number;
+  decodeOutputTokens: number;
+  totalDecodeMs: number;
 }
 
 export interface ToolUsageStats {

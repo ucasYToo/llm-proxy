@@ -1,7 +1,8 @@
 import { Express, Request, Response } from "express";
 import { proxyRequest } from "../core/proxy";
 import type { ProxyResponse } from "../core/proxy";
-import { getChannelActiveTarget, getChannels } from "../config/store";
+import { getChannelActiveTarget, getChannelCwdTarget, getChannels } from "../config/store";
+import { resolveSessionCwd } from "../core/session";
 
 /** 从 Express 请求中提取规范化的请求头 */
 const extractHeaders = (req: Request): Record<string, string> => {
@@ -41,7 +42,17 @@ const handleChannelProxy = async (
   channelId: string,
   pathPrefix: RegExp,
 ): Promise<void> => {
-  const target = getChannelActiveTarget(channelId);
+  let target = getChannelActiveTarget(channelId);
+
+  const sessionId = req.headers["x-claude-code-session-id"];
+  if (typeof sessionId === "string") {
+    const cwd = resolveSessionCwd(sessionId);
+    if (cwd) {
+      const cwdTarget = getChannelCwdTarget(channelId, cwd);
+      if (cwdTarget) target = cwdTarget;
+    }
+  }
+
   if (!target) {
     res.status(400).json({
       error: "Bad Request",

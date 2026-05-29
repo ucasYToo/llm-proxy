@@ -1,6 +1,6 @@
-import { useState } from "react";
-import type { Config, Target, LogCollection, Channel } from "../../lib/api";
-import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget, importTargets } from "../../lib/api";
+import { useCallback, useEffect, useState } from "react";
+import type { Config, Target, LogCollection, Channel, Project } from "../../lib/api";
+import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget, getProjects } from "../../lib/api";
 import TargetForm from "../TargetForm/index";
 import styles from "./index.module.css";
 
@@ -19,11 +19,15 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
   const [editChannelName, setEditChannelName] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelId, setNewChannelId] = useState("");
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importJson, setImportJson] = useState("");
-  const [importLoading, setImportLoading] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [addingRouteCh, setAddingRouteCh] = useState<string | undefined>();
+  const [newRouteCwd, setNewRouteCwd] = useState("");
+  const [newRouteTarget, setNewRouteTarget] = useState("");
+
+  const loadProjects = useCallback(async () => {
+    try { setProjects(await getProjects()); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { void loadProjects(); }, [loadProjects]);
 
   const channels = config.channels ?? [];
   const port = config.serverPort ?? 1998;
@@ -177,6 +181,36 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
     }
   };
 
+  const handleAddCwdRoute = async (channel: Channel) => {
+    if (!newRouteCwd || !newRouteTarget) return;
+    try {
+      const routes = [...(channel.cwdRoutes ?? [])];
+      const idx = routes.findIndex((r) => r.cwd === newRouteCwd);
+      if (idx >= 0) {
+        routes[idx] = { cwd: newRouteCwd, targetId: newRouteTarget };
+      } else {
+        routes.push({ cwd: newRouteCwd, targetId: newRouteTarget });
+      }
+      await updateChannel({ ...channel, cwdRoutes: routes });
+      setAddingRouteCh(undefined);
+      setNewRouteCwd("");
+      setNewRouteTarget("");
+      onRefresh();
+    } catch (e) {
+      alert("添加 CWD 路由失败：" + String(e));
+    }
+  };
+
+  const handleRemoveCwdRoute = async (channel: Channel, cwd: string) => {
+    try {
+      const routes = (channel.cwdRoutes ?? []).filter((r) => r.cwd !== cwd);
+      await updateChannel({ ...channel, cwdRoutes: routes });
+      onRefresh();
+    } catch (e) {
+      alert("删除 CWD 路由失败：" + String(e));
+    }
+  };
+
   const handleSetChannelActive = async (channelId: string, targetId: string) => {
     try {
       await setChannelActiveTarget(channelId, targetId);
@@ -208,91 +242,21 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
     setEditChannelName("");
   };
 
-  const handleExport = () => {
-    setSelectedTargets(new Set());
-    setShowExportModal(true);
-  };
-
-  const handleExportConfirm = async () => {
-    const targetsToExport = config.targets.filter((t) => selectedTargets.has(t.id));
-    if (targetsToExport.length === 0) return;
-
-    const json = JSON.stringify(targetsToExport, null, 2);
-    try {
-      await navigator.clipboard.writeText(json);
-      alert(`已复制 ${targetsToExport.length} 个目标到剪贴板`);
-      setShowExportModal(false);
-    } catch {
-      prompt("请手动复制以下内容：", json);
-    }
-  };
-
-  const toggleTargetSelection = (id: string) => {
-    const newSet = new Set(selectedTargets);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
-    setSelectedTargets(newSet);
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedTargets.size === config.targets.length) {
-      setSelectedTargets(new Set());
-    } else {
-      setSelectedTargets(new Set(config.targets.map((t) => t.id)));
-    }
-  };
-
-  const handleImport = async () => {
-    if (!importJson.trim()) return;
-    try {
-      const targets = JSON.parse(importJson);
-      if (!Array.isArray(targets)) {
-        alert("格式错误：需要是 JSON 数组");
-        return;
-      }
-      setImportLoading(true);
-      const added = await importTargets(targets);
-      alert(`成功导入 ${added} 个目标`);
-      setShowImportModal(false);
-      setImportJson("");
-      onRefresh();
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        alert("JSON 格式错误：" + e.message);
-      } else {
-        alert("导入失败：" + String(e));
-      }
-    } finally {
-      setImportLoading(false);
-    }
-  };
-
   return (
     <div>
       {/* 转发目标 */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <span className={styles.sectionTitle}>转发目标</span>
-          <div className={styles.headerActions}>
-            <button className="btnGhost btnSm" onClick={handleExport} disabled={config.targets.length === 0}>
-              导出
-            </button>
-            <button className="btnGhost btnSm" onClick={() => setShowImportModal(true)}>
-              导入
-            </button>
-            <button
-              className="btnPrimary btnSm"
-              onClick={() => {
-                setEditTarget(undefined);
-                setShowForm(true);
-              }}
-            >
-              + 添加目标
-            </button>
-          </div>
+          <button
+            className="btnPrimary btnSm"
+            onClick={() => {
+              setEditTarget(undefined);
+              setShowForm(true);
+            }}
+          >
+            + 添加目标
+          </button>
         </div>
 
         {config.targets.length === 0 ? (
@@ -541,6 +505,59 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
                             <span className={styles.modelBadge}>{activeTarget.anthropicModel}</span>
                           )}
                         </div>
+
+                        {/* CWD Routes */}
+                        <div className={styles.channelField}>
+                          <span className={styles.channelFieldLabel}>CWD 路由</span>
+                          {ch.cwdRoutes?.length ? (
+                            <div className={styles.cwdRouteList}>
+                              {ch.cwdRoutes.map((r) => {
+                                const t = config.targets.find((t) => t.id === r.targetId);
+                                const proj = projects.find((p) => p.cwd === r.cwd);
+                                return (
+                                  <div key={r.cwd} className={styles.cwdRouteItem}>
+                                    <span className={styles.cwdRoutePath}>
+                                      {proj?.remark ? `${proj.remark} (${r.cwd})` : r.cwd}
+                                    </span>
+                                    <span className={styles.cwdRouteArrow}>&rarr;</span>
+                                    <span className={styles.cwdRouteTarget}>{t?.name ?? "未知目标"}</span>
+                                    <button
+                                      className={styles.cwdRouteDelete}
+                                      onClick={() => handleRemoveCwdRoute(ch, r.cwd)}
+                                      title="删除"
+                                    >&times;</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <span className={styles.cwdRouteEmpty}>无 CWD 路由规则</span>
+                          )}
+                          {addingRouteCh === ch.id ? (
+                            <div className={styles.cwdRouteForm}>
+                              <select value={newRouteCwd} onChange={(e) => setNewRouteCwd(e.target.value)}>
+                                <option value="">选择项目目录...</option>
+                                {projects.map((p) => (
+                                  <option key={p.cwd} value={p.cwd}>
+                                    {p.remark ? `${p.remark} (${p.cwd})` : p.cwd}
+                                  </option>
+                                ))}
+                              </select>
+                              <select value={newRouteTarget} onChange={(e) => setNewRouteTarget(e.target.value)}>
+                                <option value="">选择目标...</option>
+                                {config.targets.map((t) => (
+                                  <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                              </select>
+                              <button className={styles.cwdRouteSave} onClick={() => handleAddCwdRoute(ch)}>保存</button>
+                              <button className={styles.cwdRouteCancel} onClick={() => { setAddingRouteCh(undefined); setNewRouteCwd(""); setNewRouteTarget(""); }}>取消</button>
+                            </div>
+                          ) : (
+                            <button className={styles.cwdRouteAdd} onClick={() => { setAddingRouteCh(ch.id); void loadProjects(); }}>
+                              + 添加路由
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className={styles.channelFooter}>
                         <span className={styles.proxyUrl}>{proxyUrl}</span>
@@ -692,78 +709,6 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
           请求路径会直接拼接到该通道选中目标的 Base URL 后，配置的 Headers 和 Body 参数会自动合并进每次请求。
         </p>
       </div>
-
-      {/* 导入弹窗 */}
-      {showImportModal && (
-        <div className={styles.modalOverlay} onClick={() => !importLoading && setShowImportModal(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <span className={styles.modalTitle}>导入目标配置</span>
-              <button className={styles.modalClose} onClick={() => setShowImportModal(false)} disabled={importLoading}>×</button>
-            </div>
-            <p className={styles.modalDesc}>
-              粘贴从其他设备导出的 JSON 配置。支持粘贴完整目标数组或单个目标对象。
-            </p>
-            <textarea
-              className={styles.modalTextarea}
-              value={importJson}
-              onChange={(e) => setImportJson(e.target.value)}
-              placeholder={`[\n  {\n    "name": "OpenAI",\n    "url": "https://api.openai.com/v1",\n    "auth": { "type": "bearer", "value": "sk-xxx" }\n  }\n]`}
-              disabled={importLoading}
-              rows={12}
-            />
-            <div className={styles.modalActions}>
-              <button className="btnGhost" onClick={() => setShowImportModal(false)} disabled={importLoading}>
-                取消
-              </button>
-              <button className="btnPrimary" onClick={handleImport} disabled={importLoading || !importJson.trim()}>
-                {importLoading ? "导入中..." : "导入"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 导出选择弹窗 */}
-      {showExportModal && (
-        <div className={styles.modalOverlay} onClick={() => setShowExportModal(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <span className={styles.modalTitle}>导出目标配置</span>
-              <button className={styles.modalClose} onClick={() => setShowExportModal(false)}>×</button>
-            </div>
-            <div className={styles.exportList}>
-              <label className={styles.exportSelectAll}>
-                <input
-                  type="checkbox"
-                  checked={selectedTargets.size === config.targets.length}
-                  onChange={toggleSelectAll}
-                />
-                <span>全选（{selectedTargets.size}/{config.targets.length}）</span>
-              </label>
-              {config.targets.map((t) => (
-                <label key={t.id} className={styles.exportItem}>
-                  <input
-                    type="checkbox"
-                    checked={selectedTargets.has(t.id)}
-                    onChange={() => toggleTargetSelection(t.id)}
-                  />
-                  <span className={styles.exportItemName}>{t.name}</span>
-                  <span className={styles.exportItemUrl}>{t.url}</span>
-                </label>
-              ))}
-            </div>
-            <div className={styles.modalActions}>
-              <button className="btnGhost" onClick={() => setShowExportModal(false)}>
-                取消
-              </button>
-              <button className="btnPrimary" onClick={handleExportConfirm} disabled={selectedTargets.size === 0}>
-                复制到剪贴板
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showForm && (
         <TargetForm

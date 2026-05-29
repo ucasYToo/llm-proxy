@@ -141,6 +141,8 @@ function CostSummaryView({
     requestCount,
     avgDurationMs,
     avgFirstChunkMs,
+    decodeOutputTokens,
+    totalDecodeMs,
   } = summary;
 
   return (
@@ -180,7 +182,7 @@ function CostSummaryView({
         </div>
         <div className={styles.statItem}>
           <span className={styles.statLabel}>平均 TPS</span>
-          <span className={styles.statValue}>{formatAvgTps(totalOutputTokens, requestCount, avgDurationMs, avgFirstChunkMs)}</span>
+          <span className={styles.statValue}>{formatAvgTps(decodeOutputTokens, totalDecodeMs)}</span>
         </div>
       </div>
     </>
@@ -199,11 +201,9 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function formatAvgTps(outputTokens: number, requestCount: number, durationMs: number, firstChunkMs: number): string {
-  if (!outputTokens || !requestCount || !durationMs || !firstChunkMs) return "—";
-  const decodeMs = durationMs - firstChunkMs;
-  if (decodeMs <= 0) return "—";
-  const avgOutputPerReq = outputTokens / requestCount;
-  const tps = (avgOutputPerReq / decodeMs) * 1000;
+// 会话整体 decode 吞吐：流式请求的输出 token 总和 ÷ decode 时长总和
+function formatAvgTps(decodeOutputTokens: number, totalDecodeMs: number): string {
+  if (!decodeOutputTokens || totalDecodeMs <= 0) return "—";
+  const tps = (decodeOutputTokens / totalDecodeMs) * 1000;
   return tps >= 100 ? `${Math.round(tps)}` : tps.toFixed(1);
 }

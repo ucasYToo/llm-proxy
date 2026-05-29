@@ -165,8 +165,10 @@ export interface SessionSummary {
   lastEventAt: string;
   lastEventName: string;
   eventCount: number;
-  /** 该 session 最近一条事件的 cwd（来自 Claude Code hook payload） */
+  /** 该 session 启动时的 cwd（来自 Claude Code hook payload，整段会话内稳定） */
   cwd: string | null;
+  /** session_cwds 表中针对该 cwd 的用户备注；没有则 null */
+  remark: string | null;
   /** Claude Code 自动生成的会话标题；缺失时为首条非 slash UserPrompt；都拿不到则 null */
   title: string | null;
   /** title 的来源：transcript = ai-title 事件；prompt = 首条用户消息 */
@@ -226,15 +228,13 @@ export const recentSessions = (
      WHERE sessionId = ?
      ORDER BY createdAt DESC LIMIT 1`,
   );
-  const projectRootStmt = getDb().prepare(
-    `SELECT projectRoot FROM hooks
-     WHERE sessionId = ? AND projectRoot IS NOT NULL
-     ORDER BY createdAt DESC LIMIT 1`,
-  );
   const earliestCwdStmt = getDb().prepare(
     `SELECT cwd FROM hooks
      WHERE sessionId = ? AND cwd IS NOT NULL
      ORDER BY createdAt ASC LIMIT 1`,
+  );
+  const remarkStmt = getDb().prepare(
+    `SELECT remark FROM session_cwds WHERE cwd = ? AND remark IS NOT NULL AND remark != '' LIMIT 1`,
   );
   const transcriptPathStmt = getDb().prepare(
     `SELECT json_extract(payload, '$.transcript_path') AS tp FROM hooks
@@ -253,10 +253,11 @@ export const recentSessions = (
     const last = lastEventStmt.get(r.sessionId) as
       | { eventName: string }
       | undefined;
-    const { projectRoot = null } =
-      (projectRootStmt.get(r.sessionId) as { projectRoot: string } | undefined) ?? {};
     const { cwd: earliestCwd = null } =
       (earliestCwdStmt.get(r.sessionId) as { cwd: string } | undefined) ?? {};
+    const { remark = null } = earliestCwd
+      ? ((remarkStmt.get(earliestCwd) as { remark: string } | undefined) ?? {})
+      : {};
 
     // Resolve title: prefer ai-title from transcript, fallback to first user prompt
     const { tp: transcriptPath = null } =
@@ -286,7 +287,8 @@ export const recentSessions = (
       lastEventAt: r.lastEventAt,
       lastEventName: last?.eventName ?? "",
       eventCount: r.eventCount,
-      cwd: projectRoot ?? earliestCwd,
+      cwd: earliestCwd,
+      remark,
       title,
       titleSource,
       totalCostUsd: cost.totalCostUsd,
@@ -505,76 +507,170 @@ export const getSubagentRelations = (sessionId: string): SubagentRelation[] => {
   });
 };
 
-export type SessionStatus = "idle" | "running" | "waiting";
+/* ── Activity Status: 状态栏红绿灯 ── */
 
-export interface ActiveSessionStatus {
-  sessionId: string;
-  status: SessionStatus;
-  lastEventAt: string;
-  lastEventName: string;
+export type ActivityState = "approval" | "running" | "recent" | "idle";
+
+export interface ActivityStatus {
+  /** approval=待审批, running=运行中, recent=刚结束3min内, idle=空闲 */
+  state: ActivityState;
+  /** approval/running 为 true（前端据此闪烁） */
+  blinking: boolean;
+  runningCount: number;
+  approvalCount: number;
+  /** 全局最近一次任务结束时间（ISO），无则 null */
+  lastDoneAt: string | null;
+  computedAt: string;
 }
 
+/** 单个会话「最新事件」摘要，喂给纯归约函数 */
+export interface SessionLatest {
+  eventName: string;
+  /** Notification 事件的 message；其它事件为 null */
+  message: string | null;
+  /** Notification 事件的 notification_type；其它事件为 null */
+  notificationType: string | null;
+  /** 距今毫秒数 */
+  ageMs: number;
+}
+
+/** 任务结束后多久内仍显示常绿 */
+const RECENT_WINDOW_MS = 3 * 60 * 1000;
+/** 运行类事件超过此龄视为僵死（Claude Code 异常退出），防止绿灯卡死 */
+const RUNNING_STALE_MS = 15 * 60 * 1000;
+/** 待审批等待人介入，给足时间但不无限 */
+const APPROVAL_STALE_MS = 60 * 60 * 1000;
+/** 只考虑最近一小时有活动的会话 */
+const ACTIVITY_LOOKBACK_MS = 60 * 60 * 1000;
+
+/** 表示「会话进行中」的事件（不含 SessionStart：用户尚未提交 prompt） */
+const RUNNING_EVENTS = new Set([
+  "UserPromptSubmit",
+  "PreToolUse",
+  "PostToolUse",
+  "PostToolUseFailure",
+  "PermissionDenied",
+  "SubagentStart",
+  "SubagentStop",
+]);
+
+/** 标志「任务结束」的事件 */
+const DONE_EVENTS = new Set(["Stop", "StopFailure", "SessionEnd"]);
+
 /**
- * 获取活跃会话的状态（用于红绿灯指示）。
- *
- * 逻辑：
- * - idle: 没有活跃会话（最近 5 分钟内无事件，或所有会话已 Stop/SessionEnd）
- * - waiting: 某个活跃会话的最后事件是 PreToolUse（等待用户确认）
- * - running: 有活跃会话且正在正常执行
+ * 判断一条 Notification 是否为「工具授权请求」。
+ * Claude Code 授权通知形如 "Claude needs your permission to use Bash"；
+ * 空闲通知 "Claude is waiting for your input" 不应命中。
  */
-export const getActiveSessionStatus = (
-  withinMs = 5 * 60 * 1000,
-): ActiveSessionStatus[] => {
-  const since = new Date(Date.now() - withinMs).toISOString();
-  const db = getDb();
-
-  // 获取最近有活动的会话
-  const sessions = db
-    .prepare(
-      `SELECT sessionId, MAX(createdAt) AS lastEventAt
-       FROM hooks
-       WHERE sessionId IS NOT NULL AND createdAt >= ?
-       GROUP BY sessionId`,
-    )
-    .all(since) as Array<{ sessionId: string; lastEventAt: string }>;
-
-  if (sessions.length === 0) return [];
-
-  const results: ActiveSessionStatus[] = [];
-
-  const lastEventStmt = db.prepare(
-    `SELECT eventName FROM hooks
-     WHERE sessionId = ?
-     ORDER BY createdAt DESC LIMIT 1`,
-  );
-
-  const hasEndStmt = db.prepare(
-    `SELECT 1 FROM hooks
-     WHERE sessionId = ? AND eventName IN ('Stop', 'SessionEnd')
-     LIMIT 1`,
-  );
-
-  for (const s of sessions) {
-    // 检查会话是否已终止
-    const ended = hasEndStmt.get(s.sessionId);
-    if (ended) continue;
-
-    // 获取最后事件
-    const last = lastEventStmt.get(s.sessionId) as
-      | { eventName: string }
-      | undefined;
-    const lastEventName = last?.eventName ?? "";
-
-    // PreToolUse 表示等待用户确认
-    const status: SessionStatus = lastEventName === "PreToolUse" ? "waiting" : "running";
-
-    results.push({
-      sessionId: s.sessionId,
-      status,
-      lastEventAt: s.lastEventAt,
-      lastEventName,
-    });
+export const isApprovalNotification = (
+  message: string | null,
+  notificationType?: string | null,
+): boolean => {
+  // 仅匹配特定关键字；不要用 "tool"（会被 tool_use / tool_result 等误命中）
+  if (message && /permission|approval/i.test(message)) return true;
+  if (notificationType && /permission|approval/i.test(notificationType)) {
+    return true;
   }
+  return false;
+};
 
-  return results;
+/**
+ * 把各会话「最新事件」按紧急度归约成一个全局灯状态。
+ * 优先级：待审批 > 运行中 > 刚结束(3min内) > 空闲。纯函数，便于单测。
+ * 返回值中的 lastDoneAt 恒为 null，由 getActivityStatus 用真实时间戳覆盖。
+ */
+export const computeActivityState = (
+  sessions: SessionLatest[],
+  lastDoneAgeMs: number | null,
+  nowMs: number = Date.now(),
+): ActivityStatus => {
+  // 授权通知（且未僵死）→ 计为待审批
+  const approvalCount = sessions.filter(
+    (s) =>
+      s.eventName === "Notification" &&
+      isApprovalNotification(s.message, s.notificationType) &&
+      s.ageMs < APPROVAL_STALE_MS,
+  ).length;
+
+  // 运行类事件（且未僵死）→ 计为运行中。Notification/Stop 等不在 RUNNING_EVENTS 中
+  const runningCount = sessions.filter(
+    (s) => RUNNING_EVENTS.has(s.eventName) && s.ageMs < RUNNING_STALE_MS,
+  ).length;
+
+  const base = {
+    runningCount,
+    approvalCount,
+    lastDoneAt: null as string | null,
+    computedAt: new Date(nowMs).toISOString(),
+  };
+
+  if (approvalCount > 0) return { ...base, state: "approval", blinking: true };
+  if (runningCount > 0) return { ...base, state: "running", blinking: true };
+  if (lastDoneAgeMs !== null && lastDoneAgeMs < RECENT_WINDOW_MS) {
+    return { ...base, state: "recent", blinking: false };
+  }
+  return { ...base, state: "idle", blinking: false };
+};
+
+/**
+ * 读取 hooks 表，归约出供状态栏使用的全局灯状态。
+ */
+export const getActivityStatus = (): ActivityStatus => {
+  const db = getDb();
+  const now = Date.now();
+  const sinceIso = new Date(now - ACTIVITY_LOOKBACK_MS).toISOString();
+
+  // 每个会话的最新一条 hook 事件（ROW_NUMBER 带 id 兜底，避免同毫秒并列导致重复/状态错乱）
+  const rows = db
+    .prepare(
+      `SELECT eventName, payload, createdAt
+       FROM (
+         SELECT h.eventName AS eventName, h.payload AS payload, h.createdAt AS createdAt,
+                ROW_NUMBER() OVER (
+                  PARTITION BY h.sessionId ORDER BY h.createdAt DESC, h.id DESC
+                ) AS rn
+         FROM hooks h
+         WHERE h.sessionId IS NOT NULL AND h.createdAt >= ?
+       )
+       WHERE rn = 1`,
+    )
+    .all(sinceIso) as Array<{
+    eventName: string;
+    payload: string | null;
+    createdAt: string;
+  }>;
+
+  const sessions: SessionLatest[] = rows.map((r) => {
+    let message: string | null = null;
+    let notificationType: string | null = null;
+    if (r.payload) {
+      try {
+        const p = JSON.parse(r.payload) as Record<string, unknown>;
+        message = typeof p.message === "string" ? p.message : null;
+        notificationType =
+          typeof p.notification_type === "string" ? p.notification_type : null;
+      } catch {
+        // 忽略损坏的 payload
+      }
+    }
+    return {
+      eventName: r.eventName,
+      message,
+      notificationType,
+      ageMs: now - new Date(r.createdAt).getTime(),
+    };
+  });
+
+  // 全局最近一次结束时间（独立于「最新事件」，因为结束后可能又有 idle 通知覆盖）
+  const doneRow = db
+    .prepare(
+      `SELECT MAX(createdAt) AS lastDoneAt FROM hooks WHERE eventName IN ('Stop', 'StopFailure')`,
+    )
+    .get() as { lastDoneAt: string | null } | undefined;
+  const lastDoneAt = doneRow?.lastDoneAt ?? null;
+  const lastDoneAgeMs = lastDoneAt
+    ? now - new Date(lastDoneAt).getTime()
+    : null;
+
+  return { ...computeActivityState(sessions, lastDoneAgeMs, now), lastDoneAt };
 };

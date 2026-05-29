@@ -171,3 +171,18 @@ export const getChannels = (): Channel[] => {
   const config = readConfig();
   return config.channels;
 };
+
+/**
+ * 根据 cwd 查找通道的覆盖目标
+ */
+export const getChannelCwdTarget = (
+  channelId: string,
+  cwd: string,
+): Target | null => {
+  const config = readConfig();
+  const channel = config.channels.find((c) => c.id === channelId);
+  if (!channel?.cwdRoutes?.length) return null;
+  const route = channel.cwdRoutes.find((r) => r.cwd === cwd);
+  if (!route) return null;
+  return config.targets.find((t) => t.id === route.targetId) ?? null;
+};

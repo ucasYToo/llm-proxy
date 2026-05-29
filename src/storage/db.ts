@@ -70,6 +70,17 @@ const MIGRATIONS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_cost_session ON cost_records(sessionId, timestamp DESC);
    CREATE INDEX IF NOT EXISTS idx_cost_ts ON cost_records(timestamp DESC);
    CREATE INDEX IF NOT EXISTS idx_cost_target_ts ON cost_records(targetId, timestamp DESC)`,
+  `CREATE TABLE IF NOT EXISTS session_cwds (
+    sessionId TEXT PRIMARY KEY,
+    cwd TEXT NOT NULL,
+    remark TEXT,
+    createdAt TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_session_cwds_cwd ON session_cwds(cwd)`,
+  `CREATE TABLE IF NOT EXISTS projects (
+    cwd TEXT PRIMARY KEY,
+    remark TEXT
+  )`,
 ];
 
 let dbInstance: Database.Database | null = null;

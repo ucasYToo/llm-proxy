@@ -1,6 +1,8 @@
 import { Command } from "commander";
+import path from "path";
 import chalk from "chalk";
 import { readConfig, writeConfig, getActiveTarget, getChannels, addChannel, deleteChannel, setChannelActiveTarget } from "../../config/store";
+import { normalizeCwd } from "../../core/session";
 import type { Target, Channel } from "../../interfaces";
 import { v4 as uuidv4 } from "uuid";
 
@@ -152,6 +154,13 @@ export const configCommand = (program: Command) => {
         const activeTarget = cfg.targets.find((t) => t.id === c.activeTarget);
         console.log(`  ${c.name} (ID: ${c.id})`);
         console.log(`    活动目标: ${activeTarget ? chalk.green(activeTarget.name) : chalk.yellow("未设置")}`);
+        if (c.cwdRoutes?.length) {
+          console.log(`    CWD 路由:`);
+          c.cwdRoutes.forEach((r) => {
+            const t = cfg.targets.find((t) => t.id === r.targetId);
+            console.log(`      ${r.cwd} → ${t ? chalk.cyan(t.name) : chalk.yellow("未知目标")}`);
+          });
+        }
         console.log("");
       });
     });
@@ -213,5 +222,62 @@ export const configCommand = (program: Command) => {
 
       deleteChannel(options.channel);
       console.log(chalk.green(`已删除通道: ${options.channel}`));
+    });
+
+  channel
+    .command("add-cwd-route")
+    .description("为通道添加 CWD 路由规则")
+    .requiredOption("--channel <channelId>", "通道 ID")
+    .requiredOption("--cwd <path>", "项目工作目录")
+    .requiredOption("--target <targetName>", "目标名称")
+    .action((options: { channel: string; cwd: string; target: string }) => {
+      const cfg = readConfig();
+      const ch = cfg.channels.find((c) => c.id === options.channel);
+      if (!ch) {
+        console.error(chalk.red(`未找到通道: ${options.channel}`));
+        process.exit(1);
+      }
+      const target = cfg.targets.find((t) => t.name === options.target);
+      if (!target) {
+        console.error(chalk.red(`未找到目标: ${options.target}`));
+        process.exit(1);
+      }
+      const cwd = normalizeCwd(path.resolve(options.cwd));
+      if (!ch.cwdRoutes) ch.cwdRoutes = [];
+      const existing = ch.cwdRoutes.findIndex((r) => r.cwd === cwd);
+      if (existing >= 0) {
+        ch.cwdRoutes[existing].targetId = target.id;
+      } else {
+        ch.cwdRoutes.push({ cwd, targetId: target.id });
+      }
+      writeConfig(cfg);
+      console.log(chalk.green(`已添加 CWD 路由: ${cwd} → ${target.name}`));
+    });
+
+  channel
+    .command("remove-cwd-route")
+    .description("移除通道的 CWD 路由规则")
+    .requiredOption("--channel <channelId>", "通道 ID")
+    .requiredOption("--cwd <path>", "项目工作目录")
+    .action((options: { channel: string; cwd: string }) => {
+      const cfg = readConfig();
+      const ch = cfg.channels.find((c) => c.id === options.channel);
+      if (!ch) {
+        console.error(chalk.red(`未找到通道: ${options.channel}`));
+        process.exit(1);
+      }
+      if (!ch.cwdRoutes?.length) {
+        console.log(chalk.yellow("该通道没有 CWD 路由规则"));
+        return;
+      }
+      const cwd = normalizeCwd(path.resolve(options.cwd));
+      const before = ch.cwdRoutes.length;
+      ch.cwdRoutes = ch.cwdRoutes.filter((r) => r.cwd !== cwd);
+      if (ch.cwdRoutes.length === before) {
+        console.log(chalk.yellow(`未找到 CWD 路由: ${cwd}`));
+        return;
+      }
+      writeConfig(cfg);
+      console.log(chalk.green(`已移除 CWD 路由: ${options.cwd}`));
     });
 };

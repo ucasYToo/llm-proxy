@@ -5,19 +5,16 @@ final class StatusBarController {
     private let panel: FloatingPanel
     private let webViewPanel: WebViewPanel
     private var pollTimer: Timer?
-    private var statusPollTimer: Timer?
+    private var activityTimer: Timer?
     private var blinkTimer: Timer?
     private var eventMonitor: Any?
     private let apiBaseURL = "http://localhost:\(PortConfig.port)"
 
-    private enum SessionStatus: String {
-        case idle
-        case running
-        case waiting
-    }
-
-    private var currentStatus: SessionStatus = .idle
-    private var blinkVisible = true
+    // 状态栏红绿灯状态
+    private var tokenText = "--"
+    private var activityState = "idle" // approval | running | recent | idle
+    private var isBlinking = false
+    private var blinkOn = true
 
     init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -27,12 +24,11 @@ final class StatusBarController {
         configureStatusItem()
         panel.setContentSubview(webViewPanel)
         startPolling()
-        startStatusPolling()
     }
 
     func teardown() {
         pollTimer?.invalidate()
-        statusPollTimer?.invalidate()
+        activityTimer?.invalidate()
         blinkTimer?.invalidate()
         if let eventMonitor {
             NSEvent.removeMonitor(eventMonitor)
@@ -42,34 +38,14 @@ final class StatusBarController {
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
 
-        updateStatusImage(.idle)
+        let image = NSImage(systemSymbolName: "arrow.up.arrow.down.circle", accessibilityDescription: "LLM Proxy")
+        image?.isTemplate = true
+        button.image = image
         button.imagePosition = .imageLeading
-        button.title = " --"
         button.target = self
         button.action = #selector(handleClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-    }
-
-    private func updateStatusImage(_ status: SessionStatus) {
-        guard let button = statusItem.button else { return }
-
-        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-        if let arrow = NSImage(systemSymbolName: "arrow.up.arrow.down.circle", accessibilityDescription: "LLM Proxy")?
-            .withSymbolConfiguration(config) {
-            arrow.isTemplate = true
-            button.image = arrow
-        }
-
-        let tokenText = button.title.trimmingCharacters(in: .whitespaces)
-        let prefix: String
-        switch status {
-        case .idle:    prefix = "⚪︎"
-        case .running: prefix = "🟢"
-        case .waiting: prefix = "🔴"
-        }
-        if tokenText.isEmpty || tokenText.hasPrefix("●") || tokenText.hasPrefix("⚪") || tokenText.hasPrefix("🟢") || tokenText.hasPrefix("🔴") {
-            button.title = " \(prefix)"
-        }
+        render()
     }
 
     private func startPolling() {
@@ -77,73 +53,14 @@ final class StatusBarController {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.fetchTokens()
         }
-    }
 
-    private func startStatusPolling() {
-        fetchStatus()
-        statusPollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
-            self?.fetchStatus()
-        }
-    }
-
-    private func fetchStatus() {
-        guard let url = URL(string: "\(apiBaseURL)/api/query?type=status") else { return }
-
-        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard
-                    let data,
-                    let httpResponse = response as? HTTPURLResponse,
-                    httpResponse.statusCode == 200
-                else {
-                    self.updateStatus(.idle)
-                    return
-                }
-                self.parseStatus(data)
-            }
-        }
-        task.resume()
-    }
-
-    private func parseStatus(_ data: Data) {
-        guard
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let statusStr = json["status"] as? String,
-            let status = SessionStatus(rawValue: statusStr)
-        else {
-            updateStatus(.idle)
-            return
+        fetchActivity()
+        activityTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            self?.fetchActivity()
         }
 
-        updateStatus(status)
-    }
-
-    private func updateStatus(_ status: SessionStatus) {
-        let oldStatus = currentStatus
-        currentStatus = status
-
-        // Only update image if status changed or blink state changed
-        if oldStatus != status {
-            updateStatusImage(status)
-            updateBlinkTimer()
-        }
-    }
-
-    private func updateBlinkTimer() {
-        blinkTimer?.invalidate()
-        blinkTimer = nil
-
-        // Blink for running and waiting states
-        if currentStatus == .running || currentStatus == .waiting {
-            blinkVisible = true
-            blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
-                guard let self else { return }
-                self.blinkVisible.toggle()
-                self.updateStatusImage(self.currentStatus)
-            }
-        } else {
-            blinkVisible = true
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+            self?.tickBlink()
         }
     }
 
@@ -158,7 +75,8 @@ final class StatusBarController {
                     let httpResponse = response as? HTTPURLResponse,
                     httpResponse.statusCode == 200
                 else {
-                    self.statusItem.button?.title = " --"
+                    self.tokenText = "--"
+                    self.render()
                     return
                 }
                 self.parseCostSummary(data)
@@ -172,7 +90,8 @@ final class StatusBarController {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let byTarget = json["byTarget"] as? [[String: Any]]
         else {
-            statusItem.button?.title = " --"
+            tokenText = "--"
+            render()
             return
         }
 
@@ -181,7 +100,8 @@ final class StatusBarController {
             totalTokens += target["totalTokens"] as? Int ?? 0
         }
 
-        statusItem.button?.title = " \(formatTokens(totalTokens))"
+        tokenText = formatTokens(totalTokens)
+        render()
     }
 
     private func formatTokens(_ count: Int) -> String {
@@ -193,6 +113,66 @@ final class StatusBarController {
         } else {
             let m = Double(count) / 1_000_000
             return m >= 100 ? "\(Int(m))M" : String(format: "%.1fM", m)
+        }
+    }
+
+    private func fetchActivity() {
+        guard let url = URL(string: "\(apiBaseURL)/api/query?type=activity-status") else { return }
+
+        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard
+                    let data,
+                    let httpResponse = response as? HTTPURLResponse,
+                    httpResponse.statusCode == 200,
+                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let state = json["state"] as? String
+                else {
+                    self.activityState = "idle"
+                    self.isBlinking = false
+                    self.render()
+                    return
+                }
+                self.activityState = state
+                self.isBlinking = (json["blinking"] as? Bool) ?? (state == "approval" || state == "running")
+                self.render()
+            }
+        }
+        task.resume()
+    }
+
+    private func tickBlink() {
+        guard isBlinking else {
+            if !blinkOn {
+                blinkOn = true
+                render()
+            }
+            return
+        }
+        blinkOn.toggle()
+        render()
+    }
+
+    private func render() {
+        guard let button = statusItem.button else { return }
+        let base = dotColor(for: activityState)
+        let color = (isBlinking && !blinkOn) ? base.withAlphaComponent(0.2) : base
+
+        let title = NSMutableAttributedString()
+        title.append(NSAttributedString(string: "● ", attributes: [.foregroundColor: color]))
+        title.append(NSAttributedString(string: tokenText, attributes: [.foregroundColor: NSColor.labelColor]))
+        button.attributedTitle = title
+    }
+
+    private func dotColor(for state: String) -> NSColor {
+        switch state {
+        case "approval":
+            return .systemRed
+        case "running", "recent":
+            return .systemGreen
+        default:
+            return .tertiaryLabelColor
         }
     }
 
@@ -281,22 +261,5 @@ final class StatusBarController {
             NSEvent.removeMonitor(eventMonitor)
             self.eventMonitor = nil
         }
-    }
-}
-
-extension NSImage {
-    func tinted(with color: NSColor) -> NSImage {
-        let image = self.copy() as! NSImage
-        image.lockFocus()
-
-        color.set()
-
-        let imageRect = NSRect(origin: .zero, size: image.size)
-        imageRect.fill(using: .sourceAtop)
-
-        image.unlockFocus()
-        image.isTemplate = false
-
-        return image
     }
 }

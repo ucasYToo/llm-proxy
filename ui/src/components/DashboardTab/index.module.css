@@ -270,11 +270,62 @@
   font-size: 10px;
   color: var(--text-muted);
   padding: 0 8px 4px 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sessionGroupRemarkText {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
-  text-align: left;
+}
+
+.sessionGroupRemarkEdit {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sessionGroupRemarkInput {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+}
+
+.sessionGroupRemarkInput:focus {
+  border-color: var(--accent, #4a90e2);
+}
+
+.sessionGroupRemarkBtn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0.6;
+}
+
+.sessionGroupRemarkBtn:hover {
+  opacity: 1;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
 }
 
 .sessionGroupBody {

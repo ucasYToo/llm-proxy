@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import path from "path";
 import fs from "fs";
 import { startServer } from "../../server";
@@ -63,9 +63,18 @@ export const startCommand = (program: Command) => {
 };
 
 function launchStatusBarApp(port: number) {
+  // 先关闭已存在的 statusbar 进程，避免多实例
+  try {
+    execSync("killall StatusBarApp 2>/dev/null", { stdio: "ignore" });
+  } catch {
+    // 忽略错误（没有进程在跑时会返回非零）
+  }
+
   const candidates = [
-    path.resolve(__dirname, "../../../bin/StatusBarApp"),
-    path.resolve(__dirname, "../../../../bin/StatusBarApp"),
+    // 发布包内提交的预编译二进制
+    path.resolve(__dirname, "../../../app/macos-status-bar/bin/StatusBarApp"),
+    // 本地 swift 构建产物（开发态回退）
+    path.resolve(__dirname, "../../../app/macos-status-bar/.build/release/StatusBarApp"),
   ];
 
   const appPath = candidates.find((p) => fs.existsSync(p));

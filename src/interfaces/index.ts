@@ -7,7 +7,6 @@ export type {
   ChannelEvents,
   MacosNotifyConfig,
   DingTalkConfig,
-  FeishuConfig,
   NotificationSettings,
   BudgetConfig,
   Config,

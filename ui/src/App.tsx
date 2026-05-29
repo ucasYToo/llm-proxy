@@ -4,12 +4,13 @@ import ConfigTab from "./components/ConfigTab/index";
 import LogsTab from "./components/LogsTab/index";
 import DashboardTab from "./components/DashboardTab/index";
 import AnalyticsTab from "./components/AnalyticsTab/index";
+import ProjectsTab from "./components/ProjectsTab/index";
 import StatusBarPanel from "./components/StatusBarPanel/index";
 import Sidebar, { type Tab } from "./components/Sidebar/index";
 import styles from "./App.module.css";
 
 type AppTab = Tab | "panel";
-const VALID_TABS = new Set<AppTab>(["config", "logs", "dashboard", "analytics", "panel"]);
+const VALID_TABS = new Set<AppTab>(["config", "logs", "dashboard", "analytics", "projects", "panel"]);
 
 const tabFromHash = (): AppTab => {
   const raw = window.location.hash.replace(/^#/, "") as AppTab;
@@ -87,6 +88,7 @@ const App = () => {
             <DashboardTab config={config} onRefresh={fetchConfig} />
           )}
           {tab === "analytics" && <AnalyticsTab />}
+          {tab === "projects" && <ProjectsTab />}
         </div>
       </main>
     </div>

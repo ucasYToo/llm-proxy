@@ -10,6 +10,8 @@ export type SseStatus = "connecting" | "open" | "closed";
 export type SessionGroup = {
   key: string;
   cwd: string | null;
+  /** 用户对该 cwd 的备注，优先于 cwd 显示 */
+  remark: string | null;
   folder: string;
   sessions: SessionSummary[];
   lastEventAt: string;

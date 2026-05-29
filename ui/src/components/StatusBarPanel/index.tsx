@@ -18,6 +18,7 @@ import {
   testDingTalk,
   updateNotifications,
   clearHooks,
+  updateProjectRemarkApi,
 } from "../../lib/api";
 import type { SseStatus, SessionGroup, SelectedDetail } from "../DashboardTab/types";
 import { basename, MAX_BUFFER, UNKNOWN_GROUP_KEY } from "../DashboardTab/utils";
@@ -157,7 +158,7 @@ const StatusBarPanel = () => {
         existing.sessions.push(s);
         if (s.lastEventAt > existing.lastEventAt) existing.lastEventAt = s.lastEventAt;
       } else {
-        map.set(key, { key, cwd: s.cwd, folder: basename(s.cwd) || (s.cwd ? s.cwd : "未知路径"), sessions: [s], lastEventAt: s.lastEventAt });
+        map.set(key, { key, cwd: s.cwd, remark: s.remark, folder: basename(s.cwd) || (s.cwd ? s.cwd : "未知路径"), sessions: [s], lastEventAt: s.lastEventAt });
       }
     }
     return Array.from(map.values()).sort((a, b) => a.lastEventAt < b.lastEventAt ? 1 : a.lastEventAt > b.lastEventAt ? -1 : 0);
@@ -224,19 +225,30 @@ const StatusBarPanel = () => {
 
         <span className={styles.controlSep} />
 
-        {selectedSession && !analyticsSessionId && (
-          <button className={styles.controlBtn} onClick={() => setAnalyticsSessionId(selectedSession)}>
-            分析
+        <div className={styles.controlActions}>
+          {!analyticsSessionId && sessions.length > 0 && (
+            <button
+              className={styles.controlBtnPrimary}
+              onClick={() => setAnalyticsSessionId(selectedSession ?? sessions[0].sessionId)}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 9V5M4 9V3M7 9V1" />
+              </svg>
+              分析
+            </button>
+          )}
+          {analyticsSessionId && (
+            <button className={styles.controlBtnPrimary} onClick={() => setAnalyticsSessionId(null)}>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 1L1 5l2 4M7 1l2 4-2 4" />
+              </svg>
+              事件流
+            </button>
+          )}
+          <button className={styles.controlBtnDanger} onClick={handleClear}>
+            清空
           </button>
-        )}
-        {analyticsSessionId && (
-          <button className={styles.controlBtn} onClick={() => setAnalyticsSessionId(null)}>
-            事件流
-          </button>
-        )}
-        <button className={styles.controlBtnDanger} onClick={handleClear}>
-          清空
-        </button>
+        </div>
       </div>
 
       {/* ── Notification config panels ── */}
@@ -305,6 +317,10 @@ const StatusBarPanel = () => {
               eventCount={events.length + globalLogs.length}
               onSelectSession={(sid) => { setSelectedSession(sid); setAnalyticsSessionId(null); }}
               onToggleGroup={toggleGroup}
+              onSaveRemark={async (cwd, remark) => {
+                await updateProjectRemarkApi(cwd, remark);
+                await refreshSessions();
+              }}
             />
           </div>
         )}

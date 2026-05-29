@@ -19,12 +19,12 @@
   "files": [
     "dist",
     "bin",
-    "ui-dist"
+    "ui-dist",
+    "app/macos-status-bar/bin/StatusBarApp"
   ],
   "scripts": {
-    "build": "rm -rf dist ui-dist && tsc && chmod +x bin/cli.js && vite build",
-    "build:swift": "cd app/macos-status-bar && swift build -c release && cp .build/release/StatusBarApp ../../bin/StatusBarApp",
-    "build:all": "npm run build && npm run build:swift || true",
+    "build": "rm -rf dist ui-dist && tsc && chmod +x bin/cli.js && vite build && npm run build:statusbar",
+    "build:statusbar": "if [ \"$(uname)\" = Darwin ] && command -v swift >/dev/null 2>&1; then cd app/macos-status-bar && swift build -c release && mkdir -p bin && cp -f .build/release/StatusBarApp bin/StatusBarApp; else echo 'Skipping macOS status bar build (requires macOS with Swift)'; fi",
     "dev": "tsx src/cli/index.ts",
     "dev:ui": "vite",
     "test": "jest --passWithNoTests"
