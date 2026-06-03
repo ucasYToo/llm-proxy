@@ -73,10 +73,17 @@ const migrateNotifications = (
   return { notifications: migrated, changed: true };
 };
 
+let configCache: Config | null = null;
+let configCacheMtimeMs = 0;
+
 export const readConfig = (): Config => {
   try {
     if (!fs.existsSync(CONFIG_PATH)) {
       return { ...DEFAULT_CONFIG };
+    }
+    const stat = fs.statSync(CONFIG_PATH);
+    if (configCache && stat.mtimeMs === configCacheMtimeMs) {
+      return configCache;
     }
     const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
     const parsed = JSON.parse(raw) as Config;
@@ -99,10 +106,11 @@ export const readConfig = (): Config => {
     };
 
     if (changed) {
-      // 一次性写回新结构（之后再读就是 no-op）
       writeConfig(merged);
     }
 
+    configCache = merged;
+    configCacheMtimeMs = stat.mtimeMs;
     return merged;
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -112,6 +120,7 @@ export const readConfig = (): Config => {
 export const writeConfig = (config: Config): void => {
   ensureConfigDir();
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+  configCache = null;
 };
 
 export const getActiveTarget = (): Target | null => {

@@ -1,0 +1,137 @@
+{
+  "name": "claude-llm-proxy",
+  "displayName": "Claude LLM Proxy",
+  "description": "Git commit message generation via LLM proxy, and session event stream viewer",
+  "version": "0.1.0",
+  "publisher": "claude-proxy",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claude-proxy-sidebar",
+          "title": "Claude Proxy",
+          "icon": "resources/icons/sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "claude-proxy-sidebar": [
+        {
+          "id": "claude-proxy.sessionStream",
+          "name": "Session Event Stream"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "claude-proxy.sessionStream",
+        "contents": "Session event stream & analysis.\n\nThis view is under development."
+      }
+    ],
+    "commands": [
+      {
+        "command": "claude-proxy.generateCommitMessage",
+        "title": "Generate Commit Message",
+        "icon": {
+          "light": "resources/icons/generate-light.svg",
+          "dark": "resources/icons/generate-dark.svg"
+        },
+        "category": "Claude Proxy"
+      },
+      {
+        "command": "claude-proxy.runTerminalScript",
+        "title": "Run Terminal Script",
+        "icon": {
+          "light": "resources/icons/terminal-light.svg",
+          "dark": "resources/icons/terminal-dark.svg"
+        },
+        "category": "Claude Proxy"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "claude-proxy.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "claude-proxy.runTerminalScript",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claude LLM Proxy",
+      "properties": {
+        "claude-proxy.proxyPort": {
+          "type": "number",
+          "default": 1998,
+          "description": "Port of the local claude-llm-proxy server"
+        },
+        "claude-proxy.proxyHost": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Host of the local claude-llm-proxy server"
+        },
+        "claude-proxy.channelId": {
+          "type": "string",
+          "default": "default",
+          "description": "Proxy channel ID to use for LLM requests"
+        },
+        "claude-proxy.commitMessage.language": {
+          "type": "string",
+          "enum": [
+            "zh",
+            "en"
+          ],
+          "default": "zh",
+          "description": "Language for generated commit messages"
+        },
+        "claude-proxy.commitMessage.conventionalCommits": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use Conventional Commits format (feat/fix/refactor/...)"
+        },
+        "claude-proxy.commitMessage.maxDiffLines": {
+          "type": "number",
+          "default": 500,
+          "description": "Maximum number of diff lines to send (truncated if exceeded)"
+        },
+        "claude-proxy.commitMessage.customPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "Custom system prompt. Leave empty to use built-in template."
+        },
+        "claude-proxy.terminalScript": {
+          "type": "string",
+          "default": "claude --dangerously-skip-permissions",
+          "description": "Shell command to run when clicking the editor title bar button"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -watch -p ."
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.2.2"
+  }
+}

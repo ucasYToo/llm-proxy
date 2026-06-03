@@ -84,9 +84,17 @@ export interface DingTalkConfig {
   events?: ChannelEvents;
 }
 
+export interface FeishuConfig {
+  enabled?: boolean;
+  webhookUrl?: string;
+  secret?: string;
+  events?: ChannelEvents;
+}
+
 export interface NotificationSettings {
   macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
+  feishu?: FeishuConfig;
   /** @deprecated 老扁平字段，仅做兼容读取 */
   stop?: boolean;
   /** @deprecated */
@@ -150,6 +158,9 @@ export interface LogEntry {
   };
   responseBody?: unknown;
   sessionId?: string | null;
+  agentId?: string | null;
+  agentType?: string | null;
+  cwd?: string | null;
 }
 
 export interface LogQueryResult {
@@ -161,6 +172,8 @@ export interface LogQueryParams {
   limit?: number;
   offset?: number;
   targetId?: string;
+  agentId?: string;
+  summary?: boolean;
 }
 
 export async function fetchConfig(): Promise<Config> {
@@ -187,7 +200,15 @@ export async function queryLogs(
     offset: String(params.offset ?? 0),
   });
   if (params.targetId) searchParams.set("targetId", params.targetId);
+  if (params.agentId) searchParams.set("agentId", params.agentId);
+  if (params.summary === false) searchParams.set("summary", "false");
   const res = await fetch(`/api/query?${searchParams}`);
+  return res.json();
+}
+
+export async function fetchLogDetail(id: string): Promise<LogEntry> {
+  const res = await fetch(`/api/query?type=log-detail&id=${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Log not found");
   return res.json();
 }
 
@@ -424,6 +445,21 @@ export async function testDingTalk(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error ?? "钉钉测试发送失败");
+  }
+}
+
+export async function testFeishu(
+  webhookUrl?: string,
+  secret?: string,
+): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "testFeishu", webhookUrl, secret }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "飞书测试发送失败");
   }
 }
 

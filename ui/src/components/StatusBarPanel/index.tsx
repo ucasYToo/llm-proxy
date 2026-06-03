@@ -71,15 +71,24 @@ const StatusBarPanel = () => {
   const refreshConfig = useCallback(async () => {
     try { const data = await apiFetchConfig(); setConfig(data); } catch { /* ignore */ }
   }, []);
-  const refreshSessions = useCallback(async () => {
+  const refreshSessionsNow = useCallback(async () => {
     try { const res = await fetchSessions(); setSessions(res.sessions); } catch { /* ignore */ }
   }, []);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshSessions = useCallback(() => {
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      void refreshSessionsNow();
+    }, 3000);
+  }, [refreshSessionsNow]);
+  useEffect(() => () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); }, []);
   const loadInitial = useCallback(async () => {
     const [hookRes, logRes] = await Promise.allSettled([fetchHooks({ limit: 100 }), fetchLogs(100)]);
     if (hookRes.status === "fulfilled") setEvents(hookRes.value.entries);
     if (logRes.status === "fulfilled") setGlobalLogs(logRes.value.entries);
-    await refreshSessions();
-  }, [refreshSessions]);
+    await refreshSessionsNow();
+  }, [refreshSessionsNow]);
   const loadSessionTimeline = useCallback(async (sessionId: string) => {
     try { const res = await fetchSessionTimeline(sessionId, 200); setSessionTimeline(res.entries); } catch { /* ignore */ }
   }, []);

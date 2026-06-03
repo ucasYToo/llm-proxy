@@ -81,6 +81,25 @@ const MIGRATIONS: string[] = [
     cwd TEXT PRIMARY KEY,
     remark TEXT
   )`,
+  `ALTER TABLE logs ADD COLUMN conversationId TEXT`,
+  `ALTER TABLE logs ADD COLUMN agentRole TEXT;
+   CREATE INDEX IF NOT EXISTS idx_logs_agent_role ON logs(agentRole);
+   CREATE INDEX IF NOT EXISTS idx_logs_conversation ON logs(conversationId)`,
+  `ALTER TABLE logs ADD COLUMN agentId TEXT`,
+  `ALTER TABLE logs ADD COLUMN agentType TEXT;
+   CREATE INDEX IF NOT EXISTS idx_logs_agent_id ON logs(agentId)`,
+  `ALTER TABLE logs ADD COLUMN cwd TEXT;
+   UPDATE logs SET agentType = (
+     SELECT json_extract(h.payload, '$.agent_type')
+     FROM hooks h
+     WHERE json_extract(h.payload, '$.agent_id') = logs.agentId
+       AND json_extract(h.payload, '$.agent_type') IS NOT NULL
+     LIMIT 1
+   ) WHERE agentId IS NOT NULL;
+   UPDATE logs SET cwd = (
+     SELECT sc.cwd FROM session_cwds sc WHERE sc.sessionId = logs.sessionId LIMIT 1
+   ) WHERE sessionId IS NOT NULL;
+   UPDATE logs SET conversationId = NULL, agentRole = NULL`,
 ];
 
 let dbInstance: Database.Database | null = null;
@@ -119,6 +138,8 @@ export const getDb = (): Database.Database => {
   const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
+  db.pragma("mmap_size = 268435456");
+  db.pragma("cache_size = -65536");
   runMigrations(db);
   dbInstance = db;
   return db;

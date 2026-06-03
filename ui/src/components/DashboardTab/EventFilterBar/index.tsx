@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { EventTypeFilter, FilterPreset } from "../types";
 import { ALL_EVENT_TYPES, EVENT_TYPE_LABELS } from "../types";
+import type { AgentRoleFilter, AgentOption } from "../useEventFilter";
 import styles from "../index.module.css";
 
 interface Props {
@@ -8,9 +9,14 @@ interface Props {
   enabledTypes: Set<EventTypeFilter>;
   search: string;
   compact?: boolean;
+  agentRoleFilter?: AgentRoleFilter;
+  agentOptions?: AgentOption[];
+  selectedAgentId?: string | null;
   onSetPreset: (p: "compact" | "all") => void;
   onToggleType: (t: EventTypeFilter) => void;
   onSearchChange: (s: string) => void;
+  onAgentRoleChange?: (r: AgentRoleFilter) => void;
+  onSelectAgent?: (agentId: string | null) => void;
 }
 
 const FILTER_ICONS: Record<EventTypeFilter, { path: string; vb?: string }> = {
@@ -83,56 +89,99 @@ const CompactSearch = ({ search, onSearchChange }: { search: string; onSearchCha
   );
 };
 
+const AGENT_ROLE_OPTIONS: { value: AgentRoleFilter; label: string }[] = [
+  { value: "all", label: "全部" },
+  { value: "main", label: "主Agent" },
+  { value: "subagent", label: "子Agent" },
+];
+
 const EventFilterBar = ({
   preset,
   enabledTypes,
   search,
   compact = false,
+  agentRoleFilter = "all",
+  agentOptions = [],
+  selectedAgentId = null,
   onSetPreset,
   onToggleType,
   onSearchChange,
+  onAgentRoleChange,
+  onSelectAgent,
 }: Props) => (
   <div className={styles.filterBar}>
-    <div className={styles.filterPresets}>
-      <button
-        type="button"
-        className={`${styles.presetBtn}${preset === "compact" ? ` ${styles.presetBtnActive}` : ""}`}
-        onClick={() => onSetPreset("compact")}
-        title="只看关键事件：任务完成、子代理完成、通知、API 日志"
-      >
-        精简
-      </button>
-      <button
-        type="button"
-        className={`${styles.presetBtn}${preset === "all" ? ` ${styles.presetBtnActive}` : ""}`}
-        onClick={() => onSetPreset("all")}
-      >
-        {preset === "all" && enabledTypes.size === ALL_EVENT_TYPES.length ? "全不选" : "全部"}
-      </button>
-    </div>
-    <div className={styles.filterChips}>
-      {ALL_EVENT_TYPES.map((type) => (
+    <div className={styles.filterRow}>
+      <div className={styles.filterPresets}>
         <button
-          key={type}
           type="button"
-          className={`${styles.filterChip}${enabledTypes.has(type) ? ` ${styles.filterChipActive}` : ""}${compact ? ` ${styles.filterChipIcon}` : ""}`}
-          onClick={() => onToggleType(type)}
-          title={`${EVENT_TYPE_LABELS[type]} (${type})`}
+          className={`${styles.presetBtn}${preset === "compact" ? ` ${styles.presetBtnActive}` : ""}`}
+          onClick={() => onSetPreset("compact")}
+          title="只看关键事件：任务完成、子代理完成、通知、API 日志"
         >
-          {compact ? <FilterIcon type={type} active={enabledTypes.has(type)} /> : type}
+          精简
         </button>
-      ))}
+        <button
+          type="button"
+          className={`${styles.presetBtn}${preset === "all" ? ` ${styles.presetBtnActive}` : ""}`}
+          onClick={() => onSetPreset("all")}
+        >
+          {preset === "all" && enabledTypes.size === ALL_EVENT_TYPES.length ? "全部" : "全部"}
+        </button>
+      </div>
+      <div className={styles.filterChips}>
+        {ALL_EVENT_TYPES.map((type) => (
+          <button
+            key={type}
+            type="button"
+            className={`${styles.filterChip}${enabledTypes.has(type) ? ` ${styles.filterChipActive}` : ""}${compact ? ` ${styles.filterChipIcon}` : ""}`}
+            onClick={() => onToggleType(type)}
+            title={`${EVENT_TYPE_LABELS[type]} (${type})`}
+          >
+            {compact ? <FilterIcon type={type} active={enabledTypes.has(type)} /> : type}
+          </button>
+        ))}
+      </div>
+      {compact ? (
+        <CompactSearch search={search} onSearchChange={onSearchChange} />
+      ) : (
+        <input
+          type="text"
+          className={styles.filterSearch}
+          placeholder="搜索…"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+        />
+      )}
     </div>
-    {compact ? (
-      <CompactSearch search={search} onSearchChange={onSearchChange} />
-    ) : (
-      <input
-        type="text"
-        className={styles.filterSearch}
-        placeholder="搜索…"
-        value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
-      />
+    {onAgentRoleChange && (
+      <div className={styles.agentFilterRow}>
+        {AGENT_ROLE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={`${styles.presetBtn}${!selectedAgentId && agentRoleFilter === opt.value ? ` ${styles.presetBtnActive}` : ""}`}
+            onClick={() => { onAgentRoleChange(opt.value); onSelectAgent?.(null); }}
+          >
+            {opt.label}
+          </button>
+        ))}
+        {agentOptions.length > 0 && onSelectAgent && (
+          <>
+            <span className={styles.agentDivider} />
+            {agentOptions.map((opt) => (
+              <button
+                key={opt.agentId}
+                type="button"
+                className={`${styles.presetBtn} ${styles.agentIdBtn}${selectedAgentId === opt.agentId ? ` ${styles.presetBtnActive}` : ""}`}
+                onClick={() => onSelectAgent(selectedAgentId === opt.agentId ? null : opt.agentId)}
+                title={`${opt.agentType} (${opt.agentId.slice(0, 8)}…) · ${opt.count} 次请求`}
+              >
+                {opt.agentType}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
     )}
   </div>
 );

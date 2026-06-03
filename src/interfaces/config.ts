@@ -89,9 +89,17 @@ export interface DingTalkConfig {
   events?: ChannelEvents;
 }
 
+export interface FeishuConfig {
+  enabled?: boolean;
+  webhookUrl?: string;
+  secret?: string;
+  events?: ChannelEvents;
+}
+
 export interface NotificationSettings {
   macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
+  feishu?: FeishuConfig;
 
   /** @deprecated 老版本扁平字段，仅做兼容读取；startup migration 会迁移到 macos.events 然后被删除 */
   stop?: boolean;

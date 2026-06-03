@@ -19,6 +19,14 @@ type StatusFilter =
   | "completed";
 type MethodFilter = "all" | "POST" | "GET" | "PUT" | "DELETE" | "other";
 type DurationFilter = "all" | "slow";
+const basename = (p?: string | null) => p?.split("/").pop() ?? "";
+
+interface AgentChip {
+  id: string;
+  label: string;
+  type: "main" | "subagent";
+  agentId?: string;
+}
 
 interface LogsTabProps {
   config: Config;
@@ -35,6 +43,8 @@ const LogsTab = ({ config }: LogsTabProps) => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
   const [durationFilter, setDurationFilter] = useState<DurationFilter>("all");
+  const [selectedAgentChip, setSelectedAgentChip] = useState<string>("all");
+  const [cwdFilter, setCwdFilter] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -51,6 +61,7 @@ const LogsTab = ({ config }: LogsTabProps) => {
           limit,
           offset,
           targetId: filterTarget || undefined,
+          summary: false,
         });
         setLogs(data.entries);
         setTotal(data.total);
@@ -157,9 +168,43 @@ const LogsTab = ({ config }: LogsTabProps) => {
         }
       }
       if (durationFilter === "slow" && log.durationMs < 3000) return false;
+      if (selectedAgentChip === "main" && log.agentId) return false;
+      if (selectedAgentChip === "subagent" && !log.agentId) return false;
+      if (selectedAgentChip !== "all" && selectedAgentChip !== "main" && selectedAgentChip !== "subagent") {
+        if (log.agentId !== selectedAgentChip) return false;
+      }
+      if (cwdFilter && basename(log.cwd) !== cwdFilter) return false;
       return true;
     });
-  }, [logs, statusFilter, methodFilter, durationFilter]);
+  }, [logs, statusFilter, methodFilter, durationFilter, selectedAgentChip, cwdFilter]);
+
+  const agentChips = useMemo<AgentChip[]>(() => {
+    const map = new Map<string, { agentType: string; count: number }>();
+    for (const log of logs) {
+      if (!log.agentId) continue;
+      const existing = map.get(log.agentId);
+      if (existing) {
+        existing.count++;
+      } else {
+        map.set(log.agentId, { agentType: log.agentType ?? "Agent", count: 1 });
+      }
+    }
+    return Array.from(map.entries()).map(([agentId, { agentType }]) => ({
+      id: agentId,
+      label: `${agentType}-${agentId.slice(-3)}`,
+      type: "subagent" as const,
+      agentId,
+    }));
+  }, [logs]);
+
+  const availableCwds = useMemo(() => {
+    const set = new Set<string>();
+    for (const log of logs) {
+      const name = basename(log.cwd);
+      if (name) set.add(name);
+    }
+    return Array.from(set).sort();
+  }, [logs]);
 
   const handleClear = async () => {
     if (!confirm("确认清空所有日志？")) return;
@@ -270,6 +315,18 @@ const LogsTab = ({ config }: LogsTabProps) => {
           <option value="slow">慢请求 (&gt;3s)</option>
         </select>
 
+        {availableCwds.length > 1 && (
+          <select
+            value={cwdFilter}
+            onChange={(e) => setCwdFilter(e.target.value)}
+          >
+            <option value="">全部项目</option>
+            {availableCwds.map((cwd) => (
+              <option key={cwd} value={cwd}>{cwd}</option>
+            ))}
+          </select>
+        )}
+
         <div className={styles.densityToggle}>
           <button
             className={`${styles.densityBtn} ${density === "compact" ? styles.active : ""}`}
@@ -355,6 +412,38 @@ const LogsTab = ({ config }: LogsTabProps) => {
         </button>
       </div>
 
+      <div className={styles.agentChipRow}>
+        <button
+          className={`${styles.agentChip}${selectedAgentChip === "all" ? ` ${styles.agentChipActive}` : ""}`}
+          onClick={() => setSelectedAgentChip("all")}
+        >
+          全部
+        </button>
+        <button
+          className={`${styles.agentChip}${selectedAgentChip === "main" ? ` ${styles.agentChipActive}` : ""}`}
+          onClick={() => setSelectedAgentChip("main")}
+        >
+          主Agent
+        </button>
+        <button
+          className={`${styles.agentChip}${selectedAgentChip === "subagent" ? ` ${styles.agentChipActive}` : ""}`}
+          onClick={() => setSelectedAgentChip("subagent")}
+        >
+          子Agent
+        </button>
+        {agentChips.length > 0 && <span className={styles.agentChipDivider} />}
+        {agentChips.map((chip) => (
+          <button
+            key={chip.id}
+            className={`${styles.agentChip}${selectedAgentChip === chip.id ? ` ${styles.agentChipActive}` : ""}`}
+            onClick={() => setSelectedAgentChip(selectedAgentChip === chip.id ? "all" : chip.id)}
+            title={chip.agentId}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+
       {logs.length === 0 ? (
         <p className="empty">暂无日志</p>
       ) : filteredLogs.length === 0 ? (
@@ -369,6 +458,8 @@ const LogsTab = ({ config }: LogsTabProps) => {
                 <tr>
                   <th style={{ width: 100 }}>时间</th>
                   <th style={{ width: 80 }}>目标</th>
+                  <th style={{ width: 90 }}>项目</th>
+                  <th style={{ width: 60 }}>Agent</th>
                   <th style={{ width: 60 }}>方法</th>
                   <th style={{ minWidth: 200 }}>最后消息 / 响应</th>
                   <th style={{ width: 70 }}>HTTP</th>
@@ -406,6 +497,17 @@ const LogsTab = ({ config }: LogsTabProps) => {
                         {formatTime(log.timestamp)}
                       </td>
                       <td>{log.targetName}</td>
+                      <td title={log.cwd ?? ""} style={{ fontSize: 11, color: "#6b7280" }}>
+                        {basename(log.cwd) || "-"}
+                      </td>
+                      <td style={{ fontSize: 11 }}>
+                        {log.agentId ? (
+                          <span className={styles.statusBadge} style={{ background: "rgba(99,102,241,0.12)", color: "#6366f1" }}
+                            title={log.agentId}>{log.agentType ?? "子"}</span>
+                        ) : (
+                          <span style={{ color: "#9ca3af" }}>主</span>
+                        )}
+                      </td>
                       <td>
                         <span className={styles.methodBadge}>{log.method}</span>
                       </td>

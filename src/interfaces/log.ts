@@ -48,4 +48,10 @@ export interface LogEntry {
   tokenUsage?: TokenUsage;
   /** Claude Code 客户端发送的 session id（来自 x-claude-code-session-id header） */
   sessionId?: string | null;
+  /** 子 agent ID（来自 x-claude-code-agent-id header），null 表示主 agent */
+  agentId?: string | null;
+  /** 子 agent 类型（如 Explore, Plan, code-reviewer），从 hooks 关联 */
+  agentType?: string | null;
+  /** 工作目录（从 session_cwds 关联） */
+  cwd?: string | null;
 }

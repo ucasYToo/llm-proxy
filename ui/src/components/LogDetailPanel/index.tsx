@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LogEntry, DiffEntry } from "../../lib/api";
+import { fetchLogDetail } from "../../lib/api";
 import { statusClass, formatValue, formatTTFT, formatTPS } from "../../lib/format";
 import { JsonViewer } from "../JsonViewer";
 import styles from "./index.module.css";
@@ -22,15 +23,19 @@ export function LogDetailPanel({
   const [isDragging, setIsDragging] = useState(false);
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(0);
-  const log = logOrNull;
+  const [fullLog, setFullLog] = useState<LogEntry | null>(null);
+  const log = fullLog ?? logOrNull;
 
   useEffect(() => {
-    if (log) {
+    if (logOrNull) {
       setIsVisible(true);
+      setFullLog(null);
+      fetchLogDetail(logOrNull.id).then(setFullLog).catch(() => {});
     } else {
       setIsVisible(false);
+      setFullLog(null);
     }
-  }, [log]);
+  }, [logOrNull?.id]);
 
   useEffect(() => {
     if (log) {

@@ -87,20 +87,15 @@ final class StatusBarController {
 
     private func parseCostSummary(_ data: Data) {
         guard
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let byTarget = json["byTarget"] as? [[String: Any]]
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
             tokenText = "--"
             render()
             return
         }
 
-        var totalTokens = 0
-        for target in byTarget {
-            totalTokens += target["totalTokens"] as? Int ?? 0
-        }
-
-        tokenText = formatTokens(totalTokens)
+        let todayTokens = json["todayTokens"] as? Int ?? 0
+        tokenText = formatTokens(todayTokens)
         render()
     }
 

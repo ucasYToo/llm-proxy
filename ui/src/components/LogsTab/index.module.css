@@ -4,8 +4,48 @@
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
+}
+
+/* ── Agent Chips ── */
+
+.agentChipRow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.agentChip {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.agentChip:hover {
+  border-color: var(--text-muted, #9ca3af);
+  color: var(--text, #111);
+}
+
+.agentChipActive {
+  background: var(--text, #111);
+  color: var(--bg-card, #fff);
+  border-color: var(--text, #111);
+}
+
+.agentChipDivider {
+  width: 1px;
+  height: 16px;
+  background: var(--border, #e5e7eb);
+  margin: 0 4px;
 }
 
 /* ── Density Toggle ── */

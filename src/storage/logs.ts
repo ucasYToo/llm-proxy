@@ -3,7 +3,7 @@ import { readConfig } from "../config/store";
 import { jsonDiff } from "../core/diff";
 import { getDb } from "./db";
 
-const DEFAULT_MAX_ENTRIES = 400;
+const DEFAULT_MAX_ENTRIES = 500;
 
 const JSON_COLUMNS = [
   "originalRequestHeaders",
@@ -29,6 +29,9 @@ const SCALAR_COLUMNS = [
   "startTime",
   "error",
   "sessionId",
+  "agentId",
+  "agentType",
+  "cwd",
 ] as const;
 
 const TOKEN_COLUMNS = [
@@ -90,8 +93,8 @@ const trimLogs = (): void => {
     .get() as { count: number };
   if (count <= threshold) return;
   db.prepare(
-    `DELETE FROM logs WHERE id NOT IN (
-      SELECT id FROM logs ORDER BY timestamp DESC LIMIT ?
+    `DELETE FROM logs WHERE rowid NOT IN (
+      SELECT rowid FROM logs ORDER BY timestamp DESC LIMIT ?
     )`,
   ).run(max);
 };
@@ -187,43 +190,107 @@ const notifyLogChange = (entry: LogEntry, kind: LogChangeKind): void => {
   }
 };
 
+const resolveLogMeta = (entry: LogEntry): void => {
+  if (!entry.sessionId) return;
+  const db = getDb();
+  if (!entry.cwd) {
+    const row = db
+      .prepare(`SELECT cwd FROM session_cwds WHERE sessionId = ? LIMIT 1`)
+      .get(entry.sessionId) as { cwd: string } | undefined;
+    if (row) entry.cwd = row.cwd;
+  }
+  if (entry.agentId && !entry.agentType) {
+    const row = db
+      .prepare(
+        `SELECT json_extract(payload, '$.agent_type') AS t FROM hooks
+         WHERE json_extract(payload, '$.agent_id') = ?
+           AND json_extract(payload, '$.agent_type') IS NOT NULL LIMIT 1`,
+      )
+      .get(entry.agentId) as { t: string } | undefined;
+    if (row) entry.agentType = row.t;
+  }
+};
+
 export const createLog = (entry: LogEntry): void => {
+  resolveLogMeta(entry);
   const filtered = applyLogCollectionFilter(entry);
   const cols = entryToColumns(filtered);
   const columnNames = ALL_COLUMNS.filter((c) => c in cols);
   const placeholders = columnNames.map(() => "?").join(", ");
   const values = columnNames.map((c) => cols[c]);
 
-  getDb()
-    .prepare(
-      `INSERT OR REPLACE INTO logs (${columnNames.join(", ")}) VALUES (${placeholders})`,
-    )
-    .run(...values);
+  const db = getDb();
+  db.prepare(
+    `INSERT OR REPLACE INTO logs (${columnNames.join(", ")}) VALUES (${placeholders})`,
+  ).run(...values);
 
   trimLogs();
-  notifyLogChange(filtered, "create");
+
+  const summaryRow = db
+    .prepare(`SELECT ${SUMMARY_COLUMNS.join(", ")} FROM logs WHERE id = ?`)
+    .get(entry.id) as Record<string, unknown> | undefined;
+  if (summaryRow) notifyLogChange(rowToSummary(summaryRow), "create");
+};
+
+const SUMMARY_COLUMNS = [
+  ...SCALAR_COLUMNS,
+  ...TOKEN_COLUMNS,
+] as const;
+
+const rowToSummary = (row: Record<string, unknown>): LogEntry => {
+  const entry: Record<string, unknown> = {};
+  for (const col of SCALAR_COLUMNS) {
+    if (row[col] !== null && row[col] !== undefined) entry[col] = row[col];
+  }
+  const tokenUsage: TokenUsage = {};
+  let hasTokens = false;
+  for (const col of TOKEN_COLUMNS) {
+    if (row[col] !== null && row[col] !== undefined) {
+      (tokenUsage as Record<string, number>)[col] = row[col] as number;
+      hasTokens = true;
+    }
+  }
+  if (hasTokens) entry.tokenUsage = tokenUsage;
+  entry.originalRequestHeaders = {};
+  entry.modifiedRequestHeaders = {};
+  return entry as unknown as LogEntry;
 };
 
 export const updateLog = (id: string, updates: Partial<LogEntry>): void => {
-  const db = getDb();
-  const existingRow = db.prepare(`SELECT * FROM logs WHERE id = ?`).get(id) as
-    | Record<string, unknown>
-    | undefined;
-  if (!existingRow) return;
-
-  const existing = rowToEntry(existingRow);
-  const merged: LogEntry = { ...existing, ...updates };
-  const filtered = applyLogCollectionFilter(merged, true);
-  const filteredCols = entryToColumns(filtered);
-
-  const updateCols = ALL_COLUMNS.filter((c) => c in filteredCols && c !== "id");
+  const cols = entryToColumns(updates);
+  const updateCols = Object.keys(cols).filter((c) => c !== "id");
   if (updateCols.length === 0) return;
 
   const setClause = updateCols.map((c) => `${c} = ?`).join(", ");
-  const values = updateCols.map((c) => filteredCols[c]);
+  const values = updateCols.map((c) => cols[c]);
 
-  db.prepare(`UPDATE logs SET ${setClause} WHERE id = ?`).run(...values, id);
-  notifyLogChange(filtered, "update");
+  const db = getDb();
+  const result = db
+    .prepare(`UPDATE logs SET ${setClause} WHERE id = ?`)
+    .run(...values, id);
+  if (result.changes === 0) return;
+
+  if (updates.status === "completed") {
+    const row = db
+      .prepare(`SELECT agentId, agentType, sessionId, cwd FROM logs WHERE id = ?`)
+      .get(id) as Pick<LogEntry, "agentId" | "agentType" | "sessionId" | "cwd"> | undefined;
+    if (row && (row.agentId && !row.agentType) || (row && !row.cwd)) {
+      const patch: Partial<LogEntry> = { ...row };
+      resolveLogMeta(patch as LogEntry);
+      const fills: string[] = [];
+      const fillVals: unknown[] = [];
+      if (patch.agentType && !row!.agentType) { fills.push("agentType = ?"); fillVals.push(patch.agentType); }
+      if (patch.cwd && !row!.cwd) { fills.push("cwd = ?"); fillVals.push(patch.cwd); }
+      if (fills.length > 0) {
+        db.prepare(`UPDATE logs SET ${fills.join(", ")} WHERE id = ?`).run(...fillVals, id);
+      }
+    }
+  }
+
+  const summaryRow = db
+    .prepare(`SELECT ${SUMMARY_COLUMNS.join(", ")} FROM logs WHERE id = ?`)
+    .get(id) as Record<string, unknown> | undefined;
+  if (summaryRow) notifyLogChange(rowToSummary(summaryRow), "update");
 };
 
 export const upsertLog = (entry: LogEntry): void => {
@@ -247,6 +314,8 @@ export interface QueryLogsOptions {
   offset?: number;
   targetId?: string;
   sessionId?: string;
+  agentId?: string;
+  summary?: boolean;
 }
 
 export const queryLogs = (
@@ -255,7 +324,7 @@ export const queryLogs = (
   entries: LogEntry[];
   total: number;
 } => {
-  const { limit = 50, offset = 0, targetId, sessionId } = opts;
+  const { limit = 50, offset = 0, targetId, sessionId, agentId } = opts;
   const filters: string[] = [];
   const args: unknown[] = [];
   if (targetId) {
@@ -266,8 +335,15 @@ export const queryLogs = (
     filters.push("sessionId = ?");
     args.push(sessionId);
   }
+  if (agentId) {
+    filters.push("agentId = ?");
+    args.push(agentId);
+  }
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
   const db = getDb();
+  const useSummary = opts.summary ?? false;
+  const columns = useSummary ? SUMMARY_COLUMNS.join(", ") : "*";
+  const mapper = useSummary ? rowToSummary : rowToEntry;
 
   const totalRow = db
     .prepare(`SELECT COUNT(*) as count FROM logs ${where}`)
@@ -275,14 +351,21 @@ export const queryLogs = (
 
   const rows = db
     .prepare(
-      `SELECT * FROM logs ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+      `SELECT ${columns} FROM logs ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
     )
     .all(...args, limit, offset) as Record<string, unknown>[];
 
   return {
-    entries: rows.map(rowToEntry),
+    entries: rows.map(mapper),
     total: totalRow.count,
   };
+};
+
+export const getLogDetail = (id: string): LogEntry | null => {
+  const row = getDb()
+    .prepare(`SELECT * FROM logs WHERE id = ?`)
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? rowToEntry(row) : null;
 };
 
 export const clearLogs = (): void => {

@@ -1,5 +1,6 @@
 import type { HookEntry, LogEntry, SessionSummary, TimelineEntry } from "../../../lib/api";
 import type { EventTypeFilter, FilterPreset, SelectedDetail } from "../types";
+import type { AgentRoleFilter, AgentOption } from "../useEventFilter";
 import { basename, cwdFromEntry, formatTime, shortSession } from "../utils";
 import { formatTTFT, formatTPS } from "../../../lib/format";
 import EventFilterBar from "../EventFilterBar";
@@ -12,6 +13,9 @@ interface Props {
   filterPreset: FilterPreset;
   enabledTypes: Set<EventTypeFilter>;
   filterSearch: string;
+  agentRoleFilter: AgentRoleFilter;
+  agentOptions: AgentOption[];
+  selectedAgentId: string | null;
   selectedDetail: SelectedDetail | null;
   /** 当前可用的 target 数量；为 1 时事件行不再渲染 target 标签 */
   targetCount: number;
@@ -20,6 +24,8 @@ interface Props {
   onSetPreset: (p: "compact" | "all") => void;
   onToggleType: (t: EventTypeFilter) => void;
   onSearchChange: (s: string) => void;
+  onAgentRoleChange: (r: AgentRoleFilter) => void;
+  onSelectAgent: (agentId: string | null) => void;
 }
 
 const EventStream = ({
@@ -29,6 +35,9 @@ const EventStream = ({
   filterPreset,
   enabledTypes,
   filterSearch,
+  agentRoleFilter,
+  agentOptions,
+  selectedAgentId,
   selectedDetail,
   targetCount,
   compactFilter = false,
@@ -36,6 +45,8 @@ const EventStream = ({
   onSetPreset,
   onToggleType,
   onSearchChange,
+  onAgentRoleChange,
+  onSelectAgent,
 }: Props) => {
   const headerTitle = selectedSession
     ? `${basename(sessions.find((s) => s.sessionId === selectedSession)?.cwd) || shortSession(selectedSession)} 时间轴`
@@ -56,9 +67,14 @@ const EventStream = ({
         enabledTypes={enabledTypes}
         search={filterSearch}
         compact={compactFilter}
+        agentRoleFilter={agentRoleFilter}
+        agentOptions={agentOptions}
+        selectedAgentId={selectedAgentId}
         onSetPreset={onSetPreset}
         onToggleType={onToggleType}
         onSearchChange={onSearchChange}
+        onAgentRoleChange={onAgentRoleChange}
+        onSelectAgent={onSelectAgent}
       />
 
       {timeline.length === 0 ? (
@@ -167,6 +183,11 @@ export const LogRow = ({
       <span className={`${styles.logStatus} ${statusClass}`}>
         {entry.responseStatus || (entry.status ?? "—")}
       </span>
+      {entry.agentId && (
+        <span className={styles.agentRoleBadge} data-role="subagent">
+          {entry.agentType ?? "子"}
+        </span>
+      )}
       <span className={styles.logMeta}>
         {entry.durationMs > 0 && <span>{entry.durationMs}ms</span>}
         <span title="首包延迟">{formatTTFT(entry.firstChunkMs)}</span>

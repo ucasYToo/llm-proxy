@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
 import path from "path";
 import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTarget, getChannels } from "../config/store";
-import { queryLogs, clearLogs } from "../storage/logs";
+import { queryLogs, getLogDetail, clearLogs } from "../storage/logs";
 import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations, getActivityStatus } from "../storage/hooks";
 import {
   aggregateCostBySession,
@@ -24,6 +24,7 @@ import { readAiTitle } from "../lib/transcript";
 import { addClient, broadcast } from "./sse";
 import { notify } from "../notify/macos";
 import { sendDingTalkMarkdown } from "../notify/dingtalk";
+import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
@@ -167,8 +168,19 @@ export const setupApiRoutes = (app: Express) => {
       const offset = Number(req.query.offset ?? 0);
       const targetId = (req.query.targetId as string) ?? undefined;
       const sessionId = (req.query.sessionId as string) ?? undefined;
-      const result = queryLogs({ limit, offset, targetId, sessionId });
+      const agentId = (req.query.agentId as string) || undefined;
+      const summary = req.query.summary !== "false";
+      const result = queryLogs({ limit, offset, targetId, sessionId, agentId, summary });
       res.json(result);
+      return;
+    }
+
+    if (type === "log-detail") {
+      const id = req.query.id as string;
+      if (!id) { res.status(400).json({ error: "id is required" }); return; }
+      const entry = getLogDetail(id);
+      if (!entry) { res.status(404).json({ error: "Log not found" }); return; }
+      res.json(entry);
       return;
     }
 
@@ -180,7 +192,7 @@ export const setupApiRoutes = (app: Express) => {
       }
       const limit = Number(req.query.limit ?? 200);
       const hookRes = queryHooks({ sessionId, limit });
-      const logRes = queryLogs({ sessionId, limit });
+      const logRes = queryLogs({ sessionId, limit, summary: true });
       const entries = [
         ...hookRes.entries.map((h) => ({
           kind: "hook" as const,
@@ -257,9 +269,10 @@ export const setupApiRoutes = (app: Express) => {
         0,
       );
 
-      // Today's cost
+      // Today's cost & tokens
       const todayRecords = queryCostRecords({ since: todayStart, limit: 100000 });
       const todayCost = todayRecords.records.reduce((sum, r) => sum + r.costUsd, 0);
+      const todayTokens = todayRecords.records.reduce((sum, r) => sum + r.totalTokens, 0);
 
       const byTarget = aggregateCostByTarget();
       const byModel = aggregateCostByModel();
@@ -272,6 +285,7 @@ export const setupApiRoutes = (app: Express) => {
         budget: budgetStatus,
         totalCost,
         todayCost,
+        todayTokens,
         byTarget,
         byModel,
         recentTrend,
@@ -378,10 +392,12 @@ export const setupApiRoutes = (app: Express) => {
 
     const macos = notifications?.macos;
     const ding = notifications?.dingtalk;
+    const feishu = notifications?.feishu;
     const macosOn = !!evtKey && !!macos?.enabled && !!macos?.events?.[evtKey];
     const dingOn = !!evtKey && !!ding?.enabled && !!ding?.events?.[evtKey];
+    const feishuOn = !!evtKey && !!feishu?.enabled && !!feishu?.events?.[evtKey];
 
-    if ((macosOn || dingOn) && hookPayload && evtKey) {
+    if ((macosOn || dingOn || feishuOn) && hookPayload && evtKey) {
       const projectName = projectBasename(entry.cwd);
       const sessionTail = sessionId ? sessionId.slice(-6) : "unknown";
       const title = projectName
@@ -451,6 +467,30 @@ export const setupApiRoutes = (app: Express) => {
         ).then((r) => {
           if (!r.ok) {
             console.warn(`[dingtalk] 发送失败: ${r.error}`);
+          }
+        });
+      }
+
+      if (feishuOn && feishu?.webhookUrl) {
+        const lastAssistant =
+          hookPayload.hook_event_name === "Stop" || hookPayload.hook_event_name === "SubagentStop"
+            ? hookPayload.last_assistant_message
+            : null;
+        const lines = [
+          title,
+          `${eventLabel} (${event})`,
+          aiTitle ? `会话: ${aiTitle} (${sessionTail})` : `session: ${sessionTail}`,
+          projectName ? `project: ${projectName}` : null,
+          `time: ${new Date().toLocaleString()}`,
+          lastAssistant ? `\n最后回复:\n${lastAssistant}` : null,
+        ].filter(Boolean);
+        void sendFeishuText(
+          feishu.webhookUrl,
+          feishu.secret ?? "",
+          lines.join("\n"),
+        ).then((r) => {
+          if (!r.ok) {
+            console.warn(`[feishu] 发送失败: ${r.error}`);
           }
         });
       }
@@ -750,6 +790,26 @@ export const setupApiRoutes = (app: Express) => {
         break;
       }
 
+      case "testFeishu": {
+        const { webhookUrl, secret } = req.body as {
+          webhookUrl?: string;
+          secret?: string;
+        };
+        const url = webhookUrl ?? config.notifications?.feishu?.webhookUrl ?? "";
+        const sec = secret ?? config.notifications?.feishu?.secret ?? "";
+        const r = await sendFeishuText(
+          url,
+          sec,
+          `Claude Code 飞书通知测试 - 配置生效\n\ntime: ${new Date().toLocaleString()}`,
+        );
+        if (!r.ok) {
+          res.status(400).json({ error: r.error ?? "send failed" });
+          return;
+        }
+        res.json({ ok: true });
+        break;
+      }
+
       case "updateNotifications": {
         const { notifications } = req.body as { notifications: NotificationSettings };
         const prev = config.notifications ?? {};
@@ -770,6 +830,15 @@ export const setupApiRoutes = (app: Express) => {
             events: notifications.dingtalk.events
               ? { ...(prev.dingtalk?.events ?? {}), ...notifications.dingtalk.events }
               : prev.dingtalk?.events,
+          };
+        }
+        if (notifications.feishu) {
+          next.feishu = {
+            ...(prev.feishu ?? {}),
+            ...notifications.feishu,
+            events: notifications.feishu.events
+              ? { ...(prev.feishu?.events ?? {}), ...notifications.feishu.events }
+              : prev.feishu?.events,
           };
         }
         config.notifications = next;

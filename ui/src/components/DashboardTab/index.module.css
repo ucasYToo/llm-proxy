@@ -467,12 +467,25 @@
 
 .filterBar {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 5px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-light);
-  flex-wrap: wrap;
   flex-shrink: 0;
+}
+
+.filterRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.agentFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
 }
 
 .filterPresets {
@@ -755,4 +768,34 @@
 
 .projectCardHeaderBtn:hover {
   color: var(--accent);
+}
+
+
+.agentDivider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.agentIdBtn {
+  font-size: 11px;
+}
+
+.agentRoleBadge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.agentRoleBadge[data-role="subagent"] {
+  background: var(--accent-muted, rgba(99, 102, 241, 0.15));
+  color: var(--accent, #6366f1);
+}
+
+.agentRoleBadge[data-role="sdk_agent"] {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
 }

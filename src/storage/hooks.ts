@@ -4,8 +4,8 @@ import { getSessionCostQuick } from "./cost";
 import { computeHealthScore, type HealthMetrics } from "../cost/health";
 import { readAiTitle } from "../lib/transcript";
 
-const HOOK_TRIM_THRESHOLD = 500;
-const HOOK_KEEP_AFTER_TRIM = 400;
+const HOOK_TRIM_THRESHOLD = 2500;
+const HOOK_KEEP_AFTER_TRIM = 2000;
 
 export interface HookEntry {
   id: string;
@@ -70,8 +70,8 @@ const trimHooks = (): void => {
     .get() as { count: number };
   if (count <= HOOK_TRIM_THRESHOLD) return;
   db.prepare(
-    `DELETE FROM hooks WHERE id NOT IN (
-      SELECT id FROM hooks ORDER BY createdAt DESC LIMIT ?
+    `DELETE FROM hooks WHERE rowid NOT IN (
+      SELECT rowid FROM hooks ORDER BY createdAt DESC LIMIT ?
     )`,
   ).run(HOOK_KEEP_AFTER_TRIM);
 };
@@ -195,10 +195,12 @@ export const recentSessions = (
   limit?: number,
 ): SessionSummary[] => {
   const useTime = typeof withinMs === "number" && withinMs > 0;
-  const safeLimit =
+  const safeLimit = Math.min(
     typeof limit === "number" && Number.isFinite(limit) && limit > 0
       ? Math.floor(limit)
-      : 200;
+      : 200,
+    249,
+  );
   const where = useTime
     ? "WHERE sessionId IS NOT NULL AND createdAt >= ?"
     : "WHERE sessionId IS NOT NULL";
@@ -223,61 +225,74 @@ export const recentSessions = (
     eventCount: number;
   }>;
 
-  const lastEventStmt = getDb().prepare(
-    `SELECT eventName FROM hooks
-     WHERE sessionId = ?
-     ORDER BY createdAt DESC LIMIT 1`,
-  );
-  const earliestCwdStmt = getDb().prepare(
-    `SELECT cwd FROM hooks
-     WHERE sessionId = ? AND cwd IS NOT NULL
-     ORDER BY createdAt ASC LIMIT 1`,
-  );
-  const remarkStmt = getDb().prepare(
-    `SELECT remark FROM session_cwds WHERE cwd = ? AND remark IS NOT NULL AND remark != '' LIMIT 1`,
-  );
-  const transcriptPathStmt = getDb().prepare(
-    `SELECT json_extract(payload, '$.transcript_path') AS tp FROM hooks
-     WHERE sessionId = ? AND json_extract(payload, '$.transcript_path') IS NOT NULL
-     ORDER BY createdAt DESC LIMIT 1`,
-  );
-  const firstPromptStmt = getDb().prepare(
-    `SELECT json_extract(payload, '$.prompt') AS prompt FROM hooks
-     WHERE sessionId = ? AND eventName = 'UserPromptSubmit'
-       AND json_extract(payload, '$.prompt') IS NOT NULL
-       AND substr(json_extract(payload, '$.prompt'), 1, 1) != '/'
-     ORDER BY createdAt ASC LIMIT 1`,
-  );
+  const sessionIds = rows.map((r) => r.sessionId);
+  if (sessionIds.length === 0) return [];
+
+  const placeholders = sessionIds.map(() => "?").join(",");
+  const enriched = getDb()
+    .prepare(
+      `WITH
+        last_event AS (
+          SELECT sessionId, eventName,
+            ROW_NUMBER() OVER (PARTITION BY sessionId ORDER BY createdAt DESC, id DESC) AS rn
+          FROM hooks WHERE sessionId IN (${placeholders})
+        ),
+        earliest_cwd AS (
+          SELECT sessionId, cwd,
+            ROW_NUMBER() OVER (PARTITION BY sessionId ORDER BY createdAt ASC) AS rn
+          FROM hooks WHERE sessionId IN (${placeholders}) AND cwd IS NOT NULL
+        ),
+        transcript AS (
+          SELECT sessionId, json_extract(payload, '$.transcript_path') AS tp,
+            ROW_NUMBER() OVER (PARTITION BY sessionId ORDER BY createdAt DESC) AS rn
+          FROM hooks WHERE sessionId IN (${placeholders}) AND json_extract(payload, '$.transcript_path') IS NOT NULL
+        ),
+        first_prompt AS (
+          SELECT sessionId, json_extract(payload, '$.prompt') AS prompt,
+            ROW_NUMBER() OVER (PARTITION BY sessionId ORDER BY createdAt ASC) AS rn
+          FROM hooks WHERE sessionId IN (${placeholders}) AND eventName = 'UserPromptSubmit'
+            AND json_extract(payload, '$.prompt') IS NOT NULL
+            AND substr(json_extract(payload, '$.prompt'), 1, 1) != '/'
+        )
+      SELECT
+        le.sessionId,
+        le.eventName AS lastEventName,
+        ec.cwd,
+        sc.remark,
+        t.tp AS transcriptPath,
+        fp.prompt
+      FROM last_event le
+      LEFT JOIN earliest_cwd ec ON ec.sessionId = le.sessionId AND ec.rn = 1
+      LEFT JOIN session_cwds sc ON sc.cwd = ec.cwd AND sc.remark IS NOT NULL AND sc.remark != ''
+      LEFT JOIN transcript t ON t.sessionId = le.sessionId AND t.rn = 1
+      LEFT JOIN first_prompt fp ON fp.sessionId = le.sessionId AND fp.rn = 1
+      WHERE le.rn = 1`,
+    )
+    .all(...sessionIds, ...sessionIds, ...sessionIds, ...sessionIds) as Array<{
+    sessionId: string;
+    lastEventName: string | null;
+    cwd: string | null;
+    remark: string | null;
+    transcriptPath: string | null;
+    prompt: string | null;
+  }>;
+
+  const enrichMap = new Map(enriched.map((e) => [e.sessionId, e]));
 
   return rows.map((r) => {
-    const last = lastEventStmt.get(r.sessionId) as
-      | { eventName: string }
-      | undefined;
-    const { cwd: earliestCwd = null } =
-      (earliestCwdStmt.get(r.sessionId) as { cwd: string } | undefined) ?? {};
-    const { remark = null } = earliestCwd
-      ? ((remarkStmt.get(earliestCwd) as { remark: string } | undefined) ?? {})
-      : {};
-
-    // Resolve title: prefer ai-title from transcript, fallback to first user prompt
-    const { tp: transcriptPath = null } =
-      (transcriptPathStmt.get(r.sessionId) as { tp: string | null } | undefined) ?? {};
+    const e = enrichMap.get(r.sessionId);
+    const transcriptPath = e?.transcriptPath ?? null;
     let title: string | null = null;
     let titleSource: SessionTitleSource = null;
     const aiTitle = readAiTitle(transcriptPath);
     if (aiTitle) {
       title = aiTitle;
       titleSource = "transcript";
-    } else {
-      const { prompt = null } =
-        (firstPromptStmt.get(r.sessionId) as { prompt: string | null } | undefined) ?? {};
-      if (prompt && prompt.trim()) {
-        title = prompt.trim().slice(0, 80);
-        titleSource = "prompt";
-      }
+    } else if (e?.prompt?.trim()) {
+      title = e.prompt.trim().slice(0, 80);
+      titleSource = "prompt";
     }
 
-    // Enrich with cost data from cost_records
     const cost = getSessionCostQuick(r.sessionId);
     const healthScore =
       cost.requestCount >= 5 ? computeHealthScore(r.sessionId) : null;
@@ -285,10 +300,10 @@ export const recentSessions = (
     return {
       sessionId: r.sessionId,
       lastEventAt: r.lastEventAt,
-      lastEventName: last?.eventName ?? "",
+      lastEventName: e?.lastEventName ?? "",
       eventCount: r.eventCount,
-      cwd: earliestCwd,
-      remark,
+      cwd: e?.cwd ?? null,
+      remark: e?.remark ?? null,
       title,
       titleSource,
       totalCostUsd: cost.totalCostUsd,

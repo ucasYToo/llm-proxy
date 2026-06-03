@@ -28,12 +28,18 @@ export interface ProxyResponse {
   isStream: boolean;
 }
 
+export interface StreamWriter {
+  writeHead(status: number, headers: Record<string, string>): void;
+  write(chunk: Uint8Array): void;
+  end(): void;
+}
+
 /**
  * 代理请求到上游服务器
  */
 export const proxyRequest = async (
   req: ProxyRequest,
-  onChunk?: (chunk: string) => void,
+  streamWriter?: StreamWriter,
 ): Promise<ProxyResponse> => {
   // 如果指定了 targetId，则使用该目标；否则使用全局活动目标
   let target = getActiveTarget();
@@ -130,12 +136,15 @@ export const proxyRequest = async (
   // 捕获修改后的请求头用于日志记录
   const modifiedHeaders: Record<string, string> = { ...forwardHeaders };
 
-  const sessionHeaderKey = Object.keys(originalHeaders).find(
-    (k) => k.toLowerCase() === "x-claude-code-session-id",
-  );
-  const sessionId = sessionHeaderKey
-    ? (originalHeaders[sessionHeaderKey] ?? null)
-    : null;
+  const findHeader = (name: string): string | null => {
+    const key = Object.keys(originalHeaders).find(
+      (k) => k.toLowerCase() === name,
+    );
+    return key ? (originalHeaders[key] ?? null) : null;
+  };
+
+  const sessionId = findHeader("x-claude-code-session-id");
+  const agentId = findHeader("x-claude-code-agent-id");
 
   // 1. 请求开始时立即创建日志（状态为 pending）
   createLog({
@@ -155,6 +164,7 @@ export const proxyRequest = async (
     durationMs: 0,
     status: "pending" as LogStatus,
     sessionId,
+    agentId,
   });
 
   let upstreamRes: Response;
@@ -196,50 +206,38 @@ export const proxyRequest = async (
   });
 
   if (isStream) {
-    // 流式响应处理
-    const chunks: string[] = [];
+    if (streamWriter) {
+      streamWriter.writeHead(upstreamRes.status, {
+        ...resHeaders,
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+    }
+
+    const parsedEvents: unknown[] = [];
     let firstChunkReceived = false;
     const decoder = new TextDecoder();
+    let lineBuffer = "";
 
     const reader = upstreamRes.body!.getReader();
-    const stream = new ReadableStream({
-      async start(controller) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
-            break;
-          }
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-          const text = decoder.decode(value, { stream: true });
-          chunks.push(text);
-          controller.enqueue(value);
+      if (streamWriter) streamWriter.write(value);
 
-          // 调用 chunk 回调
-          if (onChunk) {
-            onChunk(text);
-          }
+      if (!firstChunkReceived) {
+        firstChunkReceived = true;
+        updateLog(logId, {
+          firstChunkMs: Date.now() - startMs,
+          status: "streaming" as LogStatus,
+        });
+      }
 
-          // 2. 首个 chunk 到达时更新状态
-          if (!firstChunkReceived) {
-            firstChunkReceived = true;
-            const firstChunkMs = Date.now() - startMs;
-            updateLog(logId, {
-              firstChunkMs,
-              status: "streaming" as LogStatus,
-            });
-          }
-        }
-      },
-    });
-
-    // 等待流结束并处理日志
-    const fullContent = await readStreamToString(stream);
-
-    // 将 SSE 事件解析为结构化数据
-    let parsedEvents: unknown[] = [];
-    try {
-      const lines = fullContent.split("\n");
+      lineBuffer += decoder.decode(value, { stream: true });
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop()!;
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed.startsWith("data:")) continue;
@@ -253,16 +251,13 @@ export const proxyRequest = async (
           parsedEvents.push(payload);
         }
       }
-    } catch {
-      // 保持 parsedEvents 为空
     }
+    if (streamWriter) streamWriter.end();
 
-    // 从 SSE 事件组装完整响应
     let assembledBody: unknown = undefined;
     try {
       if (parsedEvents.length > 0) {
         const firstEvent = parsedEvents[0] as Record<string, unknown>;
-
         if (firstEvent?.type === "message_start") {
           assembledBody = assembleAnthropicResponse(parsedEvents);
         } else if (
@@ -273,17 +268,18 @@ export const proxyRequest = async (
         }
       }
     } catch {
-      // 组装失败，保持 undefined
+      // 组装失败
     }
 
-    const responseBody = parsedEvents.length > 0 ? parsedEvents : fullContent;
+    const { logCollection } = readConfig();
+    const responseBody =
+      logCollection.captureRawStreamEvents && parsedEvents.length > 0
+        ? parsedEvents
+        : null;
 
-    // 从组装后的响应中提取 token 用量
     const tokenUsage = extractTokenUsage(assembledBody);
-
     const durationMs = Date.now() - startMs;
 
-    // 更新最终状态
     updateLog(logId, {
       responseStatus: upstreamRes.status,
       responseBody,
@@ -296,7 +292,7 @@ export const proxyRequest = async (
     return {
       status: upstreamRes.status,
       headers: resHeaders,
-      body: fullContent,
+      body: null,
       isStream: true,
     };
   }
@@ -331,27 +327,3 @@ export const proxyRequest = async (
   };
 };
 
-/**
- * 将 ReadableStream 读取为字符串
- */
-const readStreamToString = async (stream: ReadableStream): Promise<string> => {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  const decoder = new TextDecoder();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return decoder.decode(result);
-};
