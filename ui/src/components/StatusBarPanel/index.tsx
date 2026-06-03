@@ -16,6 +16,7 @@ import {
   fetchCaffeinate,
   setCaffeinate,
   testDingTalk,
+  testFeishu,
   updateNotifications,
   clearHooks,
   updateProjectRemarkApi,
@@ -26,7 +27,9 @@ import { useEventFilter } from "../DashboardTab/useEventFilter";
 import SessionList from "../DashboardTab/SessionList";
 import EventStream from "../DashboardTab/EventStream";
 import DingTalkPanel from "../DashboardTab/DingTalkPanel";
+import FeishuPanel from "../DashboardTab/FeishuPanel";
 import MacosNotifyPanel from "../DashboardTab/MacosNotifyPanel";
+import { isShowFeishu } from "../../constant";
 import SessionAnalyticsPanel from "../SessionAnalyticsPanel";
 import { LogDetailPanel } from "../LogDetailPanel";
 import { HookDetailPanel } from "../HookDetailPanel";
@@ -52,6 +55,9 @@ const StatusBarPanel = () => {
     active: false,
   });
   const [dingtalkOpen, setDingtalkOpen] = useState(false);
+  const [feishuOpen, setFeishuOpen] = useState(false);
+  const [feishuSaving, setFeishuSaving] = useState(false);
+  const [feishuTesting, setFeishuTesting] = useState(false);
   const [macosOpen, setMacosOpen] = useState(false);
   const [analyticsSessionId, setAnalyticsSessionId] = useState<string | null>(null);
   const [dingSaving, setDingSaving] = useState(false);
@@ -65,8 +71,10 @@ const StatusBarPanel = () => {
   const dingtalk = notifications.dingtalk ?? {};
   const eventsAnyOn = (e?: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) =>
     !!(e?.stop || e?.subagentStop || e?.notification);
+  const feishu = notifications.feishu ?? {};
   const macosArmed = !!macos.enabled && eventsAnyOn(macos.events);
   const dingtalkArmed = !!dingtalk.enabled && eventsAnyOn(dingtalk.events) && !!dingtalk.accessToken && !!dingtalk.secret;
+  const feishuArmed = !!feishu.enabled && eventsAnyOn(feishu.events) && !!feishu.webhookUrl && !!feishu.secret;
 
   const refreshConfig = useCallback(async () => {
     try { const data = await apiFetchConfig(); setConfig(data); } catch { /* ignore */ }
@@ -225,6 +233,21 @@ const StatusBarPanel = () => {
           </svg>
         </button>
 
+        {isShowFeishu && (
+          <>
+            <label className={`${styles.controlChip}${feishu.enabled ? ` ${styles.controlChipActive}` : ""}`}>
+              <input type="checkbox" checked={!!feishu.enabled} onChange={(e) => void updateNotifications({ feishu: { enabled: e.target.checked } }).then(() => refreshConfig())} />
+              飞书
+              {!!feishu.enabled && !feishuArmed && <span className={styles.warnBadge}>!</span>}
+            </label>
+            <button type="button" className={styles.iconBtn} onClick={() => setFeishuOpen((v) => !v)} title="飞书通知配置">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="2" /><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.3 2.3l.7.7M9 9l.7.7M2.3 9.7l.7-.7M9 3l.7-.7" />
+              </svg>
+            </button>
+          </>
+        )}
+
         {caffeinate.supported && (
           <label className={`${styles.controlChip}${caffeinate.active ? ` ${styles.controlChipActive}` : ""}`}>
             <input type="checkbox" checked={caffeinate.active} onChange={(e) => void handleToggleCaffeinate(e.target.checked)} />
@@ -272,6 +295,22 @@ const StatusBarPanel = () => {
             config={dingtalk} saving={dingSaving} testing={dingTesting}
             onSave={handleSaveDingTalk} onTest={handleTestDingTalk}
             onChangeEvents={(next) => void handleChangeDingtalkEvents(next)}
+          />
+        </div>
+      )}
+      {isShowFeishu && feishuOpen && (
+        <div className={styles.configSection}>
+          <FeishuPanel
+            config={feishu} saving={feishuSaving} testing={feishuTesting}
+            onSave={async (webhookUrl, secret) => {
+              setFeishuSaving(true);
+              try { await updateNotifications({ feishu: { webhookUrl, secret } }); refreshConfig(); } finally { setFeishuSaving(false); }
+            }}
+            onTest={async (webhookUrl, secret) => {
+              setFeishuTesting(true);
+              try { await testFeishu(webhookUrl, secret); } catch (e) { alert(e instanceof Error ? e.message : String(e)); } finally { setFeishuTesting(false); }
+            }}
+            onChangeEvents={(next) => void updateNotifications({ feishu: { events: next } }).then(() => refreshConfig())}
           />
         </div>
       )}

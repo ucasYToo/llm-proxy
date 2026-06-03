@@ -622,7 +622,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         />
       )}
 
-      {feishuOpen && (
+      {isShowFeishu && feishuOpen && (
         <FeishuPanel
           config={feishu}
           saving={feishuSaving}
