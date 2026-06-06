@@ -18,7 +18,11 @@ interface TargetFormProps {
 interface KVPair {
   key: string;
   value: string;
+  _id: number;
 }
+
+let kvIdCounter = 0;
+const nextKvId = () => ++kvIdCounter;
 
 const SENSITIVE_KEY_PATTERN = /^(authorization|x-api-key|api-key|x-goog-api-key|openai-api-key)$/i;
 
@@ -26,6 +30,7 @@ const kvFromRecord = (record: Record<string, string>): KVPair[] => {
   return Object.entries(record).map(([key, value]) => ({
     key,
     value: typeof value === "string" ? value : JSON.stringify(value),
+    _id: nextKvId(),
   }));
 };
 
@@ -83,12 +88,12 @@ const TargetForm = ({ initial, onSave, onCancel }: TargetFormProps) => {
   const [headers, setHeaders] = useState<KVPair[]>(
     initial?.headers
       ? kvFromRecord(initial.headers as Record<string, string>)
-      : [{ key: "", value: "" }],
+      : [{ key: "", value: "", _id: nextKvId() }],
   );
   const [bodyParams, setBodyParams] = useState<KVPair[]>(
     initial?.bodyParams
       ? kvFromRecord(initial.bodyParams as Record<string, string>)
-      : [{ key: "", value: "" }],
+      : [{ key: "", value: "", _id: nextKvId() }],
   );
 
   const { pricing: initialPricing = {} } = initial ?? {};
@@ -474,7 +479,7 @@ const KVEditor = ({
     if (emptyIndex >= 0) {
       onChange(pairs.map((p, i) => (i === emptyIndex ? { ...p, key } : p)));
     } else {
-      onChange([...pairs, { key, value: "" }]);
+      onChange([...pairs, { key, value: "", _id: nextKvId() }]);
     }
   };
 
@@ -500,9 +505,9 @@ const KVEditor = ({
       <div className={styles.kvList}>
         {pairs.map((pair, idx) => {
           const isSensitive = SENSITIVE_KEY_PATTERN.test(pair.key.trim());
-          const revealed = !!revealMap[idx];
+          const revealed = !!revealMap[pair._id];
           return (
-            <div key={idx} className={styles.kvRow}>
+            <div key={pair._id} className={styles.kvRow}>
               <input
                 type="text"
                 value={pair.key}
@@ -533,7 +538,7 @@ const KVEditor = ({
                   type="button"
                   className="btnGhost btnSm"
                   onClick={() =>
-                    setRevealMap((m) => ({ ...m, [idx]: !m[idx] }))
+                    setRevealMap((m) => ({ ...m, [pair._id]: !m[pair._id] }))
                   }
                   title={revealed ? "隐藏" : "显示"}
                 >
@@ -552,7 +557,7 @@ const KVEditor = ({
       </div>
       <button
         className="btnGhost btnSm"
-        onClick={() => onChange([...pairs, { key: "", value: "" }])}
+        onClick={() => onChange([...pairs, { key: "", value: "", _id: nextKvId() }])}
       >
         + 添加
       </button>

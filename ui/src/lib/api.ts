@@ -178,6 +178,7 @@ export interface LogQueryParams {
 
 export async function fetchConfig(): Promise<Config> {
   const res = await fetch("/api/query?type=config");
+  if (!res.ok) throw new Error("Failed to fetch config");
   return res.json();
 }
 
@@ -188,6 +189,7 @@ export async function fetchLogs(
   const res = await fetch(
     `/api/query?type=logs&limit=${limit}&offset=${offset}`,
   );
+  if (!res.ok) throw new Error("Failed to fetch logs");
   return res.json();
 }
 
@@ -203,6 +205,7 @@ export async function queryLogs(
   if (params.agentId) searchParams.set("agentId", params.agentId);
   if (params.summary === false) searchParams.set("summary", "false");
   const res = await fetch(`/api/query?${searchParams}`);
+  if (!res.ok) throw new Error("Failed to query logs");
   return res.json();
 }
 
@@ -391,6 +394,7 @@ export async function fetchHooks(params: {
   if (params.sessionId) search.set("sessionId", params.sessionId);
   if (params.eventName) search.set("eventName", params.eventName);
   const res = await fetch(`/api/query?${search}`);
+  if (!res.ok) throw new Error("Failed to fetch hooks");
   return res.json();
 }
 
@@ -402,6 +406,7 @@ export async function fetchSessions(opts: {
   if (opts.withinMs !== undefined) params.set("withinMs", String(opts.withinMs));
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
   const res = await fetch(`/api/query?${params.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch sessions");
   return res.json();
 }
 
@@ -415,6 +420,7 @@ export async function fetchSessionTimeline(
     limit: String(limit),
   });
   const res = await fetch(`/api/query?${search}`);
+  if (!res.ok) throw new Error("Failed to fetch session timeline");
   return res.json();
 }
 
@@ -430,6 +436,7 @@ export interface CaffeinateState {
 
 export async function fetchCaffeinate(): Promise<CaffeinateState> {
   const res = await fetch("/api/query?type=caffeinate");
+  if (!res.ok) throw new Error("Failed to fetch caffeinate state");
   return res.json();
 }
 

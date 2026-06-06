@@ -1,38 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  Config,
-  HookEntry,
-  LogEntry,
-  NotificationSettings,
-  SessionSummary,
-  TimelineEntry,
-} from "../../lib/api";
-import {
-  fetchConfig as apiFetchConfig,
-  fetchHooks,
-  fetchLogs,
-  fetchSessions,
-  fetchSessionTimeline,
-  fetchCaffeinate,
-  setCaffeinate,
-  testDingTalk,
-  testFeishu,
-  updateNotifications,
-  clearHooks,
-  updateProjectRemarkApi,
-} from "../../lib/api";
-import type { SseStatus, SessionGroup, SelectedDetail } from "../DashboardTab/types";
-import { basename, MAX_BUFFER, UNKNOWN_GROUP_KEY } from "../DashboardTab/utils";
-import { useEventFilter } from "../DashboardTab/useEventFilter";
+import { useCallback, useEffect, useState } from "react";
+import { fetchConfig as apiFetchConfig, updateProjectRemarkApi } from "../../lib/api";
+import type { Config } from "../../lib/api";
+import { LogDetailPanel } from "../LogDetailPanel";
+import { HookDetailPanel } from "../HookDetailPanel";
+import SessionAnalyticsPanel from "../SessionAnalyticsPanel";
+import { useDashboardData } from "../DashboardTab/useDashboardData";
+import { useNotifications } from "../DashboardTab/useNotifications";
 import SessionList from "../DashboardTab/SessionList";
 import EventStream from "../DashboardTab/EventStream";
 import DingTalkPanel from "../DashboardTab/DingTalkPanel";
 import FeishuPanel from "../DashboardTab/FeishuPanel";
 import MacosNotifyPanel from "../DashboardTab/MacosNotifyPanel";
 import { isShowFeishu } from "../../constant";
-import SessionAnalyticsPanel from "../SessionAnalyticsPanel";
-import { LogDetailPanel } from "../LogDetailPanel";
-import { HookDetailPanel } from "../HookDetailPanel";
 import styles from "./index.module.css";
 
 const StatusBarPanel = () => {
@@ -42,156 +21,32 @@ const StatusBarPanel = () => {
     channels: [],
     logCollection: { captureOriginalBody: false, captureRawStreamEvents: false },
   });
-  const [events, setEvents] = useState<HookEntry[]>([]);
-  const [globalLogs, setGlobalLogs] = useState<LogEntry[]>([]);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [selectedSession, setSelectedSession] = useState<string | null>(null);
-  const [sessionTimeline, setSessionTimeline] = useState<TimelineEntry[]>([]);
-  const [sseStatus, setSseStatus] = useState<SseStatus>("connecting");
-  const [selectedDetail, setSelectedDetail] = useState<SelectedDetail | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [caffeinate, setCaffeinateState] = useState<{ supported: boolean; active: boolean }>({
-    supported: false,
-    active: false,
-  });
-  const [dingtalkOpen, setDingtalkOpen] = useState(false);
-  const [feishuOpen, setFeishuOpen] = useState(false);
-  const [feishuSaving, setFeishuSaving] = useState(false);
-  const [feishuTesting, setFeishuTesting] = useState(false);
-  const [macosOpen, setMacosOpen] = useState(false);
-  const [analyticsSessionId, setAnalyticsSessionId] = useState<string | null>(null);
-  const [dingSaving, setDingSaving] = useState(false);
-  const [dingTesting, setDingTesting] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const esRef = useRef<EventSource | null>(null);
-  const filter = useEventFilter();
-
-  const notifications: NotificationSettings = config.notifications ?? {};
-  const macos = notifications.macos ?? {};
-  const dingtalk = notifications.dingtalk ?? {};
-  const eventsAnyOn = (e?: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) =>
-    !!(e?.stop || e?.subagentStop || e?.notification);
-  const feishu = notifications.feishu ?? {};
-  const macosArmed = !!macos.enabled && eventsAnyOn(macos.events);
-  const dingtalkArmed = !!dingtalk.enabled && eventsAnyOn(dingtalk.events) && !!dingtalk.accessToken && !!dingtalk.secret;
-  const feishuArmed = !!feishu.enabled && eventsAnyOn(feishu.events) && !!feishu.webhookUrl && !!feishu.secret;
 
   const refreshConfig = useCallback(async () => {
-    try { const data = await apiFetchConfig(); setConfig(data); } catch { /* ignore */ }
-  }, []);
-  const refreshSessionsNow = useCallback(async () => {
-    try { const res = await fetchSessions(); setSessions(res.sessions); } catch { /* ignore */ }
-  }, []);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshSessions = useCallback(() => {
-    if (refreshTimerRef.current) return;
-    refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = null;
-      void refreshSessionsNow();
-    }, 3000);
-  }, [refreshSessionsNow]);
-  useEffect(() => () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); }, []);
-  const loadInitial = useCallback(async () => {
-    const [hookRes, logRes] = await Promise.allSettled([fetchHooks({ limit: 100 }), fetchLogs(100)]);
-    if (hookRes.status === "fulfilled") setEvents(hookRes.value.entries);
-    if (logRes.status === "fulfilled") setGlobalLogs(logRes.value.entries);
-    await refreshSessionsNow();
-  }, [refreshSessionsNow]);
-  const loadSessionTimeline = useCallback(async (sessionId: string) => {
-    try { const res = await fetchSessionTimeline(sessionId, 200); setSessionTimeline(res.entries); } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => { void refreshConfig(); void loadInitial(); void fetchCaffeinate().then(setCaffeinateState).catch(() => {}); }, [refreshConfig, loadInitial]);
-  useEffect(() => { if (!selectedSession) { setSessionTimeline([]); return; } void loadSessionTimeline(selectedSession); }, [selectedSession, loadSessionTimeline]);
-
-  useEffect(() => {
-    const es = new EventSource("/api/events");
-    esRef.current = es;
-    setSseStatus("connecting");
-    es.addEventListener("ready", () => setSseStatus("open"));
-    es.onopen = () => setSseStatus("open");
-    es.onerror = () => setSseStatus("closed");
-    es.onmessage = (msg) => {
-      try {
-        const parsed = JSON.parse(msg.data) as { type?: string; data?: unknown };
-        if (parsed.type === "hook" && parsed.data) {
-          const entry = parsed.data as HookEntry;
-          setEvents((prev) => [entry, ...prev].slice(0, MAX_BUFFER));
-          if (selectedSession && entry.sessionId === selectedSession) {
-            setSessionTimeline((prev) => [{ kind: "hook" as const, at: entry.createdAt, hook: entry }, ...prev].slice(0, MAX_BUFFER));
-          }
-          void refreshSessions();
-          return;
-        }
-        if (parsed.type === "log" && parsed.data) {
-          const { kind, entry } = parsed.data as { kind: "create" | "update"; entry: LogEntry };
-          if (selectedSession && entry.sessionId === selectedSession) {
-            setSessionTimeline((prev) => {
-              const idx = prev.findIndex((it) => it.kind === "log" && it.log.id === entry.id);
-              const next: TimelineEntry = { kind: "log", at: entry.timestamp, log: entry };
-              if (idx >= 0) { const copy = prev.slice(); copy[idx] = next; return copy; }
-              return kind === "create" ? [next, ...prev].slice(0, MAX_BUFFER) : prev;
-            });
-          }
-          setGlobalLogs((prev) => {
-            const idx = prev.findIndex((l) => l.id === entry.id);
-            if (idx >= 0) { const copy = prev.slice(); copy[idx] = entry; return copy; }
-            return kind === "create" ? [entry, ...prev].slice(0, MAX_BUFFER) : prev;
-          });
-          setSelectedDetail((cur) => cur && cur.kind === "log" && cur.entry.id === entry.id ? { kind: "log", entry } : cur);
-        }
-      } catch { /* ignore */ }
-    };
-    return () => { es.close(); esRef.current = null; };
-  }, [selectedSession, refreshSessions]);
-
-  const handleToggleMacos = async (enabled: boolean) => { try { await updateNotifications({ macos: { enabled } }); void refreshConfig(); } catch { /* */ } };
-  const handleChangeMacosEvents = async (ev: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) => { try { await updateNotifications({ macos: { events: ev } }); void refreshConfig(); } catch { /* */ } };
-  const handleToggleDingTalk = async (enabled: boolean) => { try { await updateNotifications({ dingtalk: { enabled } }); void refreshConfig(); } catch { /* */ } };
-  const handleChangeDingtalkEvents = async (ev: { stop?: boolean; subagentStop?: boolean; notification?: boolean }) => { try { await updateNotifications({ dingtalk: { events: ev } }); void refreshConfig(); } catch { /* */ } };
-  const handleSaveDingTalk = async (accessToken: string, secret: string) => { setDingSaving(true); try { await updateNotifications({ dingtalk: { accessToken, secret } }); void refreshConfig(); } finally { setDingSaving(false); } };
-  const handleTestDingTalk = async (accessToken: string, secret: string) => { setDingTesting(true); try { await testDingTalk(accessToken, secret); alert("已发送测试消息"); } catch (e) { alert("测试失败：" + String(e)); } finally { setDingTesting(false); } };
-  const handleToggleCaffeinate = async (active: boolean) => { try { const next = await setCaffeinate(active); setCaffeinateState(next); } catch { /* */ } };
-  const handleClear = async () => {
-    if (!confirm("清空所有记录？")) return;
-    try { await clearHooks(); setEvents([]); setGlobalLogs([]); setSessionTimeline([]); setSessions([]); setSelectedDetail(null); } catch { /* */ }
-  };
-
-  const globalTimeline = useMemo<TimelineEntry[]>(() => {
-    const hooks: TimelineEntry[] = events.map((ev) => ({ kind: "hook" as const, at: ev.createdAt, hook: ev }));
-    const logs: TimelineEntry[] = globalLogs.map((log) => ({ kind: "log" as const, at: log.timestamp, log }));
-    return [...hooks, ...logs].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
-  }, [events, globalLogs]);
-
-  const rawTimeline = selectedSession ? sessionTimeline : globalTimeline;
-  const visibleTimeline = useMemo(() => filter.filterTimeline(rawTimeline), [filter, rawTimeline]);
-
-  const sessionGroups = useMemo<SessionGroup[]>(() => {
-    const map = new Map<string, SessionGroup>();
-    for (const s of sessions) {
-      const key = s.cwd ?? UNKNOWN_GROUP_KEY;
-      const existing = map.get(key);
-      if (existing) {
-        existing.sessions.push(s);
-        if (s.lastEventAt > existing.lastEventAt) existing.lastEventAt = s.lastEventAt;
-      } else {
-        map.set(key, { key, cwd: s.cwd, remark: s.remark, folder: basename(s.cwd) || (s.cwd ? s.cwd : "未知路径"), sessions: [s], lastEventAt: s.lastEventAt });
-      }
+    try {
+      const c = await apiFetchConfig();
+      setConfig(c);
+    } catch {
+      // ignore
     }
-    return Array.from(map.values()).sort((a, b) => a.lastEventAt < b.lastEventAt ? 1 : a.lastEventAt > b.lastEventAt ? -1 : 0);
-  }, [sessions]);
+  }, []);
 
-  const toggleGroup = (key: string) => {
-    setCollapsedGroups((prev) => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; });
-  };
+  useEffect(() => { void refreshConfig(); }, [refreshConfig]);
+
+  const data = useDashboardData();
+  const notify = useNotifications({
+    notifications: config.notifications ?? {},
+    onRefresh: () => void refreshConfig(),
+  });
 
   return (
     <div className={styles.panel}>
-      {/* ── Header bar ── */}
+      {/* Header bar */}
       <div className={styles.header}>
-        <span className={`${styles.statusDot}${sseStatus === "open" ? ` ${styles.statusDotOpen}` : sseStatus === "closed" ? ` ${styles.statusDotClosed}` : ""}`} />
+        <span className={`${styles.statusDot}${data.sseStatus === "open" ? ` ${styles.statusDotOpen}` : data.sseStatus === "closed" ? ` ${styles.statusDotClosed}` : ""}`} />
         <span className={styles.statusText}>
-          {sseStatus === "open" ? "LIVE" : sseStatus === "closed" ? "OFFLINE" : "..."}
+          {data.sseStatus === "open" ? "LIVE" : data.sseStatus === "closed" ? "OFFLINE" : "..."}
         </span>
         <span className={styles.headerSpacer} />
         <span className={styles.headerTitle}>LLM Proxy</span>
@@ -209,25 +64,25 @@ const StatusBarPanel = () => {
         </button>
       </div>
 
-      {/* ── Scrollable controls strip ── */}
+      {/* Controls strip */}
       <div className={styles.controls}>
-        <label className={`${styles.controlChip}${macos.enabled ? ` ${styles.controlChipActive}` : ""}`}>
-          <input type="checkbox" checked={!!macos.enabled} onChange={(e) => void handleToggleMacos(e.target.checked)} />
+        <label className={`${styles.controlChip}${notify.macos.enabled ? ` ${styles.controlChipActive}` : ""}`}>
+          <input type="checkbox" checked={!!notify.macos.enabled} onChange={(e) => void notify.handleToggleMacos(e.target.checked)} />
           macOS
-          {!!macos.enabled && !macosArmed && <span className={styles.warnBadge}>!</span>}
+          {!!notify.macos.enabled && !notify.macosArmed && <span className={styles.warnBadge}>!</span>}
         </label>
-        <button type="button" className={styles.iconBtn} onClick={() => setMacosOpen((v) => !v)} title="macOS 通知配置">
+        <button type="button" className={styles.iconBtn} onClick={() => notify.setMacosOpen((v) => !v)} title="macOS 通知配置">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="6" cy="6" r="2" /><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.3 2.3l.7.7M9 9l.7.7M2.3 9.7l.7-.7M9 3l.7-.7" />
           </svg>
         </button>
 
-        <label className={`${styles.controlChip}${dingtalk.enabled ? ` ${styles.controlChipActive}` : ""}`}>
-          <input type="checkbox" checked={!!dingtalk.enabled} onChange={(e) => void handleToggleDingTalk(e.target.checked)} />
+        <label className={`${styles.controlChip}${notify.dingtalk.enabled ? ` ${styles.controlChipActive}` : ""}`}>
+          <input type="checkbox" checked={!!notify.dingtalk.enabled} onChange={(e) => void notify.handleToggleDingTalk(e.target.checked)} />
           钉钉
-          {!!dingtalk.enabled && !dingtalkArmed && <span className={styles.warnBadge}>!</span>}
+          {!!notify.dingtalk.enabled && !notify.dingtalkArmed && <span className={styles.warnBadge}>!</span>}
         </label>
-        <button type="button" className={styles.iconBtn} onClick={() => setDingtalkOpen((v) => !v)} title="钉钉通知配置">
+        <button type="button" className={styles.iconBtn} onClick={() => notify.setDingtalkOpen((v) => !v)} title="钉钉通知配置">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="6" cy="6" r="2" /><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.3 2.3l.7.7M9 9l.7.7M2.3 9.7l.7-.7M9 3l.7-.7" />
           </svg>
@@ -235,12 +90,12 @@ const StatusBarPanel = () => {
 
         {isShowFeishu && (
           <>
-            <label className={`${styles.controlChip}${feishu.enabled ? ` ${styles.controlChipActive}` : ""}`}>
-              <input type="checkbox" checked={!!feishu.enabled} onChange={(e) => void updateNotifications({ feishu: { enabled: e.target.checked } }).then(() => refreshConfig())} />
+            <label className={`${styles.controlChip}${notify.feishu.enabled ? ` ${styles.controlChipActive}` : ""}`}>
+              <input type="checkbox" checked={!!notify.feishu.enabled} onChange={(e) => void notify.handleToggleFeishu(e.target.checked)} />
               飞书
-              {!!feishu.enabled && !feishuArmed && <span className={styles.warnBadge}>!</span>}
+              {!!notify.feishu.enabled && !notify.feishuArmed && <span className={styles.warnBadge}>!</span>}
             </label>
-            <button type="button" className={styles.iconBtn} onClick={() => setFeishuOpen((v) => !v)} title="飞书通知配置">
+            <button type="button" className={styles.iconBtn} onClick={() => notify.setFeishuOpen((v) => !v)} title="飞书通知配置">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="6" cy="6" r="2" /><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.3 2.3l.7.7M9 9l.7.7M2.3 9.7l.7-.7M9 3l.7-.7" />
               </svg>
@@ -248,9 +103,9 @@ const StatusBarPanel = () => {
           </>
         )}
 
-        {caffeinate.supported && (
-          <label className={`${styles.controlChip}${caffeinate.active ? ` ${styles.controlChipActive}` : ""}`}>
-            <input type="checkbox" checked={caffeinate.active} onChange={(e) => void handleToggleCaffeinate(e.target.checked)} />
+        {data.caffeinate.supported && (
+          <label className={`${styles.controlChip}${data.caffeinate.active ? ` ${styles.controlChipActive}` : ""}`}>
+            <input type="checkbox" checked={data.caffeinate.active} onChange={(e) => void data.handleToggleCaffeinate(e.target.checked)} />
             睡眠
           </label>
         )}
@@ -258,10 +113,10 @@ const StatusBarPanel = () => {
         <span className={styles.controlSep} />
 
         <div className={styles.controlActions}>
-          {!analyticsSessionId && sessions.length > 0 && (
+          {!data.analyticsSessionId && data.sessions.length > 0 && (
             <button
               className={styles.controlBtnPrimary}
-              onClick={() => setAnalyticsSessionId(selectedSession ?? sessions[0].sessionId)}
+              onClick={() => data.setAnalyticsSessionId(data.selectedSession ?? data.sessions[0].sessionId)}
             >
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M1 9V5M4 9V3M7 9V1" />
@@ -269,53 +124,47 @@ const StatusBarPanel = () => {
               分析
             </button>
           )}
-          {analyticsSessionId && (
-            <button className={styles.controlBtnPrimary} onClick={() => setAnalyticsSessionId(null)}>
+          {data.analyticsSessionId && (
+            <button className={styles.controlBtnPrimary} onClick={() => data.setAnalyticsSessionId(null)}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 1L1 5l2 4M7 1l2 4-2 4" />
               </svg>
               事件流
             </button>
           )}
-          <button className={styles.controlBtnDanger} onClick={handleClear}>
+          <button className={styles.controlBtnDanger} onClick={data.handleClear}>
             清空
           </button>
         </div>
       </div>
 
-      {/* ── Notification config panels ── */}
-      {macosOpen && (
+      {/* Notification config panels */}
+      {notify.macosOpen && (
         <div className={styles.configSection}>
-          <MacosNotifyPanel events={macos.events} onChange={(next) => void handleChangeMacosEvents(next)} />
+          <MacosNotifyPanel events={notify.macos.events} onChange={(next) => void notify.handleChangeMacosEvents(next)} />
         </div>
       )}
-      {dingtalkOpen && (
+      {notify.dingtalkOpen && (
         <div className={styles.configSection}>
           <DingTalkPanel
-            config={dingtalk} saving={dingSaving} testing={dingTesting}
-            onSave={handleSaveDingTalk} onTest={handleTestDingTalk}
-            onChangeEvents={(next) => void handleChangeDingtalkEvents(next)}
+            config={notify.dingtalk} saving={notify.dingSaving} testing={notify.dingTesting}
+            onSave={notify.handleSaveDingTalk} onTest={notify.handleTestDingTalk}
+            onChangeEvents={(next) => void notify.handleChangeDingtalkEvents(next)}
           />
         </div>
       )}
-      {isShowFeishu && feishuOpen && (
+      {isShowFeishu && notify.feishuOpen && (
         <div className={styles.configSection}>
           <FeishuPanel
-            config={feishu} saving={feishuSaving} testing={feishuTesting}
-            onSave={async (webhookUrl, secret) => {
-              setFeishuSaving(true);
-              try { await updateNotifications({ feishu: { webhookUrl, secret } }); refreshConfig(); } finally { setFeishuSaving(false); }
-            }}
-            onTest={async (webhookUrl, secret) => {
-              setFeishuTesting(true);
-              try { await testFeishu(webhookUrl, secret); } catch (e) { alert(e instanceof Error ? e.message : String(e)); } finally { setFeishuTesting(false); }
-            }}
-            onChangeEvents={(next) => void updateNotifications({ feishu: { events: next } }).then(() => refreshConfig())}
+            config={notify.feishu} saving={notify.feishuSaving} testing={notify.feishuTesting}
+            onSave={notify.handleSaveFeishu}
+            onTest={notify.handleTestFeishu}
+            onChangeEvents={(next) => void notify.handleChangeFeishuEvents(next)}
           />
         </div>
       )}
 
-      {/* ── Split layout ── */}
+      {/* Split layout */}
       <div className={`${styles.layout}${sidebarCollapsed ? ` ${styles.layoutCollapsed}` : ""}`}>
         {sidebarCollapsed ? (
           <div className={styles.miniSidebar}>
@@ -328,17 +177,17 @@ const StatusBarPanel = () => {
                 <path d="M3 1 7 5 3 9" />
               </svg>
             </button>
-            {sessionGroups.map((group) => {
+            {data.sessionGroups.map((group) => {
               const letter = group.folder.charAt(0).toUpperCase();
               const latestSid = group.sessions[0]?.sessionId;
-              const isActive = latestSid && selectedSession === latestSid;
+              const isActive = latestSid && data.selectedSession === latestSid;
               return (
                 <button
                   key={group.key}
                   className={`${styles.miniIcon}${isActive ? ` ${styles.miniIconActive}` : ""}`}
                   title={group.folder}
                   onClick={() => {
-                    if (latestSid) { setSelectedSession(latestSid); setAnalyticsSessionId(null); }
+                    if (latestSid) { data.setSelectedSession(latestSid); data.setAnalyticsSessionId(null); }
                   }}
                 >
                   {letter}
@@ -358,51 +207,51 @@ const StatusBarPanel = () => {
               </svg>
             </button>
             <SessionList
-              sessionGroups={sessionGroups}
-              sessions={sessions}
-              selectedSession={selectedSession}
-              collapsedGroups={collapsedGroups}
-              eventCount={events.length + globalLogs.length}
-              onSelectSession={(sid) => { setSelectedSession(sid); setAnalyticsSessionId(null); }}
-              onToggleGroup={toggleGroup}
+              sessionGroups={data.sessionGroups}
+              sessions={data.sessions}
+              selectedSession={data.selectedSession}
+              collapsedGroups={data.collapsedGroups}
+              eventCount={data.events.length + data.globalLogs.length}
+              onSelectSession={(sid) => { data.setSelectedSession(sid); data.setAnalyticsSessionId(null); }}
+              onToggleGroup={data.toggleGroup}
               onSaveRemark={async (cwd, remark) => {
                 await updateProjectRemarkApi(cwd, remark);
-                await refreshSessions();
+                await data.refreshSessions();
               }}
             />
           </div>
         )}
 
         <div className={styles.eventPane}>
-          {analyticsSessionId ? (
-            <SessionAnalyticsPanel sessionId={analyticsSessionId} onClose={() => setAnalyticsSessionId(null)} />
+          {data.analyticsSessionId ? (
+            <SessionAnalyticsPanel sessionId={data.analyticsSessionId} onClose={() => data.setAnalyticsSessionId(null)} />
           ) : (
             <EventStream
-              selectedSession={selectedSession}
-              sessions={sessions}
-              timeline={visibleTimeline}
-              filterPreset={filter.filterPreset}
-              enabledTypes={filter.enabledTypes}
-              filterSearch={filter.filterSearch}
-              selectedDetail={selectedDetail}
+              selectedSession={data.selectedSession}
+              sessions={data.sessions}
+              timeline={data.visibleTimeline}
+              filterPreset={data.filter.filterPreset}
+              enabledTypes={data.filter.enabledTypes}
+              filterSearch={data.filter.filterSearch}
+              selectedDetail={data.selectedDetail}
               targetCount={config.targets.length}
               compactFilter
-              onSelectDetail={setSelectedDetail}
-              onSetPreset={filter.setPreset}
-              onToggleType={filter.toggleType}
-              onSearchChange={filter.setFilterSearch}
+              onSelectDetail={data.setSelectedDetail}
+              onSetPreset={data.filter.setPreset}
+              onToggleType={data.filter.toggleType}
+              onSearchChange={data.filter.setFilterSearch}
             />
           )}
         </div>
       </div>
 
       <LogDetailPanel
-        log={selectedDetail?.kind === "log" ? selectedDetail.entry : null}
-        onClose={() => setSelectedDetail(null)}
+        log={data.selectedDetail?.kind === "log" ? data.selectedDetail.entry : null}
+        onClose={() => data.setSelectedDetail(null)}
       />
       <HookDetailPanel
-        entry={selectedDetail?.kind === "hook" ? selectedDetail.entry : null}
-        onClose={() => setSelectedDetail(null)}
+        entry={data.selectedDetail?.kind === "hook" ? data.selectedDetail.entry : null}
+        onClose={() => data.setSelectedDetail(null)}
       />
     </div>
   );

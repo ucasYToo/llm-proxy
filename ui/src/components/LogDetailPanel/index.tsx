@@ -30,7 +30,11 @@ export function LogDetailPanel({
     if (logOrNull) {
       setIsVisible(true);
       setFullLog(null);
-      fetchLogDetail(logOrNull.id).then(setFullLog).catch(() => {});
+      let cancelled = false;
+      fetchLogDetail(logOrNull.id)
+        .then((data) => { if (!cancelled) setFullLog(data); })
+        .catch(() => {});
+      return () => { cancelled = true; };
     } else {
       setIsVisible(false);
       setFullLog(null);
@@ -42,6 +46,22 @@ export function LogDetailPanel({
       setViewMode("detail");
     }
   }, [log?.id]);
+
+  useEffect(() => {
+    if (!logOrNull) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (
+          e.target instanceof HTMLInputElement ||
+          e.target instanceof HTMLTextAreaElement ||
+          e.target instanceof HTMLSelectElement
+        ) return;
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [logOrNull, onClose]);
 
   /* ── 拖拽调整宽度 ── */
   const handleDragStart = useCallback((e: React.MouseEvent) => {

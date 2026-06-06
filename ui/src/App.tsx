@@ -14,7 +14,7 @@ const VALID_TABS = new Set<AppTab>(["config", "logs", "dashboard", "analytics", 
 
 const tabFromHash = (): AppTab => {
   const raw = window.location.hash.replace(/^#/, "") as AppTab;
-  return VALID_TABS.has(raw) ? raw : "config";
+  return VALID_TABS.has(raw) ? raw : "dashboard";
 };
 
 const App = () => {
