@@ -96,6 +96,40 @@ export interface FeishuConfig {
   events?: ChannelEvents;
 }
 
+/* ── Feishu Remote Control ── */
+
+export type FeishuRemoteDomain = "feishu" | "lark";
+
+export interface FeishuRemoteChatBinding {
+  cwd: string;
+  updatedAt: string;
+}
+
+export interface FeishuRemoteConfig {
+  /** 总开关：启用飞书自建应用长连接远程控制 */
+  enabled?: boolean;
+  /** 飞书/Lark 自建应用 App ID */
+  appId?: string;
+  /** 飞书/Lark 自建应用 App Secret */
+  appSecret?: string;
+  /** 事件订阅加密密钥；开启加密推送时必填 */
+  encryptKey?: string;
+  /** 事件订阅 verification token；配置了 token 时用于校验事件来源 */
+  verificationToken?: string;
+  /** open.feishu.cn 或 open.larksuite.com */
+  domain?: FeishuRemoteDomain;
+  /** 明确允许远控的飞书用户 ID；为空时默认拒绝所有用户 */
+  allowedUserIds?: string[];
+  /** 明确允许远控的会话/群 ID；为空时不按 chat 放行 */
+  allowedChatIds?: string[];
+  /** 未绑定 chat 时使用的默认项目目录 */
+  defaultCwd?: string;
+  /** chat_id -> cwd 绑定 */
+  chatBindings?: Record<string, FeishuRemoteChatBinding>;
+  /** sidecar 与主服务通信的本地密钥 */
+  sidecarSecret?: string;
+}
+
 export interface NotificationSettings {
   macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
@@ -136,6 +170,8 @@ export interface Config {
   channels: Channel[];
   /** Claude Code hook 事件的通知开关（默认全部 off） */
   notifications?: NotificationSettings;
+  /** 飞书自建应用远程控制配置（与 notifications.feishu 的 webhook 通知互不影响） */
+  feishuRemote?: FeishuRemoteConfig;
   /** 预算配置 */
   budget?: BudgetConfig;
   /** 服务端实际监听端口（仅 API 响应附带，不持久化） */

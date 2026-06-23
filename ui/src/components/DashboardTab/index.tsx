@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Config, TimelineEntry } from '../../lib/api';
 import { updateProjectRemarkApi } from '../../lib/api';
 import { LogDetailPanel } from '../LogDetailPanel';
@@ -12,6 +12,7 @@ import SessionList from './SessionList';
 import EventStream from './EventStream';
 import DingTalkPanel from './DingTalkPanel';
 import FeishuPanel from './FeishuPanel';
+import FeishuRemotePanel from './FeishuRemotePanel';
 import MacosNotifyPanel from './MacosNotifyPanel';
 import ProjectCard from './ProjectCard';
 import styles from './index.module.css';
@@ -24,6 +25,7 @@ interface Props {
 
 const DashboardTab = ({ config, onRefresh }: Props) => {
   const data = useDashboardData();
+  const [feishuRemoteOpen, setFeishuRemoteOpen] = useState(false);
   const notify = useNotifications({
     notifications: config.notifications ?? {},
     onRefresh,
@@ -170,6 +172,29 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           </div>
         )}
 
+        {isShowFeishu && (
+          <div className={styles.toggleGroup}>
+            <span className={styles.toggleGroupLabel}>远控：</span>
+            <label
+              className={styles.toggleChip}
+              title={
+                config.feishuRemote?.enabled
+                  ? '飞书自建应用远程控制已启用'
+                  : '飞书自建应用远程控制'
+              }
+            >
+              <input type="checkbox" checked={!!config.feishuRemote?.enabled} readOnly />
+              飞书
+              {!!config.feishuRemote?.enabled && (
+                <span className={styles.statusMiniDot} title="远控已启用" />
+              )}
+            </label>
+            <button type="button" className="btnGhost btnSm" onClick={() => setFeishuRemoteOpen((v) => !v)}>
+              {feishuRemoteOpen ? '收起' : '配置'}
+            </button>
+          </div>
+        )}
+
         <div className={styles.toolbarSpacer} />
 
         {data.selectedSession && (
@@ -230,12 +255,19 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         />
       )}
 
+      {isShowFeishu && feishuRemoteOpen && (
+        <FeishuRemotePanel
+          initialConfig={config.feishuRemote}
+          serverPort={config.serverPort}
+        />
+      )}
+
       {!data.selectedSession ? (
         <div className={styles.projectGrid}>
           {data.sessionGroups.length === 0 && orphanEvents.length === 0 ? (
             <div className={styles.emptyHint}>
               暂无活跃项目。在终端运行{' '}
-              <code>claude-llm-proxy hook install</code> 把 hook 注册到 Claude Code。
+              <code>claude-proxy hook install</code> 把 hook 注册到 Claude Code。
             </div>
           ) : (
             <>

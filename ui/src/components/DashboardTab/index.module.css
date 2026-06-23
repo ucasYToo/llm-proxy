@@ -110,6 +110,14 @@
   line-height: 1;
 }
 
+.statusMiniDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 2px var(--success-light);
+}
+
 .notifyEventsRow {
   display: flex;
   flex-wrap: wrap;
@@ -179,6 +187,207 @@
   display: flex;
   gap: 8px;
   padding-left: 100px;
+}
+
+/* ── Feishu Remote Panel ── */
+
+.remotePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.remoteHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.remoteTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.remoteMeta {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.remoteBadge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+
+.remoteBadgeOk {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--success-light);
+}
+
+.remoteError,
+.remoteNotice {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+
+.remoteError {
+  color: var(--error);
+  background: var(--error-light);
+  border: 1px solid var(--error);
+}
+
+.remoteNotice {
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.remoteGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.remoteCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.remoteField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.remoteField span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.remoteField input,
+.remoteField select,
+.remoteField textarea {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.remoteField textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.remoteActions {
+  display: flex;
+  gap: 8px;
+}
+
+.remoteSections {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.remoteSectionTitle {
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.remoteProjectList,
+.remoteMessageList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.remoteProjectRow,
+.remoteMessageRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+}
+
+.remoteProjectName {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.remoteProjectCwd {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 520px;
+}
+
+.remoteProjectActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.remoteMessageRow {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.remoteMessageRow span {
+  width: 42px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.remoteMessageRow p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 /* ── Layout ── */
