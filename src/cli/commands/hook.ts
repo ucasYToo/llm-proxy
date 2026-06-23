@@ -52,7 +52,7 @@ export const hookCommand = (program: Command) => {
       const items = listManagedHooks();
       console.log(chalk.bold(`Claude Code settings: ${CLAUDE_SETTINGS_PATH}`));
       if (items.length === 0) {
-        console.log(chalk.yellow("\n当前未安装本工具的 hook。运行 `claude-proxy hook install` 来注册。"));
+        console.log(chalk.yellow("\n当前未安装本工具的 hook。运行 `claude-llm-proxy hook install` 来注册。"));
         console.log(chalk.dim(`\n可注册事件：${MANAGED_HOOK_EVENTS.join(", ")}`));
         return;
       }

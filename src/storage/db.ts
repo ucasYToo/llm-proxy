@@ -126,7 +126,7 @@ const warnLegacyOnce = (): void => {
   legacyWarned = true;
   if (fs.existsSync(LEGACY_LOGS_PATH)) {
     console.warn(
-      `[claude-proxy] 检测到旧版 logs.json（${LEGACY_LOGS_PATH}）。新版日志已迁移到 SQLite（logs.db），旧文件不再使用，可手动删除。`,
+      `[claude-llm-proxy] 检测到旧版 logs.json（${LEGACY_LOGS_PATH}）。新版日志已迁移到 SQLite（logs.db），旧文件不再使用，可手动删除。`,
     );
   }
 };

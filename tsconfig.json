@@ -19,5 +19,5 @@
     "noImplicitReturns": true,
     "skipLibCheck": true
   },
-  "exclude": ["node_modules", "**/*.test.*", "ui", "vite.config.ts", "vscode-extension", "dist"]
+  "exclude": ["node_modules", "**/*.test.*", "ui", "vite.config.ts"]
 }

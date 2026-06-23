@@ -44,9 +44,7 @@ const ProjectsTab = () => {
     if (current === original) return;
     try {
       await updateProjectRemarkApi(cwd, current);
-      setProjects((prev) =>
-        prev.map((p) => (p.cwd === cwd ? { ...p, remark: current } : p)),
-      );
+      await load();
     } catch (e) {
       alert("保存备注失败：" + String(e));
     }

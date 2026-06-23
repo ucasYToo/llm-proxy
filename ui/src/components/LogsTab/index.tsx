@@ -85,6 +85,66 @@ const LogsTab = ({ config }: LogsTabProps) => {
     return () => clearInterval(interval);
   }, [autoRefresh, fetchLogs]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      if (e.key === "Escape") {
+        if (selectedLog) {
+          setSelectedLog(null);
+          setSelectedIndex(-1);
+        }
+        return;
+      }
+
+      if (selectedLog) {
+        if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
+          e.preventDefault();
+          if (selectedIndex > 0) {
+            const newIndex = selectedIndex - 1;
+            setSelectedIndex(newIndex);
+            setSelectedLog(logs[newIndex]);
+          }
+        } else if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
+          e.preventDefault();
+          if (selectedIndex < logs.length - 1) {
+            const newIndex = selectedIndex + 1;
+            setSelectedIndex(newIndex);
+            setSelectedLog(logs[newIndex]);
+          }
+        }
+      } else {
+        if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
+          e.preventDefault();
+          if (selectedIndex < logs.length - 1) {
+            const newIndex = selectedIndex + 1;
+            setSelectedIndex(newIndex);
+          }
+        } else if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
+          e.preventDefault();
+          if (selectedIndex > 0) {
+            const newIndex = selectedIndex - 1;
+            setSelectedIndex(newIndex);
+          }
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (selectedIndex >= 0 && selectedIndex < logs.length) {
+            setSelectedLog(logs[selectedIndex]);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedLog, selectedIndex, logs]);
+
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
       if (
@@ -117,66 +177,6 @@ const LogsTab = ({ config }: LogsTabProps) => {
       return true;
     });
   }, [logs, statusFilter, methodFilter, durationFilter, selectedAgentChip, cwdFilter]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
-        return;
-      }
-
-      if (e.key === "Escape") {
-        if (selectedLog) {
-          setSelectedLog(null);
-          setSelectedIndex(-1);
-        }
-        return;
-      }
-
-      if (selectedLog) {
-        if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
-          e.preventDefault();
-          if (selectedIndex > 0) {
-            const newIndex = selectedIndex - 1;
-            setSelectedIndex(newIndex);
-            setSelectedLog(filteredLogs[newIndex]);
-          }
-        } else if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
-          e.preventDefault();
-          if (selectedIndex < filteredLogs.length - 1) {
-            const newIndex = selectedIndex + 1;
-            setSelectedIndex(newIndex);
-            setSelectedLog(filteredLogs[newIndex]);
-          }
-        }
-      } else {
-        if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
-          e.preventDefault();
-          if (selectedIndex < filteredLogs.length - 1) {
-            const newIndex = selectedIndex + 1;
-            setSelectedIndex(newIndex);
-          }
-        } else if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
-          e.preventDefault();
-          if (selectedIndex > 0) {
-            const newIndex = selectedIndex - 1;
-            setSelectedIndex(newIndex);
-          }
-        } else if (e.key === "Enter") {
-          e.preventDefault();
-          if (selectedIndex >= 0 && selectedIndex < filteredLogs.length) {
-            setSelectedLog(filteredLogs[selectedIndex]);
-          }
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedLog, selectedIndex, filteredLogs]);
 
   const agentChips = useMemo<AgentChip[]>(() => {
     const map = new Map<string, { agentType: string; count: number }>();
@@ -272,6 +272,7 @@ const LogsTab = ({ config }: LogsTabProps) => {
           onChange={(e) => {
             setFilterTarget(e.target.value);
             setOffset(0);
+            void fetchLogs();
           }}
         >
           <option value="">全部目标</option>
@@ -345,7 +346,10 @@ const LogsTab = ({ config }: LogsTabProps) => {
 
         <button
           className="btnGhost btnSm"
-          onClick={() => void fetchLogs(true)}
+          onClick={() => {
+            setOffset(0);
+            void fetchLogs(true);
+          }}
           disabled={isRefreshing}
         >
           {isRefreshing ? "\u27f3" : "\u5237\u65b0"}

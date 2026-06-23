@@ -17,25 +17,21 @@ export default function SessionAnalyticsPanel({ sessionId, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const result = await fetchSessionAnalytics(sessionId);
-      if (signal?.aborted) return;
       setData(result);
     } catch (e) {
-      if (signal?.aborted) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      setLoading(false);
     }
   }, [sessionId]);
 
   useEffect(() => {
-    const ac = new AbortController();
-    void load(ac.signal);
-    return () => ac.abort();
+    void load();
   }, [load]);
 
   return (

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import styles from "./index.module.css";
 
 /** 生成折叠时的单行摘要，例如 { role: "user", content: [3 items] } */
@@ -31,7 +31,7 @@ const buildObjectSummary = (obj: Record<string, unknown>): string => {
     }
   }
   return "{ " + parts.join(", ") + " }";
-};
+};;
 
 interface JsonViewerProps {
   data: unknown;
@@ -50,7 +50,6 @@ export const JsonViewer = ({ data, defaultExpandDepth = 2 }: JsonViewerProps) =>
 /* ── 复制按钮 ── */
 const CopyBtn = ({ value }: { value: unknown }) => {
   const [done, setDone] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -58,9 +57,8 @@ const CopyBtn = ({ value }: { value: unknown }) => {
       typeof value === "string" ? value : JSON.stringify(value, null, 2);
     navigator.clipboard.writeText(text).then(() => {
       setDone(true);
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setDone(false), 1500);
-    }).catch(() => {});
+      setTimeout(() => setDone(false), 1500);
+    });
   };
 
   return (

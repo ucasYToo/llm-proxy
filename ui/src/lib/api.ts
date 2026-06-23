@@ -91,68 +91,6 @@ export interface FeishuConfig {
   events?: ChannelEvents;
 }
 
-export type FeishuRemoteDomain = "feishu" | "lark";
-
-export interface FeishuRemoteChatBinding {
-  cwd: string;
-  updatedAt: string;
-}
-
-export interface FeishuRemoteConfig {
-  enabled?: boolean;
-  appId?: string;
-  appSecret?: string;
-  encryptKey?: string;
-  verificationToken?: string;
-  domain?: FeishuRemoteDomain;
-  allowedUserIds?: string[];
-  allowedChatIds?: string[];
-  defaultCwd?: string;
-  chatBindings?: Record<string, FeishuRemoteChatBinding>;
-  sidecarSecret?: string;
-}
-
-export interface FeishuRemotePublicConfig extends Omit<FeishuRemoteConfig, "appSecret" | "sidecarSecret"> {
-  hasAppSecret: boolean;
-  hasSidecarSecret: boolean;
-}
-
-export interface FeishuRemoteSidecarStatus {
-  id: string;
-  cwd: string;
-  pid: number | null;
-  version: string | null;
-  registeredAt: string;
-  lastSeenAt: string;
-  queueLength: number;
-}
-
-export interface FeishuRemoteRecentMessage {
-  id: string;
-  direction: "in" | "out" | "system";
-  chatId: string;
-  userId?: string | null;
-  cwd?: string | null;
-  text: string;
-  createdAt: string;
-}
-
-export interface FeishuRemoteStatus {
-  config: FeishuRemotePublicConfig;
-  runtime: {
-    sdk: {
-      started: boolean;
-      connected: boolean;
-      state: string;
-      lastError: string | null;
-      startedAt: string | null;
-    };
-    sidecars: FeishuRemoteSidecarStatus[];
-    recentMessages: FeishuRemoteRecentMessage[];
-  };
-  projects: Project[];
-}
-
 export interface NotificationSettings {
   macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
@@ -178,8 +116,6 @@ export interface Config {
   /** 通道配置列表 */
   channels: Channel[];
   notifications?: NotificationSettings;
-  feishuRemote?: FeishuRemoteConfig;
-  serverPort?: number;
 }
 
 export type LogStatus = "pending" | "streaming" | "completed" | "error";
@@ -242,7 +178,6 @@ export interface LogQueryParams {
 
 export async function fetchConfig(): Promise<Config> {
   const res = await fetch("/api/query?type=config");
-  if (!res.ok) throw new Error("Failed to fetch config");
   return res.json();
 }
 
@@ -253,7 +188,6 @@ export async function fetchLogs(
   const res = await fetch(
     `/api/query?type=logs&limit=${limit}&offset=${offset}`,
   );
-  if (!res.ok) throw new Error("Failed to fetch logs");
   return res.json();
 }
 
@@ -269,7 +203,6 @@ export async function queryLogs(
   if (params.agentId) searchParams.set("agentId", params.agentId);
   if (params.summary === false) searchParams.set("summary", "false");
   const res = await fetch(`/api/query?${searchParams}`);
-  if (!res.ok) throw new Error("Failed to query logs");
   return res.json();
 }
 
@@ -379,62 +312,6 @@ export async function getProjects(): Promise<Project[]> {
   return data.projects;
 }
 
-export async function fetchFeishuRemoteStatus(): Promise<FeishuRemoteStatus> {
-  const res = await fetch("/api/query?type=feishu-remote");
-  if (!res.ok) throw new Error("Failed to fetch Feishu remote status");
-  return res.json();
-}
-
-export async function updateFeishuRemote(
-  feishuRemote: FeishuRemoteConfig,
-): Promise<FeishuRemotePublicConfig> {
-  const res = await fetch("/api/set", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "updateFeishuRemote", feishuRemote }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? "Failed to update Feishu remote");
-  }
-  const data = await res.json();
-  return data.feishuRemote;
-}
-
-export async function restartFeishuRemote(): Promise<FeishuRemoteStatus> {
-  const res = await fetch("/api/set", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "restartFeishuRemote" }),
-  });
-  if (!res.ok) throw new Error("Failed to restart Feishu remote");
-  const data = await res.json();
-  return data.status;
-}
-
-export async function installFeishuRemoteMcp(cwd: string, port?: number): Promise<{
-  install: {
-    projectCwd: string;
-    mcpPath: string;
-    serverName: string;
-    command: string;
-    args: string[];
-  };
-  launchCommand: string;
-}> {
-  const res = await fetch("/api/set", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "installFeishuRemoteMcp", cwd, port }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? "Failed to install Feishu remote MCP");
-  }
-  const data = await res.json();
-  return { install: data.install, launchCommand: data.launchCommand };
-}
-
 export async function updateProjectRemarkApi(cwd: string, remark: string): Promise<void> {
   const res = await fetch("/api/set", {
     method: "POST",
@@ -514,7 +391,6 @@ export async function fetchHooks(params: {
   if (params.sessionId) search.set("sessionId", params.sessionId);
   if (params.eventName) search.set("eventName", params.eventName);
   const res = await fetch(`/api/query?${search}`);
-  if (!res.ok) throw new Error("Failed to fetch hooks");
   return res.json();
 }
 
@@ -526,7 +402,6 @@ export async function fetchSessions(opts: {
   if (opts.withinMs !== undefined) params.set("withinMs", String(opts.withinMs));
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
   const res = await fetch(`/api/query?${params.toString()}`);
-  if (!res.ok) throw new Error("Failed to fetch sessions");
   return res.json();
 }
 
@@ -540,7 +415,6 @@ export async function fetchSessionTimeline(
     limit: String(limit),
   });
   const res = await fetch(`/api/query?${search}`);
-  if (!res.ok) throw new Error("Failed to fetch session timeline");
   return res.json();
 }
 
@@ -556,7 +430,6 @@ export interface CaffeinateState {
 
 export async function fetchCaffeinate(): Promise<CaffeinateState> {
   const res = await fetch("/api/query?type=caffeinate");
-  if (!res.ok) throw new Error("Failed to fetch caffeinate state");
   return res.json();
 }
 

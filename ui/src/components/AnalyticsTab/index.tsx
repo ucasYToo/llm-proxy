@@ -15,7 +15,6 @@ const AnalyticsTab = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [budgetAlert, setBudgetAlert] = useState<string | null>(null);
-  const [sseConnected, setSseConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   const load = useCallback(async () => {
@@ -32,22 +31,20 @@ const AnalyticsTab = () => {
 
   useEffect(() => {
     void load();
-    if (sseConnected) return;
     const timer = setInterval(() => void load(), REFRESH_INTERVAL);
     return () => clearInterval(timer);
-  }, [load, sseConnected]);
+  }, [load]);
 
+  // SSE listener for real-time cost and budget updates
   useEffect(() => {
     const es = new EventSource("/api/events");
     esRef.current = es;
-
-    es.onopen = () => setSseConnected(true);
-    es.addEventListener("ready", () => setSseConnected(true));
 
     es.onmessage = (msg) => {
       try {
         const parsed = JSON.parse(msg.data) as { type?: string; data?: unknown };
         if (parsed.type === "cost") {
+          // Refresh data when a new cost record is created
           void load();
         } else if (parsed.type === "budget-alert") {
           const alert = parsed.data as { alertLevel?: string; dailyPct?: number; monthlyPct?: number };
@@ -63,12 +60,13 @@ const AnalyticsTab = () => {
       }
     };
 
-    es.onerror = () => setSseConnected(false);
+    es.onerror = () => {
+      // SSE will auto-reconnect
+    };
 
     return () => {
       es.close();
       esRef.current = null;
-      setSseConnected(false);
     };
   }, [load]);
 

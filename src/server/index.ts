@@ -9,7 +9,6 @@ import { broadcast } from "./sse";
 import { initCostCapture } from "../cost/capture";
 import * as caffeinate from "../system/caffeinate";
 import { setServerPort } from "./state";
-import { startFeishuRemoteClient, stopFeishuRemoteClient } from "../remote/feishu/client";
 
 let cleanupRegistered = false;
 
@@ -18,7 +17,6 @@ const registerCleanupOnce = (): void => {
   cleanupRegistered = true;
   const stopAll = () => {
     caffeinate.stop();
-    stopFeishuRemoteClient();
   };
   process.on("exit", stopAll);
   process.on("SIGINT", () => {
@@ -73,11 +71,6 @@ export const startServer = async (
 
   // 初始化成本捕获（监听日志完成事件写入 cost_records）
   initCostCapture();
-
-  // 初始化飞书自建应用远程控制长连接（如已启用）
-  void startFeishuRemoteClient().catch((err) => {
-    console.warn(`[feishu-remote] 启动失败: ${String(err)}`);
-  });
 
   // 确保进程退出时清理 caffeinate 子进程
   registerCleanupOnce();

@@ -79,7 +79,7 @@ const EventStream = ({
 
       {timeline.length === 0 ? (
         <div className={styles.emptyHint}>
-          暂无事件。在终端运行 <code>claude-proxy hook install</code> 把 hook 注册到 Claude Code。
+          暂无事件。在终端运行 <code>claude-llm-proxy hook install</code> 把 hook 注册到 Claude Code。
         </div>
       ) : (
         <ul className={styles.eventList}>
