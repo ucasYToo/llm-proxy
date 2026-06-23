@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import type { Config, Target, Channel, NotificationSettings, ChannelEvents } from "../interfaces";
 
 const CONFIG_DIR = path.join(process.env.HOME || "~", ".claude-proxy");
@@ -73,6 +74,23 @@ const migrateNotifications = (
   return { notifications: migrated, changed: true };
 };
 
+const ensureFeishuRemoteSecret = (
+  config: Config,
+): { config: Config; changed: boolean } => {
+  if (!config.feishuRemote) return { config, changed: false };
+  if (config.feishuRemote.sidecarSecret) return { config, changed: false };
+  return {
+    config: {
+      ...config,
+      feishuRemote: {
+        ...config.feishuRemote,
+        sidecarSecret: crypto.randomBytes(24).toString("hex"),
+      },
+    },
+    changed: true,
+  };
+};
+
 let configCache: Config | null = null;
 let configCacheMtimeMs = 0;
 
@@ -94,7 +112,7 @@ export const readConfig = (): Config => {
 
     const { notifications: migratedNotif, changed } = migrateNotifications(parsed.notifications);
 
-    const merged: Config = {
+    let merged: Config = {
       ...DEFAULT_CONFIG,
       ...parsed,
       logCollection: {
@@ -105,7 +123,10 @@ export const readConfig = (): Config => {
       notifications: migratedNotif,
     };
 
-    if (changed) {
+    const secretResult = ensureFeishuRemoteSecret(merged);
+    merged = secretResult.config;
+
+    if (changed || secretResult.changed) {
       writeConfig(merged);
     }
 
