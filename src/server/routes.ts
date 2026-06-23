@@ -16,7 +16,7 @@ import {
 import { computeHealthScore } from "../cost/health";
 import { resolvePricingDetailed } from "../cost/pricing";
 import { parseHookPayload } from "../interfaces";
-import type { Target, LogCollection, Channel, NotificationSettings, Config, BudgetConfig } from "../interfaces";
+import type { Target, LogCollection, Channel, NotificationSettings, Config, BudgetConfig, FeishuRemoteConfig } from "../interfaces";
 import { getKnownProjects, updateProjectRemark } from "../core/session";
 import { v4 as uuidv4 } from "uuid";
 import { readClaudeSettings, writeClaudeSettings } from "../lib/claude-settings";
@@ -28,6 +28,15 @@ import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
+import { restartFeishuRemoteClient } from "../remote/feishu/client";
+import {
+  getFeishuRemoteStatus,
+  handleFeishuRemotePermissionRequest,
+  handleFeishuRemoteSidecarReply,
+  pollFeishuRemoteSidecar,
+  registerFeishuRemoteSidecar,
+} from "../remote/feishu/service";
+import { getFeishuRemoteLaunchCommand, installFeishuRemoteMcp } from "../remote/feishu/mcp";
 
 /**
  * 根据 target 构建 Claude Code 直连模式的环境变量。
@@ -249,6 +258,11 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
+    if (type === "feishu-remote") {
+      res.json(getFeishuRemoteStatus());
+      return;
+    }
+
     if (type === "cost-summary") {
       const config = readConfig();
       const budget = config.budget ?? {};
@@ -343,12 +357,66 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
+    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | caffeinate | projects | feishu-remote | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
   });
 
   // SSE：实时事件流
   app.get("/api/events", (_req: Request, res: Response) => {
     addClient(res);
+  });
+
+  app.post("/api/feishu-remote/sidecar/register", (req: Request, res: Response) => {
+    const result = registerFeishuRemoteSidecar(req.body as {
+      id: string;
+      cwd: string;
+      pid?: number | null;
+      version?: string | null;
+      secret: string;
+    });
+    if (!result.ok) {
+      res.status(401).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  app.post("/api/feishu-remote/sidecar/poll", (req: Request, res: Response) => {
+    const result = pollFeishuRemoteSidecar(req.body as { id: string; secret: string });
+    if (!result.ok) {
+      res.status(401).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true, messages: result.messages });
+  });
+
+  app.post("/api/feishu-remote/sidecar/reply", async (req: Request, res: Response) => {
+    const result = await handleFeishuRemoteSidecarReply(req.body as {
+      chatId: string;
+      text: string;
+      secret: string;
+    });
+    if (!result.ok) {
+      res.status(401).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  app.post("/api/feishu-remote/sidecar/permission-request", async (req: Request, res: Response) => {
+    const result = await handleFeishuRemotePermissionRequest(req.body as {
+      cwd: string;
+      chatId: string;
+      requestId: string;
+      toolName: string;
+      description: string;
+      inputPreview: string;
+      secret: string;
+    });
+    if (!result.ok) {
+      res.status(401).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true });
   });
 
   // Claude Code hook 入口
@@ -852,6 +920,56 @@ export const setupApiRoutes = (app: Express) => {
         config.budget = { ...(config.budget ?? {}), ...budget };
         writeConfig(config);
         res.json({ ok: true, budget: config.budget });
+        break;
+      }
+
+      case "updateFeishuRemote": {
+        const { feishuRemote } = req.body as { feishuRemote: FeishuRemoteConfig };
+        const prev = config.feishuRemote ?? {};
+        const next: FeishuRemoteConfig = {
+          ...prev,
+          ...feishuRemote,
+          allowedUserIds: feishuRemote.allowedUserIds ?? prev.allowedUserIds,
+          allowedChatIds: feishuRemote.allowedChatIds ?? prev.allowedChatIds,
+          chatBindings: feishuRemote.chatBindings ?? prev.chatBindings,
+        };
+        if (typeof feishuRemote.appSecret === "undefined") {
+          next.appSecret = prev.appSecret;
+        }
+        if (typeof feishuRemote.sidecarSecret === "undefined") {
+          next.sidecarSecret = prev.sidecarSecret;
+        }
+        config.feishuRemote = next;
+        writeConfig(config);
+        await restartFeishuRemoteClient();
+        res.json({ ok: true, feishuRemote: getFeishuRemoteStatus().config });
+        break;
+      }
+
+      case "restartFeishuRemote": {
+        await restartFeishuRemoteClient();
+        res.json({ ok: true, status: getFeishuRemoteStatus() });
+        break;
+      }
+
+      case "installFeishuRemoteMcp": {
+        const { cwd, port, host } = req.body as { cwd?: string; port?: number; host?: string };
+        if (!config.feishuRemote) {
+          config.feishuRemote = {};
+          writeConfig(config);
+          readConfig();
+        }
+        const projectCwd = cwd || process.cwd();
+        const result = installFeishuRemoteMcp({
+          projectCwd,
+          port: port ?? getServerPort(),
+          host,
+        });
+        res.json({
+          ok: true,
+          install: result,
+          launchCommand: getFeishuRemoteLaunchCommand(),
+        });
         break;
       }
 

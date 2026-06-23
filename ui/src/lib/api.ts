@@ -91,6 +91,68 @@ export interface FeishuConfig {
   events?: ChannelEvents;
 }
 
+export type FeishuRemoteDomain = "feishu" | "lark";
+
+export interface FeishuRemoteChatBinding {
+  cwd: string;
+  updatedAt: string;
+}
+
+export interface FeishuRemoteConfig {
+  enabled?: boolean;
+  appId?: string;
+  appSecret?: string;
+  encryptKey?: string;
+  verificationToken?: string;
+  domain?: FeishuRemoteDomain;
+  allowedUserIds?: string[];
+  allowedChatIds?: string[];
+  defaultCwd?: string;
+  chatBindings?: Record<string, FeishuRemoteChatBinding>;
+  sidecarSecret?: string;
+}
+
+export interface FeishuRemotePublicConfig extends Omit<FeishuRemoteConfig, "appSecret" | "sidecarSecret"> {
+  hasAppSecret: boolean;
+  hasSidecarSecret: boolean;
+}
+
+export interface FeishuRemoteSidecarStatus {
+  id: string;
+  cwd: string;
+  pid: number | null;
+  version: string | null;
+  registeredAt: string;
+  lastSeenAt: string;
+  queueLength: number;
+}
+
+export interface FeishuRemoteRecentMessage {
+  id: string;
+  direction: "in" | "out" | "system";
+  chatId: string;
+  userId?: string | null;
+  cwd?: string | null;
+  text: string;
+  createdAt: string;
+}
+
+export interface FeishuRemoteStatus {
+  config: FeishuRemotePublicConfig;
+  runtime: {
+    sdk: {
+      started: boolean;
+      connected: boolean;
+      state: string;
+      lastError: string | null;
+      startedAt: string | null;
+    };
+    sidecars: FeishuRemoteSidecarStatus[];
+    recentMessages: FeishuRemoteRecentMessage[];
+  };
+  projects: Project[];
+}
+
 export interface NotificationSettings {
   macos?: MacosNotifyConfig;
   dingtalk?: DingTalkConfig;
@@ -116,6 +178,8 @@ export interface Config {
   /** 通道配置列表 */
   channels: Channel[];
   notifications?: NotificationSettings;
+  feishuRemote?: FeishuRemoteConfig;
+  serverPort?: number;
 }
 
 export type LogStatus = "pending" | "streaming" | "completed" | "error";
@@ -310,6 +374,62 @@ export async function getProjects(): Promise<Project[]> {
   if (!res.ok) throw new Error("Failed to fetch projects");
   const data = await res.json();
   return data.projects;
+}
+
+export async function fetchFeishuRemoteStatus(): Promise<FeishuRemoteStatus> {
+  const res = await fetch("/api/query?type=feishu-remote");
+  if (!res.ok) throw new Error("Failed to fetch Feishu remote status");
+  return res.json();
+}
+
+export async function updateFeishuRemote(
+  feishuRemote: FeishuRemoteConfig,
+): Promise<FeishuRemotePublicConfig> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "updateFeishuRemote", feishuRemote }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "Failed to update Feishu remote");
+  }
+  const data = await res.json();
+  return data.feishuRemote;
+}
+
+export async function restartFeishuRemote(): Promise<FeishuRemoteStatus> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "restartFeishuRemote" }),
+  });
+  if (!res.ok) throw new Error("Failed to restart Feishu remote");
+  const data = await res.json();
+  return data.status;
+}
+
+export async function installFeishuRemoteMcp(cwd: string, port?: number): Promise<{
+  install: {
+    projectCwd: string;
+    mcpPath: string;
+    serverName: string;
+    command: string;
+    args: string[];
+  };
+  launchCommand: string;
+}> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "installFeishuRemoteMcp", cwd, port }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "Failed to install Feishu remote MCP");
+  }
+  const data = await res.json();
+  return { install: data.install, launchCommand: data.launchCommand };
 }
 
 export async function updateProjectRemarkApi(cwd: string, remark: string): Promise<void> {

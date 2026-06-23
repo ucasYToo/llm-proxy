@@ -30,6 +30,7 @@ import SessionList from './SessionList';
 import EventStream from './EventStream';
 import DingTalkPanel from './DingTalkPanel';
 import FeishuPanel from './FeishuPanel';
+import FeishuRemotePanel from './FeishuRemotePanel';
 import MacosNotifyPanel from './MacosNotifyPanel';
 import ProjectCard from './ProjectCard';
 import styles from './index.module.css';
@@ -62,6 +63,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
   });
   const [dingtalkOpen, setDingtalkOpen] = useState(false);
   const [feishuOpen, setFeishuOpen] = useState(false);
+  const [feishuRemoteOpen, setFeishuRemoteOpen] = useState(false);
   const [feishuSaving, setFeishuSaving] = useState(false);
   const [feishuTesting, setFeishuTesting] = useState(false);
   const [macosOpen, setMacosOpen] = useState(false);
@@ -547,6 +549,13 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
               >
                 {feishuOpen ? '收起' : '配置'}
               </button>
+              <button
+                type="button"
+                className="btnGhost btnSm"
+                onClick={() => setFeishuRemoteOpen((v) => !v)}
+              >
+                {feishuRemoteOpen ? '收起远控' : '远控配置'}
+              </button>
             </>
           )}
         </div>
@@ -651,6 +660,13 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
               onRefresh()
             )
           }
+        />
+      )}
+
+      {isShowFeishu && feishuRemoteOpen && (
+        <FeishuRemotePanel
+          initialConfig={config.feishuRemote}
+          serverPort={config.serverPort}
         />
       )}
 
