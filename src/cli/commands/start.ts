@@ -84,6 +84,9 @@ function launchStatusBarApp(port: number) {
     detached: true,
     stdio: "ignore",
   });
+  child.on("error", (err) => {
+    console.log(chalk.dim(`  状态栏应用启动失败: ${err.message}`));
+  });
   child.unref();
   console.log(chalk.dim("  状态栏应用已启动"));
 }
