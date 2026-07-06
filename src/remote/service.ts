@@ -277,6 +277,44 @@ const insertAndDeliverOutbound = async (
   return message;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+const stringAt = (value: Record<string, unknown>, key: string): string | null =>
+  typeof value[key] === "string" ? (value[key] as string) : null;
+
+const pickEarlyFinalFromCliEvent = (
+  event: unknown,
+): { text: string; sessionId: string | null } | null => {
+  const record = asRecord(event);
+  const type = stringAt(record, "type");
+  if (type === "result" && record.is_error !== true) {
+    const text = stringAt(record, "result");
+    if (text?.trim()) {
+      return {
+        text,
+        sessionId: stringAt(record, "session_id"),
+      };
+    }
+  }
+
+  const payload = asRecord(record.payload);
+  const hookName =
+    stringAt(record, "hook_event_name") ??
+    stringAt(record, "hookName") ??
+    stringAt(payload, "hook_event_name");
+  if (hookName !== "Stop") return null;
+
+  const text =
+    stringAt(record, "last_assistant_message") ??
+    stringAt(payload, "last_assistant_message");
+  if (!text?.trim()) return null;
+  return {
+    text,
+    sessionId: stringAt(record, "session_id") ?? stringAt(payload, "session_id"),
+  };
+};
+
 const dispatchToCli = (
   thread: RemoteThread,
   message: RemoteMessage,
@@ -284,6 +322,29 @@ const dispatchToCli = (
   if (!thread.cwd) return false;
   const run = async (): Promise<void> => {
     const latestThread = getRemoteThread(thread.id) ?? thread;
+    let finalReplySent = false;
+    let finalReplyTask: Promise<void> | null = null;
+    const sendFinalReplyOnce = async (
+      text: string,
+      sessionId: string | null,
+    ): Promise<void> => {
+      if (finalReplySent) return;
+      finalReplySent = true;
+      updateProgressSnapshot(message.id, (snapshot) =>
+        markProgressDone(snapshot, text),
+      );
+      const delivered = updateRemoteMessageStatus(message.id, "delivered");
+      if (delivered) emitRemoteEvent("message", delivered);
+      const linkedThread = updateRemoteThread(thread.id, {
+        claudeSessionId: sessionId ?? latestThread.claudeSessionId,
+      });
+      if (linkedThread) emitRemoteEvent("thread", linkedThread);
+      await receiveRemoteReply({
+        remoteThreadId: thread.id,
+        text,
+        final: true,
+      });
+    };
     const sent = updateRemoteMessageStatus(message.id, "sent");
     if (sent) emitRemoteEvent("message", sent);
     const runningThread = updateRemoteThread(thread.id, { status: "running" });
@@ -315,24 +376,23 @@ const dispatchToCli = (
         updateProgressSnapshot(message.id, (snapshot) =>
           reduceClaudeStreamEvent(snapshot, event),
         );
+        const earlyFinal = pickEarlyFinalFromCliEvent(event);
+        if (earlyFinal && !finalReplySent) {
+          finalReplyTask = sendFinalReplyOnce(
+            earlyFinal.text,
+            earlyFinal.sessionId,
+          );
+        }
       },
     });
 
     if (result.ok) {
-      updateProgressSnapshot(message.id, (snapshot) =>
-        markProgressDone(snapshot, result.text),
-      );
-      const delivered = updateRemoteMessageStatus(message.id, "delivered");
-      if (delivered) emitRemoteEvent("message", delivered);
-      const linkedThread = updateRemoteThread(thread.id, {
-        claudeSessionId: result.sessionId ?? latestThread.claudeSessionId,
-      });
-      if (linkedThread) emitRemoteEvent("thread", linkedThread);
-      await receiveRemoteReply({
-        remoteThreadId: thread.id,
-        text: result.text,
-        final: true,
-      });
+      await (finalReplyTask ?? sendFinalReplyOnce(result.text, result.sessionId));
+      return;
+    }
+
+    if (finalReplySent) {
+      await finalReplyTask;
       return;
     }
 

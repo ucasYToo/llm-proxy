@@ -671,20 +671,20 @@ const sendOutboundToFeishu = async (
         getRemoteProgressSnapshot(card.inboundMessageId);
       if (baseSnapshot) {
         if (kind === "error") {
+          await sendFinalTextOnce();
           await patchStoredProgressCard(
             card,
             markProgressFailed(baseSnapshot, message.text),
             true,
           );
-          await sendFinalTextOnce();
           return;
         }
+        await sendFinalTextOnce();
         await patchStoredProgressCard(
           card,
           markProgressDone(baseSnapshot, message.text),
           true,
         );
-        await sendFinalTextOnce();
         return;
       }
     }
