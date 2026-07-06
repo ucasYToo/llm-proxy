@@ -103,6 +103,48 @@ export interface NotificationSettings {
   notification?: boolean;
 }
 
+export interface BudgetConfig {
+  dailyLimitUsd?: number;
+  monthlyLimitUsd?: number;
+  alertThresholdPct?: number;
+}
+
+export type RemoteBridgeIngress = "longConnection" | "callbackUrl";
+export type RemoteBridgePermissionMode =
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "plan";
+export type RemoteBridgeDeliveryMode = "cli" | "channel" | "auto";
+
+export interface RemoteBridgeConfig {
+  enabled?: boolean;
+  authToken?: string;
+  web?: {
+    enabled?: boolean;
+    publicBaseUrl?: string;
+  };
+  allowedCwds?: string[];
+  defaultCwd?: string;
+  claudeCommand?: string;
+  permissionMode?: RemoteBridgePermissionMode;
+  deliveryMode?: RemoteBridgeDeliveryMode;
+  feishu?: {
+    enabled?: boolean;
+    appId?: string;
+    appSecret?: string;
+    encryptKey?: string;
+    verificationToken?: string;
+    ingress?: RemoteBridgeIngress;
+    allowedUserIds?: string[];
+    progressCard?: {
+      enabled?: boolean;
+      showPartialAnswer?: boolean;
+      showToolEvents?: boolean;
+    };
+  };
+}
+
 export interface Config {
   activeTarget: string;
   targets: Target[];
@@ -116,6 +158,9 @@ export interface Config {
   /** 通道配置列表 */
   channels: Channel[];
   notifications?: NotificationSettings;
+  remoteBridge?: RemoteBridgeConfig;
+  budget?: BudgetConfig;
+  serverPort?: number;
 }
 
 export type LogStatus = "pending" | "streaming" | "completed" | "error";
@@ -380,6 +425,67 @@ export interface SessionSummary {
   titleSource: SessionTitleSource;
 }
 
+export type RemoteThreadStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "waiting_permission"
+  | "done"
+  | "failed";
+export type RemoteMessageDirection =
+  | "inbound"
+  | "outbound"
+  | "system"
+  | "permission";
+export type RemoteMessageStatus =
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "failed";
+
+export interface RemoteThread {
+  id: string;
+  shortId: string;
+  source: "web" | "feishu";
+  sourceThreadId: string | null;
+  sourceUserId: string | null;
+  sourceChatId: string | null;
+  cwd: string | null;
+  claudeSessionId: string | null;
+  channelInstanceId: string | null;
+  status: RemoteThreadStatus;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string | null;
+}
+
+export interface RemoteMessage {
+  id: string;
+  threadId: string;
+  direction: RemoteMessageDirection;
+  source: "web" | "feishu";
+  sourceMessageId: string | null;
+  sourceUserId: string | null;
+  text: string;
+  status: RemoteMessageStatus;
+  error: string | null;
+  raw: unknown;
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+export interface RemoteChannelInstance {
+  id: string;
+  pid: number | null;
+  cwd: string | null;
+  claudeSessionId: string | null;
+  status: "online" | "offline";
+  metadata: unknown;
+  startedAt: string;
+  lastSeenAt: string;
+}
+
 export async function fetchHooks(params: {
   sessionId?: string;
   eventName?: string;
@@ -407,6 +513,106 @@ export async function fetchSessions(opts: {
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
   const res = await fetch(`/api/query?${params.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch sessions");
+  return res.json();
+}
+
+export async function fetchRemoteThreads(
+  limit = 100,
+): Promise<{ threads: RemoteThread[]; total: number }> {
+  const res = await fetch(`/api/query?type=remote-threads&limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch remote threads");
+  return res.json();
+}
+
+export async function fetchRemoteMessages(
+  threadId?: string,
+  limit = 100,
+): Promise<{ messages: RemoteMessage[]; total: number }> {
+  const search = new URLSearchParams({
+    type: "remote-messages",
+    limit: String(limit),
+  });
+  if (threadId) search.set("threadId", threadId);
+  const res = await fetch(`/api/query?${search}`);
+  if (!res.ok) throw new Error("Failed to fetch remote messages");
+  return res.json();
+}
+
+export async function fetchRemoteInstances(
+  includeStale = false,
+): Promise<{ instances: RemoteChannelInstance[] }> {
+  const res = await fetch(
+    `/api/query?type=remote-instances&includeStale=${includeStale ? "true" : "false"}`,
+  );
+  if (!res.ok) throw new Error("Failed to fetch remote instances");
+  return res.json();
+}
+
+export async function sendRemoteMessageApi(params: {
+  text: string;
+  mode: "new" | "continue";
+  threadId?: string;
+  cwd?: string | null;
+  title?: string | null;
+}): Promise<{ thread: RemoteThread; message: RemoteMessage; dispatched: boolean }> {
+  const res = await fetch("/api/remote/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text: params.text,
+      mode: params.mode,
+      threadId: params.threadId,
+      cwd: params.cwd,
+      title: params.title,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "Failed to send remote message");
+  }
+  const data = await res.json();
+  return {
+    thread: data.thread,
+    message: data.message,
+    dispatched: data.dispatched,
+  };
+}
+
+export async function installRemoteBridgeChannelApi(
+  cwd?: string | null,
+): Promise<{ file: string; serverName: string; remoteBridge: RemoteBridgeConfig }> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "installRemoteBridgeChannel",
+      cwd,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "Failed to install remote bridge channel");
+  }
+  return res.json();
+}
+
+export async function launchRemoteBridgeChannelApi(
+  cwd?: string | null,
+): Promise<{ mcpFile: string; command: string; ok: boolean; pid?: number }> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "launchRemoteBridgeChannel",
+      cwd,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? err.command ?? "Failed to launch remote bridge channel");
+  }
   return res.json();
 }
 
@@ -492,6 +698,34 @@ export async function updateNotifications(notifications: NotificationSettings): 
   if (!res.ok) throw new Error("Failed to update notifications");
   const data = await res.json();
   return data.notifications;
+}
+
+export async function updateRemoteBridge(
+  remoteBridge: RemoteBridgeConfig,
+): Promise<RemoteBridgeConfig> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "updateRemoteBridge", remoteBridge }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "Failed to update remote bridge");
+  }
+  const data = await res.json();
+  return data.remoteBridge;
+}
+
+export async function testFeishuApp(chatId?: string): Promise<void> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "testFeishuApp", chatId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "飞书应用测试失败");
+  }
 }
 
 // ── Cost Analytics ──

@@ -233,6 +233,9 @@ const StatusBarPanel = () => {
               filterPreset={data.filter.filterPreset}
               enabledTypes={data.filter.enabledTypes}
               filterSearch={data.filter.filterSearch}
+              agentRoleFilter="all"
+              agentOptions={[]}
+              selectedAgentId={null}
               selectedDetail={data.selectedDetail}
               targetCount={config.targets.length}
               compactFilter
@@ -240,6 +243,8 @@ const StatusBarPanel = () => {
               onSetPreset={data.filter.setPreset}
               onToggleType={data.filter.toggleType}
               onSearchChange={data.filter.setFilterSearch}
+              onAgentRoleChange={() => undefined}
+              onSelectAgent={() => undefined}
             />
           )}
         </div>

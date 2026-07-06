@@ -9,6 +9,11 @@ export type {
   DingTalkConfig,
   FeishuConfig,
   NotificationSettings,
+  RemoteBridgeIngress,
+  RemoteBridgePermissionMode,
+  RemoteBridgeWebConfig,
+  RemoteBridgeFeishuConfig,
+  RemoteBridgeConfig,
   BudgetConfig,
   Config,
 } from "./config";

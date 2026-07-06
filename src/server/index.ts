@@ -1,14 +1,16 @@
 import express, { Express, Request, Response, NextFunction } from "express";
-import cors from "cors";
 import path from "path";
 import fs from "fs-extra";
 import { setupApiRoutes } from "./routes";
+import { setupRemoteRoutes } from "./remote-routes";
 import { setupProxyRoutes } from "./proxy";
 import { onLogChange } from "../storage/logs";
 import { broadcast } from "./sse";
 import { initCostCapture } from "../cost/capture";
 import * as caffeinate from "../system/caffeinate";
 import { setServerPort } from "./state";
+import { onRemoteEvent } from "../remote/service";
+import { startFeishuRemoteBridge, stopFeishuRemoteBridge } from "../remote/feishu";
 
 let cleanupRegistered = false;
 
@@ -17,6 +19,7 @@ const registerCleanupOnce = (): void => {
   cleanupRegistered = true;
   const stopAll = () => {
     caffeinate.stop();
+    stopFeishuRemoteBridge();
   };
   process.on("exit", stopAll);
   process.on("SIGINT", () => {
@@ -41,7 +44,32 @@ export const startServer = async (
   const app = express();
 
   // 中间件
-  app.use(cors());
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const method = req.method.toUpperCase();
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+      next();
+      return;
+    }
+    const fetchSite = req.headers["sec-fetch-site"];
+    if (fetchSite === "cross-site") {
+      res.status(403).json({ error: "cross-site requests are not allowed" });
+      return;
+    }
+    const origin = req.headers.origin;
+    const host = req.headers.host;
+    if (typeof origin === "string" && typeof host === "string") {
+      try {
+        if (new URL(origin).host !== host) {
+          res.status(403).json({ error: "cross-origin requests are not allowed" });
+          return;
+        }
+      } catch {
+        res.status(403).json({ error: "invalid origin" });
+        return;
+      }
+    }
+    next();
+  });
   app.use(express.json({ limit: "50mb" }));
   app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
 
@@ -60,6 +88,7 @@ export const startServer = async (
 
   // 设置 API 路由
   setupApiRoutes(app);
+  setupRemoteRoutes(app);
 
   // 设置代理路由
   setupProxyRoutes(app);
@@ -69,8 +98,15 @@ export const startServer = async (
     broadcast("log", { kind, entry });
   });
 
+  onRemoteEvent((kind, data) => {
+    broadcast("remote", { kind, data });
+  });
+
   // 初始化成本捕获（监听日志完成事件写入 cost_records）
   initCostCapture();
+
+  // 启动飞书远程桥（如果已配置）
+  startFeishuRemoteBridge();
 
   // 确保进程退出时清理 caffeinate 子进程
   registerCleanupOnce();

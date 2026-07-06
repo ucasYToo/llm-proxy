@@ -3,7 +3,7 @@ import type { HookEntry } from "../../lib/api";
 export const MAX_BUFFER = 500;
 export const UNKNOWN_GROUP_KEY = "__unknown__";
 
-export const shortSession = (sid: string | null): string => {
+export const shortSession = (sid: string | null | undefined): string => {
   if (!sid) return "—";
   return sid.length > 8 ? `${sid.slice(0, 4)}…${sid.slice(-4)}` : sid;
 };

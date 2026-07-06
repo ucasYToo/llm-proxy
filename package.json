@@ -1,9 +1,10 @@
 {
   "name": "llm-proxy-view",
-  "version": "1.5.0",
+  "version": "2.0.0-beta.0",
   "description": "LLM Proxy CLI - 代理转发和日志管理工具",
   "bin": {
-    "claude-proxy": "bin/cli.js"
+    "claude-proxy": "bin/cli.js",
+    "claude-proxy-channel": "bin/channel.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,8 +24,8 @@
     "app/macos-status-bar/bin/StatusBarApp"
   ],
   "scripts": {
-    "build": "rm -rf dist ui-dist && tsc && chmod +x bin/cli.js && vite build && npm run build:statusbar",
-    "build:statusbar": "if [ \"$(uname)\" = Darwin ] && command -v swift >/dev/null 2>&1; then cd app/macos-status-bar && swift build -c release && mkdir -p bin && cp -f .build/release/StatusBarApp bin/StatusBarApp; else echo 'Skipping macOS status bar build (requires macOS with Swift)'; fi",
+    "build": "rm -rf dist ui-dist && tsc && chmod +x bin/cli.js bin/channel.js && vite build && npm run build:statusbar",
+    "build:statusbar": "if [ \"$(uname)\" = Darwin ] && command -v swift >/dev/null 2>&1; then cd app/macos-status-bar && (swift build -c release && mkdir -p bin && cp -f .build/release/StatusBarApp bin/StatusBarApp || echo 'Skipping macOS status bar build (swift build failed)'); else echo 'Skipping macOS status bar build (requires macOS with Swift)'; fi",
     "dev": "tsx src/cli/index.ts",
     "dev:ui": "vite",
     "test": "jest --passWithNoTests"
@@ -45,6 +46,8 @@
   "license": "MIT",
   "dependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@larksuiteoapi/node-sdk": "^1.67.0",
+    "@modelcontextprotocol/sdk": "^1.24.0",
     "better-sqlite3": "^12.10.0",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
@@ -54,7 +57,8 @@
     "ora": "^5.4.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

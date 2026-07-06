@@ -11,6 +11,7 @@ interface Props {
   selectedDetail: SelectedDetail | null;
   onSelectDetail: (d: SelectedDetail | null) => void;
   onEnterProject: () => void;
+  onNewRemoteThread?: () => void;
 }
 
 const ProjectCard = ({
@@ -21,6 +22,7 @@ const ProjectCard = ({
   selectedDetail,
   onSelectDetail,
   onEnterProject,
+  onNewRemoteThread,
 }: Props) => {
   const recentEvents = events.slice(0, 5);
 
@@ -38,6 +40,16 @@ const ProjectCard = ({
             {sessions.length} session · {events.length} 条
           </span>
         </button>
+        {cwd && onNewRemoteThread && (
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={onNewRemoteThread}
+            title="在这个项目中新建远程 Claude Code 对话"
+          >
+            新建远程对话
+          </button>
+        )}
       </div>
 
       {recentEvents.length === 0 ? (

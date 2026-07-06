@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   HookEntry,
   LogEntry,
+  RemoteChannelInstance,
+  RemoteMessage,
+  RemoteThread,
   SessionSummary,
   TimelineEntry,
 } from "../../lib/api";
@@ -11,6 +14,9 @@ import {
   fetchSessions,
   fetchSessionTimeline,
   fetchCaffeinate,
+  fetchRemoteInstances,
+  fetchRemoteMessages,
+  fetchRemoteThreads,
   setCaffeinate,
   clearHooks,
 } from "../../lib/api";
@@ -28,6 +34,9 @@ export function useDashboardData() {
   const [selectedDetail, setSelectedDetail] = useState<SelectedDetail | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [analyticsSessionId, setAnalyticsSessionId] = useState<string | null>(null);
+  const [remoteThreads, setRemoteThreads] = useState<RemoteThread[]>([]);
+  const [remoteMessages, setRemoteMessages] = useState<RemoteMessage[]>([]);
+  const [remoteInstances, setRemoteInstances] = useState<RemoteChannelInstance[]>([]);
   const [caffeinate, setCaffeinateState] = useState<{ supported: boolean; active: boolean }>({
     supported: false,
     active: false,
@@ -64,14 +73,31 @@ export function useDashboardData() {
   }, []);
 
   const loadInitial = useCallback(async () => {
-    const [hookRes, logRes] = await Promise.allSettled([
+    const [hookRes, logRes, remoteThreadRes, remoteMessageRes, remoteInstanceRes] = await Promise.allSettled([
       fetchHooks({ limit: 100 }),
       fetchLogs(100),
+      fetchRemoteThreads(100),
+      fetchRemoteMessages(undefined, 200),
+      fetchRemoteInstances(false),
     ]);
     if (hookRes.status === "fulfilled") setEvents(hookRes.value.entries);
     if (logRes.status === "fulfilled") setGlobalLogs(logRes.value.entries);
+    if (remoteThreadRes.status === "fulfilled") setRemoteThreads(remoteThreadRes.value.threads);
+    if (remoteMessageRes.status === "fulfilled") setRemoteMessages(remoteMessageRes.value.messages);
+    if (remoteInstanceRes.status === "fulfilled") setRemoteInstances(remoteInstanceRes.value.instances);
     await refreshSessionsNow();
   }, [refreshSessionsNow]);
+
+  const refreshRemote = useCallback(async () => {
+    const [threadRes, messageRes, instanceRes] = await Promise.allSettled([
+      fetchRemoteThreads(100),
+      fetchRemoteMessages(undefined, 200),
+      fetchRemoteInstances(false),
+    ]);
+    if (threadRes.status === "fulfilled") setRemoteThreads(threadRes.value.threads);
+    if (messageRes.status === "fulfilled") setRemoteMessages(messageRes.value.messages);
+    if (instanceRes.status === "fulfilled") setRemoteInstances(instanceRes.value.instances);
+  }, []);
 
   const loadSessionTimeline = useCallback(async (sessionId: string) => {
     try {
@@ -147,6 +173,36 @@ export function useDashboardData() {
               ? { kind: "log", entry }
               : cur,
           );
+        }
+        if (parsed.type === "remote" && parsed.data) {
+          const evt = parsed.data as { kind?: string; data?: unknown };
+          if (evt.kind === "thread" && evt.data) {
+            const thread = evt.data as RemoteThread;
+            setRemoteThreads((prev) => {
+              const idx = prev.findIndex((t) => t.id === thread.id);
+              if (idx >= 0) {
+                const copy = prev.slice();
+                copy[idx] = thread;
+                return copy.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+              }
+              return [thread, ...prev].slice(0, MAX_BUFFER);
+            });
+          } else if (evt.kind === "message" && evt.data) {
+            const message = evt.data as RemoteMessage;
+            setRemoteMessages((prev) => {
+              const idx = prev.findIndex((m) => m.id === message.id);
+              if (idx >= 0) {
+                const copy = prev.slice();
+                copy[idx] = message;
+                return copy.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+              }
+              return [...prev, message]
+                .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1))
+                .slice(-MAX_BUFFER);
+            });
+          } else if (evt.kind === "instance") {
+            void refreshRemote();
+          }
         }
       } catch {
         // ignore
@@ -267,5 +323,9 @@ export function useDashboardData() {
     toggleGroup,
     handleClear,
     refreshSessions: refreshSessionsNow,
+    refreshRemote,
+    remoteThreads,
+    remoteMessages,
+    remoteInstances,
   };
 }

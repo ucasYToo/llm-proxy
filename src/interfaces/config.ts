@@ -109,6 +109,56 @@ export interface NotificationSettings {
   notification?: boolean;
 }
 
+/* ── Remote Bridge ── */
+
+export type RemoteBridgeIngress = "longConnection" | "callbackUrl";
+
+export type RemoteBridgePermissionMode =
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "plan";
+
+export type RemoteBridgeDeliveryMode = "cli" | "channel" | "auto";
+
+export interface RemoteBridgeWebConfig {
+  enabled?: boolean;
+  /** Optional public URL used in remote surfaces such as Feishu cards. */
+  publicBaseUrl?: string;
+}
+
+export interface RemoteBridgeFeishuProgressCardConfig {
+  enabled?: boolean;
+  showPartialAnswer?: boolean;
+  showToolEvents?: boolean;
+}
+
+export interface RemoteBridgeFeishuConfig {
+  enabled?: boolean;
+  appId?: string;
+  appSecret?: string;
+  encryptKey?: string;
+  verificationToken?: string;
+  ingress?: RemoteBridgeIngress;
+  /** 可选：只允许这些飞书 open_id/user_id 触发远程对话；空数组表示不限制。 */
+  allowedUserIds?: string[];
+  progressCard?: RemoteBridgeFeishuProgressCardConfig;
+}
+
+export interface RemoteBridgeConfig {
+  enabled?: boolean;
+  /** web / channel / 飞书内部转发共享的本地访问 token。 */
+  authToken?: string;
+  web?: RemoteBridgeWebConfig;
+  allowedCwds?: string[];
+  defaultCwd?: string;
+  claudeCommand?: string;
+  permissionMode?: RemoteBridgePermissionMode;
+  /** cli: use claude -p fallback; channel: use MCP channels; auto: prefer channel, fallback when unavailable. */
+  deliveryMode?: RemoteBridgeDeliveryMode;
+  feishu?: RemoteBridgeFeishuConfig;
+}
+
 /* ── Budget ── */
 
 export interface BudgetConfig {
@@ -136,6 +186,8 @@ export interface Config {
   channels: Channel[];
   /** Claude Code hook 事件的通知开关（默认全部 off） */
   notifications?: NotificationSettings;
+  /** web / 飞书远程继续与新建 Claude Code 对话配置 */
+  remoteBridge?: RemoteBridgeConfig;
   /** 预算配置 */
   budget?: BudgetConfig;
   /** 服务端实际监听端口（仅 API 响应附带，不持久化） */

@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.0.0 (2026-07-07)
+
+### 新增
+
+- **Web/飞书远程对话** — 支持从 Dashboard 或飞书继续现有 Claude Code 会话，也支持按项目新建远程对话。
+- **Remote Bridge 配置** — 新增 `remoteBridge` 配置，包含 `authToken`、Web 入口、`allowedCwds`、`defaultCwd`、`claudeCommand`、`permissionMode`、`deliveryMode` 和飞书自建应用长连接配置。
+- **飞书自建应用接入** — 支持长连接接收 `im.message.receive_v1`，DM 默认继续最近活跃 thread，群聊仅处理 @bot/回复链路。
+- **飞书进度卡片** — 每条飞书入站消息创建一张紧凑进度卡片，持续更新排队、运行、工具摘要、过程、错误和耗时；最终回复以普通聊天文本发送。
+- **远程命令** — 支持 `/help`、`/status`、`/projects`、`/new`、`/continue`、`/use`，以及 `同意/拒绝 <permissionId>` 权限回复。
+- **Remote Bridge 存储表** — 新增 `remote_threads`、`remote_messages`、`remote_channel_instances`、`remote_permissions`、`remote_message_cards`。
+- **Remote API** — 新增 Web 发送、权限审批、remote query、channel register/events/reply/delivery/permission/heartbeat/offline API。
+- **MCP channel 实验路径** — 新增 `claude-proxy-channel` binary 和 `claude-proxy channel install/status`，用于 Claude Code channels 可用时的双向消息注入。
+
+### 变更
+
+- Remote Bridge 默认使用 `cli` delivery mode，通过 `claude -p --output-format stream-json --verbose --include-partial-messages --include-hook-events` 获取可观察进度。
+- Dashboard 远程对话入口融入项目卡和 session list，远程状态以轻量标记显示。
+- Feishu 输出不再使用话题回复；进度卡和最终答案都发送到主会话，避免制造大量话题。
+- 进度卡 patch 采用 1 秒合并式尾随更新，降低卡顿并保持低于飞书单消息频控。
+- 收紧本地管理面安全边界：移除默认全域 CORS、阻止跨站写请求、隐藏配置响应中的 remote token，channel SSE 不再通过 URL query 传 token。
+- README、CLAUDE.md 和 AGENTS.md 更新到 2.0 架构与发布流程。
+
+### 修复
+
+- 修复 Claude CLI fallback 使用 `stream-json` 时缺少 `--verbose` 导致执行失败的问题。
+- 修复飞书卡片更新过频时持续刷降级文本的问题，现在同一卡片失败提示只发送一次。
+- 修复进度卡片布局过高、最终回复重复展示在卡片内的问题。
+
 ## 1.3.0 (2026-05-29)
 
 ### 新增

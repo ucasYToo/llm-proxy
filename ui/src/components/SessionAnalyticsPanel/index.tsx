@@ -65,7 +65,7 @@ export default function SessionAnalyticsPanel({ sessionId, onClose }: Props) {
           加载失败：{error}
           <button
             className="btnGhost btnSm"
-            onClick={load}
+            onClick={() => void load()}
             style={{ marginLeft: 12 }}
           >
             重试

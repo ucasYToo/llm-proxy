@@ -1,6 +1,14 @@
 import fs from "fs";
 import path from "path";
-import type { Config, Target, Channel, NotificationSettings, ChannelEvents } from "../interfaces";
+import crypto from "crypto";
+import type {
+  Config,
+  Target,
+  Channel,
+  NotificationSettings,
+  ChannelEvents,
+  RemoteBridgeConfig,
+} from "../interfaces";
 
 const CONFIG_DIR = path.join(process.env.HOME || "~", ".claude-proxy");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
@@ -11,7 +19,26 @@ const DEFAULT_CHANNEL: Channel = {
   activeTarget: "",
 };
 
-const DEFAULT_CONFIG: Config = {
+const createRemoteBridgeDefaults = (): RemoteBridgeConfig => ({
+  enabled: false,
+  authToken: crypto.randomBytes(24).toString("hex"),
+  web: { enabled: true },
+  allowedCwds: [],
+  claudeCommand: "claude",
+  permissionMode: "default",
+  deliveryMode: "cli",
+  feishu: {
+    enabled: false,
+    ingress: "longConnection",
+    progressCard: {
+      enabled: true,
+      showPartialAnswer: true,
+      showToolEvents: true,
+    },
+  },
+});
+
+const createDefaultConfig = (): Config => ({
   activeTarget: "",
   targets: [],
   logCollection: {
@@ -19,7 +46,10 @@ const DEFAULT_CONFIG: Config = {
     captureRawStreamEvents: false,
   },
   channels: [DEFAULT_CHANNEL],
-};
+  remoteBridge: createRemoteBridgeDefaults(),
+});
+
+const DEFAULT_CONFIG: Config = createDefaultConfig();
 
 export const ensureConfigDir = (): void => {
   if (!fs.existsSync(CONFIG_DIR)) {
@@ -76,10 +106,42 @@ const migrateNotifications = (
 let configCache: Config | null = null;
 let configCacheMtimeMs = 0;
 
+const mergeRemoteBridge = (
+  raw: RemoteBridgeConfig | undefined,
+): RemoteBridgeConfig => {
+  const defaults = createRemoteBridgeDefaults();
+  return {
+    ...defaults,
+    ...(raw ?? {}),
+    authToken: raw?.authToken || defaults.authToken,
+    web: {
+      ...(defaults.web ?? {}),
+      ...(raw?.web ?? {}),
+    },
+    allowedCwds: Array.isArray(raw?.allowedCwds)
+      ? raw.allowedCwds
+      : defaults.allowedCwds,
+    feishu: {
+      ...(defaults.feishu ?? {}),
+      ...(raw?.feishu ?? {}),
+      ingress: raw?.feishu?.ingress ?? "longConnection",
+      allowedUserIds: Array.isArray(raw?.feishu?.allowedUserIds)
+        ? raw.feishu.allowedUserIds
+        : undefined,
+      progressCard: {
+        ...(defaults.feishu?.progressCard ?? {}),
+        ...(raw?.feishu?.progressCard ?? {}),
+      },
+    },
+  };
+};
+
 export const readConfig = (): Config => {
   try {
     if (!fs.existsSync(CONFIG_PATH)) {
-      return { ...DEFAULT_CONFIG };
+      const fresh = createDefaultConfig();
+      writeConfig(fresh);
+      return fresh;
     }
     const stat = fs.statSync(CONFIG_PATH);
     if (configCache && stat.mtimeMs === configCacheMtimeMs) {
@@ -103,9 +165,16 @@ export const readConfig = (): Config => {
       },
       channels,
       notifications: migratedNotif,
+      remoteBridge: mergeRemoteBridge(parsed.remoteBridge),
     };
 
-    if (changed) {
+    const remoteChanged =
+      !parsed.remoteBridge ||
+      !parsed.remoteBridge.authToken ||
+      !parsed.remoteBridge.web ||
+      !parsed.remoteBridge.feishu;
+
+    if (changed || remoteChanged) {
       writeConfig(merged);
     }
 

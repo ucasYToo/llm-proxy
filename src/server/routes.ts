@@ -4,6 +4,14 @@ import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTar
 import { queryLogs, getLogDetail, clearLogs } from "../storage/logs";
 import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations, getActivityStatus } from "../storage/hooks";
 import {
+  listRemoteInstances,
+  listRemoteMessages,
+  listRemotePermissions,
+  listRemoteThreads,
+  launchRemoteBridgeChannelForCwd,
+} from "../remote/service";
+import { updateRemoteThread } from "../storage/remote";
+import {
   aggregateCostBySession,
   aggregateCostByTimeRange,
   aggregateCostByTarget,
@@ -28,6 +36,8 @@ import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
+import { restartFeishuRemoteBridge, testFeishuApp } from "../remote/feishu";
+import { installRemoteMcpConfig } from "../remote/mcp-config";
 
 /**
  * 根据 target 构建 Claude Code 直连模式的环境变量。
@@ -153,13 +163,23 @@ const projectBasename = (p: string | null | undefined): string => {
   return path.basename(trimmed);
 };
 
+const publicConfig = (config: Config): Config => ({
+  ...config,
+  remoteBridge: config.remoteBridge
+    ? {
+        ...config.remoteBridge,
+        authToken: undefined,
+      }
+    : config.remoteBridge,
+});
+
 export const setupApiRoutes = (app: Express) => {
   // 查询配置或日志
   app.get("/api/query", (req: Request, res: Response) => {
     const type = req.query.type as string;
 
     if (type === "config") {
-      res.json({ ...readConfig(), serverPort: getServerPort() });
+      res.json({ ...publicConfig(readConfig()), serverPort: getServerPort() });
       return;
     }
 
@@ -233,6 +253,39 @@ export const setupApiRoutes = (app: Express) => {
 
     if (type === "activity-status") {
       res.json(getActivityStatus());
+      return;
+    }
+
+    if (type === "remote-threads") {
+      const limit = Number(req.query.limit ?? 100);
+      const offset = Number(req.query.offset ?? 0);
+      const status = (req.query.status as string) || undefined;
+      const source = (req.query.source as string) || undefined;
+      res.json(listRemoteThreads({ limit, offset, status, source }));
+      return;
+    }
+
+    if (type === "remote-messages") {
+      const limit = Number(req.query.limit ?? 100);
+      const offset = Number(req.query.offset ?? 0);
+      const threadId = (req.query.threadId as string) || undefined;
+      const status = (req.query.status as string) || undefined;
+      res.json(listRemoteMessages({ limit, offset, threadId, status }));
+      return;
+    }
+
+    if (type === "remote-instances") {
+      const limit = Number(req.query.limit ?? 100);
+      const includeStale = req.query.includeStale === "true";
+      res.json({ instances: listRemoteInstances({ limit, includeStale }) });
+      return;
+    }
+
+    if (type === "remote-permissions") {
+      const limit = Number(req.query.limit ?? 100);
+      const threadId = (req.query.threadId as string) || undefined;
+      const status = (req.query.status as string) || undefined;
+      res.json({ permissions: listRemotePermissions({ limit, threadId, status }) });
       return;
     }
 
@@ -343,7 +396,7 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
+    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | remote-threads | remote-messages | remote-instances | remote-permissions | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
   });
 
   // SSE：实时事件流
@@ -379,6 +432,19 @@ export const setupApiRoutes = (app: Express) => {
     });
 
     broadcast("hook", entry);
+
+    if (toolName && toolName.includes("remote_reply") && sessionId) {
+      const toolInput = (rawBody.tool_input ?? null) as Record<string, unknown> | null;
+      const remoteThreadId =
+        typeof toolInput?.remote_thread_id === "string"
+          ? toolInput.remote_thread_id
+          : typeof toolInput?.remoteThreadId === "string"
+            ? toolInput.remoteThreadId
+            : null;
+      if (remoteThreadId) {
+        updateRemoteThread(remoteThreadId, { claudeSessionId: sessionId });
+      }
+    }
 
     const { notifications } = readConfig();
     const evtKey: "stop" | "subagentStop" | "notification" | null =
@@ -844,6 +910,72 @@ export const setupApiRoutes = (app: Express) => {
         config.notifications = next;
         writeConfig(config);
         res.json({ ok: true, notifications: config.notifications });
+        break;
+      }
+
+      case "updateRemoteBridge": {
+        const { remoteBridge } = req.body as { remoteBridge: Config["remoteBridge"] };
+        const prev = config.remoteBridge ?? {};
+        const next = {
+          ...prev,
+          ...(remoteBridge ?? {}),
+          authToken: remoteBridge?.authToken || prev.authToken,
+          web: {
+            ...(prev.web ?? {}),
+            ...(remoteBridge?.web ?? {}),
+          },
+          feishu: {
+            ...(prev.feishu ?? {}),
+            ...(remoteBridge?.feishu ?? {}),
+            progressCard: {
+              ...(prev.feishu?.progressCard ?? {}),
+              ...(remoteBridge?.feishu?.progressCard ?? {}),
+            },
+          },
+          allowedCwds: remoteBridge?.allowedCwds ?? prev.allowedCwds ?? [],
+        };
+        config.remoteBridge = next;
+        writeConfig(config);
+        restartFeishuRemoteBridge();
+        res.json({ ok: true, remoteBridge: publicConfig(config).remoteBridge });
+        break;
+      }
+
+      case "installRemoteBridgeChannel": {
+        const { cwd } = req.body as { cwd?: string };
+        const result = installRemoteMcpConfig(cwd || process.cwd(), getServerPort());
+        res.json({
+          ok: true,
+          file: result.file,
+          serverName: result.serverName,
+          remoteBridge: publicConfig({
+            ...config,
+            remoteBridge: result.remoteBridge,
+          }).remoteBridge,
+        });
+        break;
+      }
+
+      case "launchRemoteBridgeChannel": {
+        const { cwd } = req.body as { cwd?: string };
+        const targetCwd = cwd || config.remoteBridge?.defaultCwd || process.cwd();
+        const result = launchRemoteBridgeChannelForCwd(targetCwd);
+        if (!result.ok) {
+          res.status(400).json(result);
+          return;
+        }
+        res.json(result);
+        break;
+      }
+
+      case "testFeishuApp": {
+        const { chatId } = req.body as { chatId?: string };
+        try {
+          await testFeishuApp(chatId);
+          res.json({ ok: true });
+        } catch (err) {
+          res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+        }
         break;
       }
 

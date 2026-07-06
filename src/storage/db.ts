@@ -100,6 +100,85 @@ const MIGRATIONS: string[] = [
      SELECT sc.cwd FROM session_cwds sc WHERE sc.sessionId = logs.sessionId LIMIT 1
    ) WHERE sessionId IS NOT NULL;
    UPDATE logs SET conversationId = NULL, agentRole = NULL`,
+  `CREATE TABLE IF NOT EXISTS remote_threads (
+    id TEXT PRIMARY KEY,
+    shortId TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL,
+    sourceThreadId TEXT,
+    sourceUserId TEXT,
+    sourceChatId TEXT,
+    cwd TEXT,
+    claudeSessionId TEXT,
+    channelInstanceId TEXT,
+    status TEXT NOT NULL,
+    title TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    lastMessageAt TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_remote_threads_updated ON remote_threads(updatedAt DESC);
+  CREATE INDEX IF NOT EXISTS idx_remote_threads_source ON remote_threads(source, sourceThreadId);
+  CREATE INDEX IF NOT EXISTS idx_remote_threads_cwd ON remote_threads(cwd, updatedAt DESC)`,
+  `CREATE TABLE IF NOT EXISTS remote_messages (
+    id TEXT PRIMARY KEY,
+    threadId TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    source TEXT NOT NULL,
+    sourceMessageId TEXT,
+    sourceUserId TEXT,
+    text TEXT NOT NULL,
+    status TEXT NOT NULL,
+    error TEXT,
+    raw TEXT,
+    createdAt TEXT NOT NULL,
+    deliveredAt TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_remote_messages_thread ON remote_messages(threadId, createdAt ASC);
+  CREATE INDEX IF NOT EXISTS idx_remote_messages_status ON remote_messages(status, createdAt ASC)`,
+  `CREATE TABLE IF NOT EXISTS remote_channel_instances (
+    id TEXT PRIMARY KEY,
+    pid INTEGER,
+    cwd TEXT,
+    claudeSessionId TEXT,
+    status TEXT NOT NULL,
+    metadata TEXT,
+    startedAt TEXT NOT NULL,
+    lastSeenAt TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_remote_instances_seen ON remote_channel_instances(status, lastSeenAt DESC);
+  CREATE INDEX IF NOT EXISTS idx_remote_instances_cwd ON remote_channel_instances(cwd, lastSeenAt DESC)`,
+  `CREATE TABLE IF NOT EXISTS remote_permissions (
+    id TEXT PRIMARY KEY,
+    threadId TEXT,
+    channelInstanceId TEXT,
+    requestId TEXT NOT NULL,
+    toolName TEXT NOT NULL,
+    description TEXT,
+    inputPreview TEXT,
+    status TEXT NOT NULL,
+    behavior TEXT,
+    createdAt TEXT NOT NULL,
+    resolvedAt TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_remote_permissions_request ON remote_permissions(requestId, status);
+  CREATE INDEX IF NOT EXISTS idx_remote_permissions_thread ON remote_permissions(threadId, createdAt DESC)`,
+  `CREATE TABLE IF NOT EXISTS remote_message_cards (
+    id TEXT PRIMARY KEY,
+    threadId TEXT NOT NULL,
+    inboundMessageId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    providerMessageId TEXT,
+    chatId TEXT,
+    status TEXT NOT NULL,
+    lastSnapshot TEXT,
+    lastPatchedAt TEXT,
+    error TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_remote_cards_inbound ON remote_message_cards(inboundMessageId);
+  CREATE INDEX IF NOT EXISTS idx_remote_cards_thread ON remote_message_cards(threadId, updatedAt DESC);
+  CREATE INDEX IF NOT EXISTS idx_remote_cards_provider ON remote_message_cards(provider, providerMessageId)`,
 ];
 
 let dbInstance: Database.Database | null = null;

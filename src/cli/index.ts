@@ -3,6 +3,7 @@ import { startCommand } from "./commands/start";
 import { configCommand } from "./commands/config";
 import { logsCommand } from "./commands/logs";
 import { hookCommand } from "./commands/hook";
+import { channelCommand } from "./commands/channel";
 import pkg from "../../package.json";
 
 const program = new Command();
@@ -16,5 +17,6 @@ startCommand(program);
 configCommand(program);
 logsCommand(program);
 hookCommand(program);
+channelCommand(program);
 
 program.parse();

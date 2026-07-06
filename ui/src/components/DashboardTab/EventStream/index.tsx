@@ -112,6 +112,52 @@ const EventStream = ({
   );
 };
 
+const stringifyBrief = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value === null || typeof value === "undefined") return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const compactText = (value: unknown, max = 160): string => {
+  const text = stringifyBrief(value).replace(/\s+/g, " ").trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+};
+
+const hookSummary = (entry: HookEntry): string => {
+  const payload =
+    entry.payload && typeof entry.payload === "object"
+      ? (entry.payload as Record<string, unknown>)
+      : {};
+
+  if (entry.eventName === "UserPromptSubmit") return compactText(payload.prompt);
+  if (entry.eventName === "Notification") return compactText(payload.message);
+  if (entry.eventName === "Stop" || entry.eventName === "SubagentStop") {
+    return compactText(payload.last_assistant_message);
+  }
+  if (entry.eventName === "StopFailure" || entry.eventName === "PostToolUseFailure") {
+    return compactText(payload.error_details ?? payload.error);
+  }
+  if (entry.eventName === "PermissionDenied") return compactText(payload.reason);
+  if (entry.toolName) return compactText(payload.tool_input ?? payload.tool_response);
+  return "";
+};
+
+const logSummary = (entry: LogEntry): string => {
+  const parts = [
+    entry.status && entry.status !== "completed" ? entry.status : null,
+    entry.durationMs > 0 ? `${entry.durationMs}ms` : null,
+    `TTFT ${formatTTFT(entry.firstChunkMs)}`,
+    `TPS ${formatTPS(entry.tokenUsage?.outputTokens, entry.durationMs, entry.firstChunkMs)}`,
+    entry.tokenUsage?.totalTokens ? `${entry.tokenUsage.totalTokens} tok` : null,
+    entry.error ? compactText(entry.error, 80) : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
+};
+
 export const HookRow = ({
   entry,
   isActive,
@@ -125,6 +171,7 @@ export const HookRow = ({
   onClick: () => void;
 }) => {
   const folder = basename(cwdFromEntry(entry));
+  const summary = hookSummary(entry);
   return (
     <li
       className={`${styles.eventItem}${isActive ? ` ${styles.eventItemActive}` : ""}`}
@@ -134,6 +181,7 @@ export const HookRow = ({
       <span className={styles.eventKind} title="hook">◎</span>
       <span className={styles.eventNameTool}>
         <span className={styles.eventName}>{entry.eventName}</span>
+        {summary && <span className={styles.eventSummary}>{summary}</span>}
         {entry.toolName && <span className={styles.eventTool}>{entry.toolName}</span>}
       </span>
       {!scoped && folder && <span className={styles.eventCwd}>{folder}</span>}
@@ -157,6 +205,7 @@ export const LogRow = ({
   hideTarget?: boolean;
   onClick: () => void;
 }) => {
+  const summary = logSummary(entry);
   const statusClass =
     entry.responseStatus >= 500
       ? styles.logStatusErr
@@ -176,6 +225,7 @@ export const LogRow = ({
         <span className={styles.eventName}>
           {entry.method} {entry.path}
         </span>
+        {summary && <span className={styles.eventSummary}>{summary}</span>}
         {!hideTarget && (
           <span className={styles.eventTool}>{entry.targetName}</span>
         )}

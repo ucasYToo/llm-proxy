@@ -1,6 +1,13 @@
-import { useMemo } from 'react';
-import type { Config, TimelineEntry } from '../../lib/api';
-import { updateProjectRemarkApi } from '../../lib/api';
+import { useMemo, useState } from 'react';
+import type { Config, RemoteBridgeConfig, RemoteThread, TimelineEntry } from '../../lib/api';
+import {
+  installRemoteBridgeChannelApi,
+  launchRemoteBridgeChannelApi,
+  sendRemoteMessageApi,
+  testFeishuApp,
+  updateRemoteBridge,
+  updateProjectRemarkApi,
+} from '../../lib/api';
 import { LogDetailPanel } from '../LogDetailPanel';
 import { HookDetailPanel } from '../HookDetailPanel';
 import SessionAnalyticsPanel from '../SessionAnalyticsPanel';
@@ -13,6 +20,7 @@ import EventStream from './EventStream';
 import DingTalkPanel from './DingTalkPanel';
 import FeishuPanel from './FeishuPanel';
 import MacosNotifyPanel from './MacosNotifyPanel';
+import RemoteBridgePanel from './RemoteBridgePanel';
 import ProjectCard from './ProjectCard';
 import styles from './index.module.css';
 import { isShowFeishu } from '../../constant';
@@ -24,6 +32,12 @@ interface Props {
 
 const DashboardTab = ({ config, onRefresh }: Props) => {
   const data = useDashboardData();
+  const [remotePrompt, setRemotePrompt] = useState('');
+  const [remoteSending, setRemoteSending] = useState(false);
+  const [remoteBooting, setRemoteBooting] = useState(false);
+  const [remoteConfigOpen, setRemoteConfigOpen] = useState(false);
+  const [remoteSaving, setRemoteSaving] = useState(false);
+  const [remoteTesting, setRemoteTesting] = useState(false);
   const notify = useNotifications({
     notifications: config.notifications ?? {},
     onRefresh,
@@ -65,6 +79,146 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     }
     return result.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   }, [eventsByProject, data.sessionGroups]);
+
+  const selectedSessionSummary = useMemo(
+    () => data.sessions.find((s) => s.sessionId === data.selectedSession) ?? null,
+    [data.sessions, data.selectedSession],
+  );
+
+  const selectedRemoteThread = useMemo<RemoteThread | null>(() => {
+    if (!selectedSessionSummary) return null;
+    const statusPriority: Record<string, number> = {
+      running: 0,
+      waiting_permission: 1,
+      queued: 2,
+      pending: 3,
+      done: 4,
+      failed: 5,
+    };
+    const byFreshness = (a: RemoteThread, b: RemoteThread) =>
+      (statusPriority[a.status] ?? 9) - (statusPriority[b.status] ?? 9) ||
+      (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0);
+    const sameSession = data.remoteThreads
+      .filter((t) => t.source === 'web' && t.claudeSessionId === selectedSessionSummary.sessionId)
+      .sort(byFreshness)[0];
+    if (sameSession) return sameSession;
+    return (
+      data.remoteThreads
+        .filter((t) => t.source === 'web' && t.cwd && t.cwd === selectedSessionSummary.cwd && t.status !== 'failed')
+        .sort(byFreshness)[0] ?? null
+    );
+  }, [data.remoteThreads, selectedSessionSummary]);
+
+  const remoteEnabled = !!config.remoteBridge?.enabled && !!config.remoteBridge?.web?.enabled;
+  const remoteDeliveryMode = config.remoteBridge?.deliveryMode ?? 'cli';
+  const remoteUsesChannel = remoteDeliveryMode !== 'cli';
+  const hasRemoteInstance = data.remoteInstances.length > 0;
+  const hasRemoteRuntime = remoteEnabled && (!remoteUsesChannel || hasRemoteInstance);
+  const suggestedRemoteCwd =
+    selectedSessionSummary?.cwd ??
+    config.remoteBridge?.defaultCwd ??
+    data.sessionGroups.find((g) => g.cwd)?.cwd ??
+    null;
+
+  const getRemoteActionCwd = () => {
+    if (suggestedRemoteCwd) return suggestedRemoteCwd;
+    const cwd = window.prompt('输入要启动 Claude Code 的项目路径', config.remoteBridge?.defaultCwd ?? '');
+    return cwd?.trim() || null;
+  };
+
+  const handleInstallRemoteBridge = async () => {
+    const cwd = getRemoteActionCwd();
+    if (!cwd) return;
+    setRemoteBooting(true);
+    try {
+      const result = await installRemoteBridgeChannelApi(cwd);
+      await onRefresh();
+      await data.refreshRemote();
+      alert(`已写入 ${result.serverName}\n${result.file}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRemoteBooting(false);
+    }
+  };
+
+  const handleLaunchRemoteBridge = async () => {
+    const cwd = getRemoteActionCwd();
+    if (!cwd) return;
+    setRemoteBooting(true);
+    try {
+      const result = await launchRemoteBridgeChannelApi(cwd);
+      await onRefresh();
+      await data.refreshRemote();
+      alert(`已写入 ${result.mcpFile}\n已尝试启动：${result.command}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRemoteBooting(false);
+    }
+  };
+
+  const handleSaveRemoteBridge = async (next: RemoteBridgeConfig) => {
+    setRemoteSaving(true);
+    try {
+      await updateRemoteBridge(next);
+      await onRefresh();
+      await data.refreshRemote();
+      alert('飞书远程配置已保存');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRemoteSaving(false);
+    }
+  };
+
+  const handleTestFeishuApp = async (chatId?: string) => {
+    setRemoteTesting(true);
+    try {
+      await testFeishuApp(chatId);
+      alert(chatId ? '已发送飞书测试消息' : '飞书应用凭证可用');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRemoteTesting(false);
+    }
+  };
+
+  const handleNewRemoteThread = async (cwd: string | null) => {
+    if (!cwd) return;
+    const text = window.prompt('新建远程对话 Prompt');
+    if (!text?.trim()) return;
+    try {
+      await sendRemoteMessageApi({
+        mode: 'new',
+        cwd,
+        text,
+      });
+      await data.refreshRemote();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleContinueRemote = async () => {
+    const text = remotePrompt.trim();
+    if (!text || !selectedSessionSummary) return;
+    setRemoteSending(true);
+    try {
+      await sendRemoteMessageApi({
+        mode: selectedRemoteThread ? 'continue' : 'new',
+        threadId: selectedRemoteThread?.id,
+        cwd: selectedSessionSummary.cwd,
+        text,
+      });
+      setRemotePrompt('');
+      await data.refreshRemote();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRemoteSending(false);
+    }
+  };
 
   return (
     <div className={styles.dashboard}>
@@ -172,6 +326,45 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
 
         <div className={styles.toolbarSpacer} />
 
+        <div className={styles.toggleGroup}>
+          <span className={styles.toggleGroupLabel}>远程：</span>
+          <span
+            className={`${styles.statusDot}${hasRemoteRuntime ? ` ${styles.statusDotOpen}` : remoteEnabled ? '' : ` ${styles.statusDotClosed}`}`}
+          />
+          <span className={styles.statusLabel}>
+            {!remoteEnabled
+              ? '未启用'
+              : remoteDeliveryMode === 'cli'
+                ? 'CLI fallback'
+                : hasRemoteInstance
+                ? `${data.remoteInstances.length} channel`
+                : '等待 channel'}
+          </span>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => void handleInstallRemoteBridge()}
+            disabled={remoteBooting}
+          >
+            启用/安装
+          </button>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => void handleLaunchRemoteBridge()}
+            disabled={remoteBooting}
+          >
+            {remoteBooting ? '启动中…' : '安装并启动'}
+          </button>
+          <button
+            type="button"
+            className="btnGhost btnSm"
+            onClick={() => setRemoteConfigOpen((v) => !v)}
+          >
+            {remoteConfigOpen ? '收起配置' : '飞书远程配置'}
+          </button>
+        </div>
+
         {data.selectedSession && (
           <>
             {!data.analyticsSessionId && (
@@ -230,6 +423,24 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         />
       )}
 
+      {remoteConfigOpen && (
+        <RemoteBridgePanel
+          config={config.remoteBridge}
+          saving={remoteSaving}
+          testing={remoteTesting}
+          onSave={(next) => void handleSaveRemoteBridge(next)}
+          onTest={(chatId) => void handleTestFeishuApp(chatId)}
+        />
+      )}
+
+      {(!remoteEnabled || (remoteUsesChannel && !hasRemoteInstance)) && (
+        <div className={styles.remoteWarning}>
+          {!remoteEnabled
+            ? '远程对话尚未启用。可以直接点上方「安装并启动」，会写入当前项目 .mcp.json 并打开 Claude Code。'
+            : '未检测到在线 Claude Code channel。可以直接点上方「安装并启动」；新建远程对话也会尝试自动拉起。'}
+        </div>
+      )}
+
       {!data.selectedSession ? (
         <div className={styles.projectGrid}>
           {data.sessionGroups.length === 0 && orphanEvents.length === 0 ? (
@@ -252,6 +463,11 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
                     const latest = group.sessions[0];
                     if (latest) data.setSelectedSession(latest.sessionId);
                   }}
+                  onNewRemoteThread={
+                    remoteEnabled
+                      ? () => void handleNewRemoteThread(group.cwd)
+                      : undefined
+                  }
                 />
               ))}
               {orphanEvents.length > 0 && (
@@ -277,6 +493,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
             selectedSession={data.selectedSession}
             collapsedGroups={data.collapsedGroups}
             eventCount={data.events.length + data.globalLogs.length}
+            remoteThreads={data.remoteThreads}
             onSelectSession={(sid) => {
               data.setSelectedSession(sid);
               data.setAnalyticsSessionId(null);
@@ -313,6 +530,29 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
               onAgentRoleChange={data.filter.setAgentRoleFilter}
               onSelectAgent={data.filter.setSelectedAgentId}
             />
+          )}
+
+          {remoteEnabled && selectedSessionSummary && !data.analyticsSessionId && (
+            <form
+              className={styles.remoteComposer}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleContinueRemote();
+              }}
+            >
+              <input
+                value={remotePrompt}
+                onChange={(e) => setRemotePrompt(e.target.value)}
+                placeholder={
+                  selectedRemoteThread
+                    ? `继续远程对话 #${selectedRemoteThread.shortId}`
+                    : '在当前项目中新建远程对话'
+                }
+              />
+              <button type="submit" className="btnPrimary btnSm" disabled={remoteSending || !remotePrompt.trim()}>
+                {remoteSending ? '发送中…' : '发送'}
+              </button>
+            </form>
           )}
         </div>
       )}

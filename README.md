@@ -1,27 +1,29 @@
 # claude-proxy
 
-LLM Proxy CLI — 为 Claude Code 设计的本地代理网关，支持多目标路由、费用追踪、实时通知和 Web 控制台。
+LLM Proxy CLI for Claude Code. It provides a local proxy gateway, multi-target routing, request/cost analytics, Claude Code hook capture, a web dashboard, and a remote bridge for continuing or creating Claude Code conversations from Web or Feishu.
 
-## 功能特性
+Current release: **2.0.0**
 
-- **请求代理** — 转发 LLM API 请求到上游服务，支持直连和代理两种模式
-- **多通道管理** — 多个独立路由通道，每个通道绑定不同上游目标，可独立切换
-- **费用追踪** — 自动记录每次请求的 token 用量与费用（USD），支持按会话 / 目标 / 模型 / 时间段聚合统计
-- **预算控制** — 设置每日 / 每月预算上限，超出阈值自动告警
-- **macOS 状态栏** — 原生 Swift 应用，实时显示当前模型、今日费用和请求状态
-- **会话分析** — 会话健康度评估、Token 时间线、工具调用热力图、子代理瀑布图
-- **Claude Code Hook** — 自动注册 hook，捕获完整会话生命周期事件
-- **实时通知** — macOS 系统通知 / 钉钉机器人 / 飞书机器人，多通道独立配置
-- **Web 控制台** — 内置 Dashboard，实时 SSE 事件流、费用分析、配置管理
-- **防休眠** — 可选 caffeinate，Mac 长时间任务不休眠
+## Features
 
-## 安装
+- **Request proxy**: forward Claude Code API traffic to configured upstream providers.
+- **Multi-channel routing**: run separate proxy channels and route projects to different targets.
+- **Claude Code integration**: write proxy settings and hooks into Claude Code local settings.
+- **Hook dashboard**: capture session lifecycle, tool use, notifications, subagents, and stop events.
+- **Cost analytics**: record token usage and USD cost, with summaries by session, target, model, and time range.
+- **Remote bridge**: create or continue Claude Code conversations from the dashboard or Feishu.
+- **Feishu progress cards**: show a compact live progress card, then send the final answer as normal chat text.
+- **Notifications**: macOS, DingTalk, and Feishu webhook notifications for selected hook events.
+- **macOS status bar**: native status bar helper with current activity and daily cost.
+- **Anti-sleep**: optional `caffeinate` support for long-running local tasks.
+
+## Installation
 
 ```bash
 npm install -g llm-proxy-view
 ```
 
-或本地开发运行：
+Local development:
 
 ```bash
 npm install
@@ -29,207 +31,273 @@ npm run build
 node bin/cli.js --help
 ```
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 1. 启动服务
-claude-proxy start
+# Start the service and dashboard on http://localhost:1998
+claude-proxy start --ui
 
-# 2. 打开 Web 控制台（默认 http://localhost:1998）
-# 3. 在「配置」页添加上游目标（如 OpenAI / Anthropic）
-# 4. 点击「接入代理」将 Claude Code 指向代理
-# 5. 开始使用 Claude Code，请求自动经过代理记录
+# Install Claude Code hooks so sessions appear in the dashboard
+claude-proxy hook install --port 1998
+
+# Open the dashboard, add an upstream target, then click "接入代理"
 ```
 
-## 启动选项
+Common commands:
 
 ```bash
-claude-proxy start [options]
+claude-proxy start --port 1998 --host localhost --ui
+claude-proxy config list
+claude-proxy logs --limit 20
+claude-proxy hook status
+claude-proxy channel status
 ```
 
-| 选项 | 描述 | 默认值 |
-|------|------|--------|
-| `-p, --port <number>` | 监听端口 | `1998` |
-| `--host <address>` | 绑定地址 | `localhost` |
-| `--ui` | 启用 Web UI | `true` |
-| `--no-statusbar` | 禁用 macOS 状态栏应用 | 启用 |
+## Web Dashboard
 
-## Web 控制台
+The dashboard is served from the proxy process when `--ui` is enabled.
 
-启动服务后访问 `http://localhost:1998`，包含以下页面：
+- **Config**: manage upstream targets, auth, model mapping, channels, and CWD routes.
+- **Logs**: inspect proxied requests, response timing, token usage, and captured SSE output.
+- **Dashboard**: monitor Claude Code sessions by project, view live hook events, and send remote prompts.
+- **Analytics**: review cost trends, model distribution, top sessions, and session health.
+- **Status bar**: configure the macOS helper and anti-sleep behavior.
 
-### 配置页
+## Remote Bridge
 
-管理上游目标、通道和 Claude Code 集成。
+Remote bridge lets a Web or Feishu message become a Claude Code prompt on the local machine.
 
-**添加上游目标：**
+### Delivery Modes
 
-1. 点击「添加目标」
-2. 填写名称、URL、认证方式（Bearer Token / API Key / 自定义 Header）
-3. 可选配置模型映射和额外 Body 参数
-4. 保存后在目标列表中点击「设为活动」切换上游
+`remoteBridge.deliveryMode` supports:
 
-**通道管理：**
+- `cli`: default, uses `claude -p --output-format stream-json --verbose --include-partial-messages --include-hook-events`.
+- `channel`: uses the experimental Claude Code MCP channel path when available.
+- `auto`: prefers an online channel instance, then falls back to CLI.
 
-每个通道是一个独立的路由入口，绑定一个活动目标：
+The CLI fallback is the primary supported path in 2.0.0. The MCP channel path is kept for Claude Code channel experiments and requires Claude Code support for custom channels.
 
-- **接入代理** — 将 Claude Code 的 `ANTHROPIC_BASE_URL` 指向该通道的代理地址
-- **切到直连** — 恢复 Claude Code 直连上游，绕过代理
-- 切换通道的活动目标后，已接入的 Claude Code 会自动联动更新
+### Dashboard Flow
 
-**日志采集设置：**
+1. Start `claude-proxy start --ui`.
+2. Open the dashboard and expand **飞书远程配置** / Remote Bridge settings.
+3. Enable Remote Bridge.
+4. Set `allowedCwds` and `defaultCwd`.
+5. Use project cards or the session list to start a new remote conversation or continue an existing one.
 
-- **捕获原始请求体** — 记录未脱敏的请求/响应 body
-- **捕获原始 SSE 流** — 记录完整的 SSE 事件流
+### Feishu Flow
 
-### 日志页
+Feishu input uses a **self-built Feishu app with long connection**, not the old custom webhook robot.
 
-查看所有代理请求记录，支持按目标筛选、实时 SSE 推送、点击展开详情查看完整请求头和 token 用量。
+Required app capabilities:
 
-### Dashboard 页
+- receive `im.message.receive_v1` events
+- send text messages
+- send interactive cards
+- patch previously sent interactive cards
 
-实时监控 Claude Code 会话活动，按项目分组展示。
+Recommended setup:
 
-**通知设置：**
+1. Create a self-built Feishu app.
+2. Enable bot capability and event subscription for received messages.
+3. Copy `appId`, `appSecret`, optional `encryptKey`, and `verificationToken` into the dashboard Remote Bridge form.
+4. Add the bot to a direct chat or group.
+5. In groups, mention the bot for new prompts; direct messages continue the latest active thread by default.
 
-| 通道 | 支持的事件 | 配置项 |
-|------|-----------|--------|
-| macOS 系统通知 | Stop / SubagentStop / Notification | 按事件独立勾选 |
-| 钉钉机器人 | 同上 | webhook accessToken + secret |
-| 飞书机器人 | 同上 | webhook URL + 签名密钥 |
+Feishu commands:
 
-> 各通道的通知事件独立配置，互不影响。推送内容包含事件类型和最后一条 assistant 回复。
-
-**其他设置：**
-
-- **防休眠**（仅 macOS）— 启动 `caffeinate`，锁屏 / 合盖保持系统不睡眠
-- **事件过滤** — 按事件类型过滤、关键词搜索
-
-### 分析页
-
-费用与性能分析面板：
-
-- **费用概览** — 今日 / 本周 / 本月总费用，预算使用进度
-- **费用趋势图** — 按时间维度的费用折线图
-- **模型分布** — 各模型费用占比
-- **目标费用表** — 按上游目标聚合的费用统计
-- **Top 会话** — 费用最高的会话列表
-
-### 会话分析面板
-
-点击会话进入深度分析：
-
-- **健康度仪表盘** — 成功率、缓存命中率、平均延迟、错误率
-- **Token 时间线** — 每次请求的 token 用量变化趋势
-- **工具热力图** — 各工具调用频次分布
-- **子代理瀑布图** — 子代理的启动 / 结束时间线
-
-### 状态栏面板
-
-macOS 状态栏应用的配置与状态展示，显示实时费用、当前模型和运行状态。
-
-## Hook 管理
-
-将 HTTP hook 注册到 Claude Code，自动捕获会话事件：
-
-```bash
-claude-proxy hook install    # 注册 hook
-claude-proxy hook status     # 查看已注册 hook
-claude-proxy hook uninstall  # 移除所有 hook
+```text
+/help
+/status
+/projects
+/new <project-alias-or-path> <prompt>
+/continue <threadId> <prompt>
+/use <threadId>
+同意 <permissionId>
+拒绝 <permissionId>
 ```
 
-注册的事件：`SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` / `Notification` / `SubagentStart` / `SubagentStop` / `Stop` / `SessionEnd`
+Progress display:
 
-## 配置管理
+- one compact interactive card per inbound Feishu message
+- card updates are throttled and coalesced to at most about one patch per second
+- the card shows status, project, elapsed time, recent process events, tools, and errors
+- the final Claude answer is sent as normal chat text, not as a card and not as a Feishu topic reply
+
+### Optional MCP Channel
+
+Install a project `.mcp.json` entry:
 
 ```bash
-# 目标操作
-claude-proxy config list                                    # 列出所有目标
-claude-proxy config add --name "OpenAI" \                   # 添加目标
+cd /path/to/project
+claude-proxy channel install --scope project --port 1998
+claude-proxy channel status
+```
+
+The registered server name is `claude-proxy-remote`, backed by the `claude-proxy-channel` binary. When Claude Code channels are available, start Claude Code with:
+
+```bash
+claude --dangerously-load-development-channels server:claude-proxy-remote
+```
+
+If Claude Code reports that channels are unavailable, use the default `cli` delivery mode.
+
+## Configuration
+
+Persistent config lives in:
+
+```text
+~/.claude-proxy/config.json
+```
+
+Important `remoteBridge` fields:
+
+```json
+{
+  "remoteBridge": {
+    "enabled": true,
+    "authToken": "local-shared-token",
+    "web": {
+      "enabled": true,
+      "publicBaseUrl": "https://your-dashboard.example"
+    },
+    "allowedCwds": ["/Users/me/workspace/project"],
+    "defaultCwd": "/Users/me/workspace/project",
+    "claudeCommand": "claude",
+    "permissionMode": "default",
+    "deliveryMode": "cli",
+    "feishu": {
+      "enabled": true,
+      "appId": "...",
+      "appSecret": "...",
+      "encryptKey": "...",
+      "verificationToken": "...",
+      "ingress": "longConnection",
+      "allowedUserIds": [],
+      "progressCard": {
+        "enabled": true,
+        "showToolEvents": true
+      }
+    }
+  }
+}
+```
+
+Security notes:
+
+- Channel/internal Remote APIs require `remoteBridge.authToken`. Same-origin dashboard actions use the local server session boundary and do not expose the token to the browser config payload.
+- Do not expose the dashboard publicly without an access-controlled tunnel or reverse proxy.
+- Keep `allowedCwds` narrow. Empty `allowedCwds` only allows the configured `defaultCwd`.
+- Use `allowedUserIds` for Feishu deployments where group membership is not a sufficient trust boundary.
+
+## Hook Management
+
+```bash
+claude-proxy hook install --port 1998
+claude-proxy hook status
+claude-proxy hook uninstall
+```
+
+Managed hook events:
+
+```text
+SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Notification /
+SubagentStart / SubagentStop / Stop / SessionEnd
+```
+
+## Target And Channel Management
+
+```bash
+claude-proxy config list
+claude-proxy config add --name "OpenAI" \
   --url "https://api.openai.com/v1" \
   --headers '{"Authorization":"Bearer sk-xxx"}' \
   --anthropic-model "claude-opus-4-7"
-claude-proxy config set-active <target-id>                  # 设置活动目标
-claude-proxy config delete <target-id>                      # 删除目标
+claude-proxy config set-active <target-id>
+claude-proxy config delete <target-id>
 
-# 通道管理
-claude-proxy config channel list                            # 列出所有通道
-claude-proxy config channel add --name "测试"                # 添加通道
-claude-proxy config channel set-active \                    # 设置通道活动目标
-  --channel <channelId> --target <targetName>
-claude-proxy config channel delete --channel <channelId>    # 删除通道
+claude-proxy config channel list
+claude-proxy config channel add --name "default"
+claude-proxy config channel set-active --channel <channelId> --target <targetName>
+claude-proxy config channel add-cwd-route --channel <channelId> --cwd <path> --target <targetName>
+claude-proxy config channel remove-cwd-route --channel <channelId> --cwd <path>
 ```
 
-## 日志查看
+## API Endpoints
 
-```bash
-claude-proxy logs [options]
-claude-proxy clear-logs
-```
+Selected public dashboard endpoints:
 
-| 选项 | 描述 | 默认值 |
-|------|------|--------|
-| `-l, --limit <number>` | 限制条数 | `20` |
-| `-t, --target <name>` | 按目标筛选 | — |
-| `--json` | JSON 格式输出 | `false` |
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/health` | health check |
+| GET | `/api/query?type=config` | current config |
+| GET | `/api/query?type=logs` | proxy logs |
+| GET | `/api/query?type=hooks` | hook events |
+| GET | `/api/query?type=sessions` | recent sessions |
+| GET | `/api/query?type=remote-threads` | remote threads |
+| GET | `/api/query?type=remote-messages` | remote messages |
+| GET | `/api/query?type=remote-instances` | remote channel instances |
+| GET | `/api/events` | dashboard SSE stream |
+| POST | `/api/hooks/:event` | Claude Code hook callback |
+| POST | `/api/set` | config mutations |
+| POST | `/api/remote/send` | Web remote send |
+| POST | `/api/remote/permission` | Web/Feishu permission verdict |
+| ALL | `/:channelId?/proxy/*` | proxied upstream request |
 
-## API 端点
+Internal channel endpoints:
 
-| 方法 | 路径 | 描述 |
-|------|------|------|
-| GET | `/health` | 健康检查 |
-| GET | `/api/query?type=config` | 查询配置 |
-| GET | `/api/query?type=logs` | 查询日志 |
-| GET | `/api/query?type=hooks` | 查询 hook 事件 |
-| GET | `/api/query?type=sessions` | 查询最近会话 |
-| GET | `/api/query?type=session-timeline` | 查询会话时间线 |
-| GET | `/api/query?type=caffeinate` | 查询防休眠状态 |
-| GET | `/api/query?type=cost-summary` | 查询费用汇总 |
-| GET | `/api/query?type=cost-trend` | 查询费用趋势 |
-| GET | `/api/query?type=cost-session` | 查询会话费用明细 |
-| GET | `/api/query?type=session-analytics` | 查询会话分析数据 |
-| GET | `/api/query?type=pricing` | 查询定价信息 |
-| GET | `/api/events` | SSE 实时事件流 |
-| POST | `/api/hooks/:event` | Claude Code hook 回调 |
-| POST | `/api/set` | 修改配置 |
-| DELETE | `/api/query?type=logs` | 清空日志 |
-| DELETE | `/api/query?type=hooks` | 清空 hook 事件 |
-| DELETE | `/api/query?type=cost` | 清空费用记录 |
-| POST | `/api/shutdown` | 关闭服务器 |
-| ALL | `/:channelId?/proxy/*` | 代理请求（按通道） |
+| Method | Path |
+| --- | --- |
+| POST | `/api/remote/channel/register` |
+| GET | `/api/remote/channel/events` |
+| POST | `/api/remote/channel/reply` |
+| POST | `/api/remote/channel/delivery` |
+| POST | `/api/remote/channel/permission-request` |
+| POST | `/api/remote/channel/heartbeat` |
+| POST | `/api/remote/channel/offline` |
 
-## 配置存储
+## Storage
 
-所有数据存储在 `~/.claude-proxy/` 目录，使用 SQLite 格式：
+All runtime data is under `~/.claude-proxy/`:
 
-```
+```text
 ~/.claude-proxy/
-├── config.sqlite    # 配置、日志、费用记录
-└── ...
+├── config.json   # targets, channels, notifications, remoteBridge
+└── logs.db       # logs, hooks, cost records, remote threads/messages/cards
 ```
 
-## 开发
+SQLite tables include `logs`, `hooks`, `cost_records`, `session_cwds`, `projects`, `remote_threads`, `remote_messages`, `remote_channel_instances`, `remote_permissions`, and `remote_message_cards`.
+
+## Development
 
 ```bash
 npm install
-npm run dev          # 后端开发模式（tsx）
-npm run dev:ui       # UI 开发模式（vite）
-npm run build        # 构建
-npm run build:swift  # 编译 macOS 状态栏应用
-npm run build:all    # 构建全部（后端 + UI + Swift）
-npm test             # 测试
+npm run dev          # backend development mode
+npm run dev:ui       # Vite UI development server
+npm test             # Jest
+npm run build        # TypeScript + UI + macOS status bar when available
+npm run build:statusbar
 ```
 
-## 技术栈
+Release checks used for 2.0.0:
 
-- **Node.js** + **TypeScript** — 运行时与类型安全
-- **Express.js** — HTTP 服务器
-- **better-sqlite3** — SQLite 数据存储
-- **Commander.js** + **chalk** + **ora** — CLI 框架
-- **React** + **Vite** — Web 控制台
-- **Swift** — macOS 状态栏原生应用
-- **SSE** — 实时事件推送
+```bash
+npx tsc --noEmit
+npm test -- --runInBand
+npx vite build
+```
 
-## 许可证
+## Tech Stack
+
+- Node.js + TypeScript
+- Express
+- better-sqlite3
+- Commander.js
+- React + Vite
+- Feishu Open Platform SDK
+- Model Context Protocol SDK
+- Swift status bar helper on macOS
+
+## License
 
 MIT
