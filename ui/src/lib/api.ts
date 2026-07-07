@@ -131,6 +131,7 @@ export interface RemoteBridgeConfig {
   deliveryMode?: RemoteBridgeDeliveryMode;
   feishu?: {
     enabled?: boolean;
+    bots?: RemoteBridgeFeishuBotConfig[];
     appId?: string;
     appSecret?: string;
     encryptKey?: string;
@@ -142,6 +143,23 @@ export interface RemoteBridgeConfig {
       showPartialAnswer?: boolean;
       showToolEvents?: boolean;
     };
+  };
+}
+
+export interface RemoteBridgeFeishuBotConfig {
+  id?: string;
+  name?: string;
+  enabled?: boolean;
+  defaultCwd?: string;
+  appId?: string;
+  appSecret?: string;
+  encryptKey?: string;
+  verificationToken?: string;
+  allowedUserIds?: string[];
+  progressCard?: {
+    enabled?: boolean;
+    showPartialAnswer?: boolean;
+    showToolEvents?: boolean;
   };
 }
 
@@ -423,6 +441,8 @@ export interface SessionSummary {
   title: string | null;
   /** title 的来源：transcript = ai-title 事件；prompt = 首条用户消息 */
   titleSource: SessionTitleSource;
+  /** 最近一次 Stop/SubagentStop hook 上带回的助手最终回复；没有则 null */
+  lastAssistantMessage: string | null;
 }
 
 export type RemoteThreadStatus =
@@ -447,6 +467,7 @@ export interface RemoteThread {
   id: string;
   shortId: string;
   source: "web" | "feishu";
+  sourceBotId: string | null;
   sourceThreadId: string | null;
   sourceUserId: string | null;
   sourceChatId: string | null;
@@ -465,6 +486,7 @@ export interface RemoteMessage {
   threadId: string;
   direction: RemoteMessageDirection;
   source: "web" | "feishu";
+  sourceBotId: string | null;
   sourceMessageId: string | null;
   sourceUserId: string | null;
   text: string;
@@ -718,11 +740,11 @@ export async function updateRemoteBridge(
   return data.remoteBridge;
 }
 
-export async function testFeishuApp(chatId?: string): Promise<void> {
+export async function testFeishuApp(botId?: string, chatId?: string): Promise<void> {
   const res = await fetch("/api/set", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "testFeishuApp", chatId }),
+    body: JSON.stringify({ action: "testFeishuApp", botId, chatId }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

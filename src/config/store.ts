@@ -8,6 +8,7 @@ import type {
   NotificationSettings,
   ChannelEvents,
   RemoteBridgeConfig,
+  RemoteBridgeFeishuBotConfig,
 } from "../interfaces";
 
 const CONFIG_DIR = path.join(process.env.HOME || "~", ".claude-proxy");
@@ -30,6 +31,7 @@ const createRemoteBridgeDefaults = (): RemoteBridgeConfig => ({
   feishu: {
     enabled: false,
     ingress: "longConnection",
+    bots: [],
     progressCard: {
       enabled: true,
       showPartialAnswer: true,
@@ -106,6 +108,65 @@ const migrateNotifications = (
 let configCache: Config | null = null;
 let configCacheMtimeMs = 0;
 
+const normalizeFeishuBotId = (raw: string | undefined, index: number): string => {
+  const value = raw?.trim();
+  if (value && /^[a-zA-Z0-9_-]+$/.test(value)) return value;
+  return index === 0 ? "default" : `bot-${index + 1}`;
+};
+
+const normalizeFeishuBots = (
+  raw: RemoteBridgeConfig["feishu"] | undefined,
+  fallbackDefaultCwd = "",
+): RemoteBridgeFeishuBotConfig[] => {
+  const configured = Array.isArray(raw?.bots) ? raw.bots : [];
+  const source =
+    configured.length > 0
+      ? configured
+      : raw?.appId || raw?.appSecret || raw?.encryptKey || raw?.verificationToken
+        ? [
+            {
+              id: "default",
+              name: "默认机器人",
+              enabled: true,
+              defaultCwd: fallbackDefaultCwd,
+              appId: raw?.appId,
+              appSecret: raw?.appSecret,
+              encryptKey: raw?.encryptKey,
+              verificationToken: raw?.verificationToken,
+              allowedUserIds: raw?.allowedUserIds,
+              progressCard: raw?.progressCard,
+            },
+          ]
+        : [];
+
+  const seen = new Set<string>();
+  return source.map((bot, index) => {
+    let id = normalizeFeishuBotId(bot.id, index);
+    while (seen.has(id)) id = `${id}-${index + 1}`;
+    seen.add(id);
+    return {
+      ...bot,
+      id,
+      name: bot.name?.trim() || (index === 0 ? "默认机器人" : `机器人 ${index + 1}`),
+      enabled: bot.enabled ?? true,
+      defaultCwd: bot.defaultCwd ?? fallbackDefaultCwd,
+      appId: bot.appId ?? "",
+      appSecret: bot.appSecret ?? "",
+      encryptKey: bot.encryptKey ?? "",
+      verificationToken: bot.verificationToken ?? "",
+      allowedUserIds: Array.isArray(bot.allowedUserIds)
+        ? bot.allowedUserIds
+        : Array.isArray(raw?.allowedUserIds)
+          ? raw.allowedUserIds
+          : [],
+      progressCard: {
+        ...(raw?.progressCard ?? {}),
+        ...(bot.progressCard ?? {}),
+      },
+    };
+  });
+};
+
 const mergeRemoteBridge = (
   raw: RemoteBridgeConfig | undefined,
 ): RemoteBridgeConfig => {
@@ -127,11 +188,12 @@ const mergeRemoteBridge = (
       ingress: raw?.feishu?.ingress ?? "longConnection",
       allowedUserIds: Array.isArray(raw?.feishu?.allowedUserIds)
         ? raw.feishu.allowedUserIds
-        : undefined,
+        : [],
       progressCard: {
         ...(defaults.feishu?.progressCard ?? {}),
         ...(raw?.feishu?.progressCard ?? {}),
       },
+      bots: normalizeFeishuBots(raw?.feishu, raw?.defaultCwd ?? ""),
     },
   };
 };
@@ -172,7 +234,8 @@ export const readConfig = (): Config => {
       !parsed.remoteBridge ||
       !parsed.remoteBridge.authToken ||
       !parsed.remoteBridge.web ||
-      !parsed.remoteBridge.feishu;
+      !parsed.remoteBridge.feishu ||
+      !Array.isArray(parsed.remoteBridge.feishu.bots);
 
     if (changed || remoteChanged) {
       writeConfig(merged);

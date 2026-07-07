@@ -121,10 +121,10 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     }
   };
 
-  const handleTestFeishuApp = async (chatId?: string) => {
+  const handleTestFeishuApp = async (botId?: string, chatId?: string) => {
     setRemoteTesting(true);
     try {
-      await testFeishuApp(chatId);
+      await testFeishuApp(botId, chatId);
       alert(chatId ? '已发送飞书测试消息' : '飞书应用凭证可用');
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -363,7 +363,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           saving={remoteSaving}
           testing={remoteTesting}
           onSave={(next) => void handleSaveRemoteBridge(next)}
-          onTest={(chatId) => void handleTestFeishuApp(chatId)}
+          onTest={(botId, chatId) => void handleTestFeishuApp(botId, chatId)}
         />
       )}
 

@@ -12,6 +12,8 @@ export type {
   RemoteBridgeIngress,
   RemoteBridgePermissionMode,
   RemoteBridgeWebConfig,
+  RemoteBridgeFeishuProgressCardConfig,
+  RemoteBridgeFeishuBotConfig,
   RemoteBridgeFeishuConfig,
   RemoteBridgeConfig,
   BudgetConfig,

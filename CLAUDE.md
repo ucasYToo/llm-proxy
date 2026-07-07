@@ -92,7 +92,7 @@ Keep `cli` as the default unless a task explicitly targets custom channels. The 
 -p --output-format stream-json --verbose --include-partial-messages --include-hook-events
 ```
 
-Feishu input uses a self-built Feishu app long connection. The old webhook robot remains only a notification output channel and cannot receive user messages.
+Feishu input uses one or more self-built Feishu app long connections under `remoteBridge.feishu.bots`; each bot can bind its own `defaultCwd`. The old webhook robot remains only a notification output channel and cannot receive user messages.
 
 Feishu output behavior:
 
@@ -100,6 +100,7 @@ Feishu output behavior:
 - patch that same card with coalesced progress updates
 - send the final Claude answer as normal text
 - do not use Feishu `reply_in_thread` for remote progress or final answers
+- preserve `sourceBotId` on Feishu remote threads/messages/cards so replies are sent by the same bot that received the inbound message
 
 ## API Surface
 

@@ -133,16 +133,35 @@ export interface RemoteBridgeFeishuProgressCardConfig {
   showToolEvents?: boolean;
 }
 
-export interface RemoteBridgeFeishuConfig {
+export interface RemoteBridgeFeishuBotConfig {
+  id?: string;
+  name?: string;
   enabled?: boolean;
+  defaultCwd?: string;
   appId?: string;
   appSecret?: string;
   encryptKey?: string;
   verificationToken?: string;
-  ingress?: RemoteBridgeIngress;
   /** 可选：只允许这些飞书 open_id/user_id 触发远程对话；空数组表示不限制。 */
   allowedUserIds?: string[];
   progressCard?: RemoteBridgeFeishuProgressCardConfig;
+}
+
+export interface RemoteBridgeFeishuConfig {
+  enabled?: boolean;
+  /** @deprecated 旧版单机器人字段；会迁移到 bots[0]。 */
+  appId?: string;
+  /** @deprecated 旧版单机器人字段；会迁移到 bots[0]。 */
+  appSecret?: string;
+  /** @deprecated 旧版单机器人字段；会迁移到 bots[0]。 */
+  encryptKey?: string;
+  /** @deprecated 旧版单机器人字段；会迁移到 bots[0]。 */
+  verificationToken?: string;
+  ingress?: RemoteBridgeIngress;
+  /** @deprecated 旧版全局飞书用户白名单；会作为 bot 默认值读取。 */
+  allowedUserIds?: string[];
+  progressCard?: RemoteBridgeFeishuProgressCardConfig;
+  bots?: RemoteBridgeFeishuBotConfig[];
 }
 
 export interface RemoteBridgeConfig {

@@ -1,6 +1,10 @@
 import path from "path";
 import * as lark from "@larksuiteoapi/node-sdk";
 import { readConfig } from "../config/store";
+import type {
+  RemoteBridgeFeishuBotConfig,
+  RemoteBridgeFeishuProgressCardConfig,
+} from "../interfaces";
 import { getKnownProjects, type KnownProject } from "../core/session";
 import { recentSessions, type SessionSummary } from "../storage/hooks";
 import {
@@ -39,17 +43,106 @@ import {
   type FeishuRemoteCommand,
 } from "./feishu/parser";
 
-let wsClient: any | null = null;
-let client: lark.Client | null = null;
+interface FeishuRuntime {
+  bot: ActiveFeishuBot;
+  client: lark.Client;
+  wsClient: any;
+}
+
+type NormalizedFeishuBot = Required<Pick<RemoteBridgeFeishuBotConfig, "id" | "name">> &
+  RemoteBridgeFeishuBotConfig;
+
+type ActiveFeishuBot = NormalizedFeishuBot & {
+  appId: string;
+  appSecret: string;
+};
+
+let runtimes = new Map<string, FeishuRuntime>();
 let unregisterSender: (() => void) | null = null;
 let unregisterProgress: (() => void) | null = null;
-const PATCH_MIN_INTERVAL_MS = 1000;
+const PATCH_MIN_INTERVAL_MS = 210;
 const cardPatchFailureNotified = new Set<string>();
 const cardPatchQueues = new Map<string, Promise<RemoteMessageCard | null>>();
 const cardPatchTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+const normalizeBotId = (id: string | undefined, index: number): string => {
+  const value = id?.trim();
+  if (value && /^[a-zA-Z0-9_-]+$/.test(value)) return value;
+  return index === 0 ? "default" : `bot-${index + 1}`;
+};
+
+const configuredFeishuBots = (): NormalizedFeishuBot[] => {
+  const bridge = readConfig().remoteBridge;
+  const feishu = bridge?.feishu;
+  const bots =
+    Array.isArray(feishu?.bots) && feishu.bots.length > 0
+      ? feishu.bots
+      : feishu?.appId || feishu?.appSecret
+        ? [
+            {
+              id: "default",
+              name: "默认机器人",
+              enabled: true,
+              defaultCwd: bridge?.defaultCwd,
+              appId: feishu.appId,
+              appSecret: feishu.appSecret,
+              encryptKey: feishu.encryptKey,
+              verificationToken: feishu.verificationToken,
+              allowedUserIds: feishu.allowedUserIds,
+              progressCard: feishu.progressCard,
+            },
+          ]
+        : [];
+  return bots.map((bot, index) => ({
+    ...bot,
+    id: normalizeBotId(bot.id, index),
+    name: bot.name?.trim() || (index === 0 ? "默认机器人" : `机器人 ${index + 1}`),
+    enabled: bot.enabled ?? true,
+  }));
+};
+
+const activeFeishuBots = (): ActiveFeishuBot[] =>
+  configuredFeishuBots()
+    .filter((bot) => bot.enabled && !!bot.appId && !!bot.appSecret)
+    .map((bot) => ({
+      ...bot,
+      appId: bot.appId ?? "",
+      appSecret: bot.appSecret ?? "",
+    }));
+
+const runtimeForBot = (botId?: string | null): FeishuRuntime | null => {
+  if (botId) return runtimes.get(botId) ?? null;
+  return runtimes.values().next().value ?? null;
+};
+
+const progressCardConfig = (
+  botId?: string | null,
+): Required<RemoteBridgeFeishuProgressCardConfig> => {
+  const feishu = readConfig().remoteBridge?.feishu;
+  const globalCfg = feishu?.progressCard;
+  const botCfg = configuredFeishuBots().find((bot) => bot.id === botId)?.progressCard;
+  const cfg = { ...(globalCfg ?? {}), ...(botCfg ?? {}) };
+  return {
+    enabled: cfg.enabled ?? true,
+    showPartialAnswer: cfg.showPartialAnswer ?? true,
+    showToolEvents: cfg.showToolEvents ?? true,
+  };
+};
+
+const allowedUsersForBot = (botId: string): string[] => {
+  const feishu = readConfig().remoteBridge?.feishu;
+  const bot = configuredFeishuBots().find((item) => item.id === botId);
+  return bot?.allowedUserIds ?? feishu?.allowedUserIds ?? [];
+};
+
+const defaultCwdForBot = (botId?: string | null): string | null => {
+  const cfg = readConfig().remoteBridge;
+  const bot = configuredFeishuBots().find((item) => item.id === botId);
+  return bot?.defaultCwd?.trim() || cfg?.defaultCwd || null;
+};
 
 const textWithoutBotMention = (text: string): string =>
   text.replace(/@\S+\s*/g, "").trim();
@@ -74,13 +167,16 @@ const shouldHandleGroupMessage = (message: Record<string, any>): boolean => {
   return !!message.parent_id || !!message.root_id;
 };
 
-const resolveCwdFromAlias = (raw: string | undefined): string | null => {
+const resolveCwdFromAlias = (
+  raw: string | undefined,
+  botId?: string | null,
+): string | null => {
   const cfg = readConfig().remoteBridge;
-  if (!raw) return cfg?.defaultCwd ?? process.cwd();
+  if (!raw) return defaultCwdForBot(botId) ?? process.cwd();
   if (path.isAbsolute(raw)) return raw;
   const allowed = cfg?.allowedCwds ?? [];
   const found = allowed.find((cwd) => path.basename(cwd) === raw || cwd === raw);
-  return found ?? cfg?.defaultCwd ?? null;
+  return found ?? defaultCwdForBot(botId);
 };
 
 const matchesProjectAlias = (project: KnownProject, value: string): boolean =>
@@ -88,14 +184,18 @@ const matchesProjectAlias = (project: KnownProject, value: string): boolean =>
   path.basename(project.cwd) === value ||
   project.remark === value;
 
-const resolveCwdFromAliasStrict = (raw: string | undefined): string | null => {
+const resolveCwdFromAliasStrict = (
+  raw: string | undefined,
+  botId?: string | null,
+): string | null => {
   const value = raw?.trim();
   if (!value) return null;
   if (path.isAbsolute(value)) return value;
   const cfg = readConfig().remoteBridge;
+  const botDefaultCwd = defaultCwdForBot(botId);
   const candidates = [
     ...(cfg?.allowedCwds ?? []),
-    ...(cfg?.defaultCwd ? [cfg.defaultCwd] : []),
+    ...(botDefaultCwd ? [botDefaultCwd] : []),
   ];
   const configured = candidates.find((cwd) => path.basename(cwd) === value || cwd === value);
   if (configured) return configured;
@@ -115,13 +215,14 @@ const splitFirstToken = (
 
 const resolveNewCommandInput = (
   input: string,
+  botId?: string | null,
 ): { cwd: string | null | undefined; text: string } => {
   const parts = splitFirstToken(input);
   if (parts?.rest) {
-    const cwd = resolveCwdFromAliasStrict(parts.first);
+    const cwd = resolveCwdFromAliasStrict(parts.first, botId);
     if (cwd) return { cwd, text: parts.rest };
   }
-  return { cwd: resolveCwdFromAlias(undefined), text: input.trim() };
+  return { cwd: resolveCwdFromAlias(undefined, botId), text: input.trim() };
 };
 
 const formatThreadLine = (thread: RemoteThread): string => {
@@ -153,6 +254,27 @@ const relativeTime = (iso: string | null): string => {
   return `${days}d前`;
 };
 
+const TABLE_VISIBLE_COUNT = 10;
+
+const threadStatusLabel = (status: RemoteThread["status"]): string => {
+  switch (status) {
+    case "pending":
+      return "待处理";
+    case "queued":
+      return "排队";
+    case "running":
+      return "运行中";
+    case "waiting_permission":
+      return "待审批";
+    case "done":
+      return "完成";
+    case "failed":
+      return "失败";
+    default:
+      return status;
+  }
+};
+
 const buildHelpText = (): string =>
   [
     "Claude Code 远程助手",
@@ -182,10 +304,16 @@ const buildHelpText = (): string =>
     "兼容：以上命令也可以写成 /cc ...",
   ].join("\n");
 
-const buildProjectsText = (): string => {
+interface ProjectListResult {
+  projects: KnownProject[];
+  defaultCwd: string;
+  allowedCwds: string[];
+}
+
+const listRemoteProjects = (botId?: string): ProjectListResult => {
   const cfg = readConfig().remoteBridge;
   const allowed = cfg?.allowedCwds ?? [];
-  const defaultCwd = cfg?.defaultCwd ?? process.cwd();
+  const defaultCwd = defaultCwdForBot(botId) ?? process.cwd();
   const knownProjects = getKnownProjects();
   const projectMap = new Map<string, KnownProject>();
   for (const project of knownProjects) projectMap.set(project.cwd, project);
@@ -212,7 +340,21 @@ const buildProjectsText = (): string => {
     if (aDefault !== bDefault) return bDefault - aDefault;
     return Date.parse(b.lastSeen) - Date.parse(a.lastSeen);
   });
+  return { projects, defaultCwd, allowedCwds: allowed };
+};
 
+const projectSourceLabel = (
+  project: KnownProject,
+  defaultCwd: string,
+  allowedCwds: string[],
+): string => {
+  if (project.cwd === defaultCwd) return "默认";
+  if (allowedCwds.includes(project.cwd)) return "固定";
+  return "最近";
+};
+
+const buildProjectsText = (botId?: string): string => {
+  const { projects, defaultCwd, allowedCwds } = listRemoteProjects(botId);
   const lines = ["项目列表"];
   lines.push(`默认：${path.basename(defaultCwd)} — ${defaultCwd}`);
   if (projects.length === 0) {
@@ -220,7 +362,7 @@ const buildProjectsText = (): string => {
   } else {
     for (const project of projects.slice(0, 30)) {
       const alias = project.remark?.trim() || path.basename(project.cwd);
-      const marker = project.cwd === defaultCwd ? "默认" : "项目";
+      const marker = projectSourceLabel(project, defaultCwd, allowedCwds);
       const remark = project.remark?.trim() ? `（备注：${project.remark.trim()}）` : "";
       lines.push(`${marker} · ${alias} — ${project.cwd}${remark}`);
     }
@@ -230,10 +372,108 @@ const buildProjectsText = (): string => {
   }
   lines.push("");
   lines.push("用法：/new <项目别名或备注> <prompt> 或 /new <prompt>");
-  if (allowed.length > 0) {
+  if (allowedCwds.length > 0) {
     lines.push("补充 allowedCwds 仍可用于启动未出现在项目列表里的固定目录。");
   }
   return lines.join("\n");
+};
+
+const buildProjectsCard = (botId?: string): Record<string, unknown> => {
+  const { projects, defaultCwd, allowedCwds } = listRemoteProjects(botId);
+  const visibleProjects = projects.slice(0, TABLE_VISIBLE_COUNT);
+  const elements: Array<Record<string, unknown>> = [
+    {
+      tag: "div",
+      text: plainText(`默认：${path.basename(defaultCwd)} · ${defaultCwd}`),
+    },
+  ];
+
+  if (projects.length === 0) {
+    elements.push({
+      tag: "div",
+      text: plainText("暂无项目记录。先在 Dashboard 或 Claude Code 中运行一次项目。"),
+    });
+  } else {
+    elements.push({
+      tag: "table",
+      page_size: TABLE_VISIBLE_COUNT,
+      row_height: "low",
+      freeze_first_column: true,
+      header_style: {
+        text_align: "left",
+        text_size: "normal",
+        background_style: "none",
+        text_color: "grey",
+        bold: true,
+        lines: 1,
+      },
+      columns: [
+        {
+          name: "alias",
+          display_name: "项目",
+          data_type: "text",
+          width: "150px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "source",
+          display_name: "来源",
+          data_type: "text",
+          width: "70px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "cwd",
+          display_name: "路径",
+          data_type: "text",
+          width: "260px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "seen",
+          display_name: "最近",
+          data_type: "text",
+          width: "80px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+      ],
+      rows: visibleProjects.map((project) => ({
+        alias: compactText(project.remark?.trim() || path.basename(project.cwd), 18),
+        source: projectSourceLabel(project, defaultCwd, allowedCwds),
+        cwd: compactText(project.cwd, 38),
+        seen: relativeTime(project.lastSeen),
+      })),
+    });
+  }
+
+  if (projects.length > TABLE_VISIBLE_COUNT) {
+    elements.push({
+      tag: "div",
+      text: plainText(`还有 ${projects.length - TABLE_VISIBLE_COUNT} 个项目未显示，请到 Dashboard 项目页查看。`),
+    });
+  }
+  elements.push({
+    tag: "div",
+    text: plainText("用法：/new <项目别名或备注> <prompt> · /new <prompt>"),
+  });
+
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    header: {
+      template: "grey",
+      title: {
+        tag: "plain_text",
+        content: "项目列表",
+      },
+    },
+    elements,
+  };
 };
 
 const shortSessionId = (sessionId: string): string => sessionId.slice(0, 8);
@@ -244,6 +484,34 @@ const sessionProjectName = (session: SessionSummary): string =>
 
 const sessionTitle = (session: SessionSummary): string =>
   session.title?.trim() || session.lastEventName || "无标题";
+
+const sessionItemTitleText = (session: SessionSummary): string =>
+  session.title?.trim() || shortSessionId(session.sessionId);
+
+const sessionLastEventText = (session: SessionSummary): string =>
+  session.lastEventName?.trim() || "—";
+
+const sessionLastReplyText = (session: SessionSummary): string | null => {
+  const value = session.lastAssistantMessage?.trim();
+  return value ? value : null;
+};
+
+const compactText = (value: string, max: number): string =>
+  truncateText(value.replace(/\s+/g, " ").trim(), max);
+
+const SESSION_LIST_VISIBLE_COUNT = 10;
+
+const plainText = (content: string): Record<string, string> => ({
+  tag: "plain_text",
+  content,
+});
+
+const sessionSummaryText = (session: SessionSummary): string => {
+  const lastReply = sessionLastReplyText(session);
+  return lastReply
+    ? compactText(lastReply, 10)
+    : compactText(sessionLastEventText(session), 16);
+};
 
 const normalizeSessionTarget = (target: string): string =>
   target.trim().replace(/^#/, "").replace(/^session[:：]?/i, "");
@@ -293,20 +561,23 @@ const resolveLocalSession = (
   return { session: null, error: `找不到本地 Claude session：${target}` };
 };
 
+interface FeishuContext {
+  botId: string;
+  chatId: string;
+  senderId: string | null;
+  sourceThreadId: string;
+}
+
 const attachLocalSessionToFeishu = (
   target: string,
-  context: {
-    chatId: string;
-    senderId: string | null;
-    sourceThreadId: string;
-  },
+  context: FeishuContext,
 ): { thread: RemoteThread | null; session: SessionSummary | null; error: string | null } => {
   const resolved = resolveLocalSession(target);
   if (!resolved.session) {
     return { thread: null, session: null, error: resolved.error };
   }
   const session = resolved.session;
-  const cwd = session.cwd ?? readConfig().remoteBridge?.defaultCwd ?? null;
+  const cwd = session.cwd ?? defaultCwdForBot(context.botId);
   if (!cwd) {
     return {
       thread: null,
@@ -322,6 +593,7 @@ const attachLocalSessionToFeishu = (
     sourceThreadId: context.sourceThreadId,
     sourceChatId: context.chatId,
     sourceUserId: context.senderId,
+    sourceBotId: context.botId,
   });
   return { thread, session, error: null };
 };
@@ -337,13 +609,15 @@ const buildSessionsText = (filter?: string): string => {
     lines.push("暂无可用本地会话。先在本机 Claude Code 里产生 hook 记录。");
     return lines.join("\n");
   }
-  for (const session of sessions.slice(0, 12)) {
-    lines.push(
-      `${shortSessionId(session.sessionId)} · ${sessionProjectName(session)} · ${relativeTime(session.lastEventAt)} · ${truncateText(sessionTitle(session).replace(/\s+/g, " "), 40)}`,
-    );
+  for (const session of sessions.slice(0, SESSION_LIST_VISIBLE_COUNT)) {
+    lines.push([
+      `${shortSessionId(session.sessionId)} · ${sessionProjectName(session)} · ${relativeTime(session.lastEventAt)}`,
+      compactText(sessionItemTitleText(session), 22),
+      sessionSummaryText(session),
+    ].join(" · "));
   }
-  if (sessions.length > 12) {
-    lines.push(`还有 ${sessions.length - 12} 个会话未显示，可用 /sessions <项目> 过滤。`);
+  if (sessions.length > SESSION_LIST_VISIBLE_COUNT) {
+    lines.push(`还有 ${sessions.length - SESSION_LIST_VISIBLE_COUNT} 个会话未显示，可用 /sessions <项目> 过滤。`);
   }
   lines.push("");
   lines.push("用法：/use-session <session前缀> 绑定后，普通消息会继续这个本地会话。");
@@ -351,13 +625,116 @@ const buildSessionsText = (filter?: string): string => {
   return lines.join("\n");
 };
 
+const buildSessionsCard = (filter?: string): Record<string, unknown> => {
+  const sessions = listLocalSessions(filter);
+  const title = filter?.trim()
+    ? `最近本地 Claude 会话 · ${filter.trim()}`
+    : "最近本地 Claude 会话";
+  const visibleSessions = sessions.slice(0, SESSION_LIST_VISIBLE_COUNT);
+  const elements: Array<Record<string, unknown>> = [];
+
+  if (sessions.length === 0) {
+    elements.push({
+      tag: "div",
+      text: plainText("暂无可用本地会话。先在本机 Claude Code 里产生 hook 记录。"),
+    });
+  } else {
+    elements.push({
+      tag: "table",
+      page_size: SESSION_LIST_VISIBLE_COUNT,
+      row_height: "low",
+      freeze_first_column: true,
+      header_style: {
+        text_align: "left",
+        text_size: "normal",
+        background_style: "none",
+        text_color: "grey",
+        bold: true,
+        lines: 1,
+      },
+      columns: [
+        {
+          name: "sid",
+          display_name: "会话",
+          data_type: "text",
+          width: "90px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "project",
+          display_name: "项目",
+          data_type: "text",
+          width: "110px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "time",
+          display_name: "时间",
+          data_type: "text",
+          width: "80px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "title",
+          display_name: "标题",
+          data_type: "text",
+          width: "180px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "summary",
+          display_name: "最后回复",
+          data_type: "text",
+          width: "150px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+      ],
+      rows: visibleSessions.map((session) => ({
+        sid: shortSessionId(session.sessionId),
+        project: sessionProjectName(session),
+        time: relativeTime(session.lastEventAt),
+        title: compactText(sessionItemTitleText(session), 22),
+        summary: sessionSummaryText(session),
+      })),
+    });
+  }
+
+  if (sessions.length > SESSION_LIST_VISIBLE_COUNT) {
+    elements.push({
+      tag: "div",
+      text: plainText(
+        `还有 ${sessions.length - SESSION_LIST_VISIBLE_COUNT} 个会话未显示，可用 /sessions <项目> 过滤。`,
+      ),
+    });
+  }
+  elements.push({
+    tag: "div",
+    text: plainText("用法：/use-session <session前缀> · /continue-session <session前缀> <任务>"),
+  });
+
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    header: {
+      template: "grey",
+      title: {
+        tag: "plain_text",
+        content: title,
+      },
+    },
+    elements,
+  };
+};
+
 const buildUseSessionText = (
   target: string,
-  context: {
-    chatId: string;
-    senderId: string | null;
-    sourceThreadId: string;
-  },
+  context: FeishuContext,
 ): string => {
   const result = attachLocalSessionToFeishu(target, context);
   if (!result.thread || !result.session) {
@@ -373,24 +750,19 @@ const buildUseSessionText = (
 
 const isThreadVisibleToSource = (
   thread: RemoteThread,
-  context: {
-    chatId: string;
-    senderId: string | null;
-  },
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
 ): boolean => {
   if (thread.source !== "feishu") return false;
+  if (thread.sourceBotId && thread.sourceBotId !== context.botId) return false;
   if (thread.sourceChatId && thread.sourceChatId !== context.chatId) return false;
   if (thread.sourceUserId && thread.sourceUserId !== context.senderId) return false;
   return true;
 };
 
-const findActiveThreadForSource = (context: {
-  chatId: string;
-  senderId: string | null;
-  sourceThreadId: string;
-}): RemoteThread | null => {
+const findActiveThreadForSource = (context: FeishuContext): RemoteThread | null => {
   const exact = findLatestRemoteThreadForSource({
     source: "feishu",
+    sourceBotId: context.botId,
     sourceThreadId: context.sourceThreadId,
     sourceChatId: context.chatId,
     sourceUserId: context.senderId,
@@ -398,6 +770,7 @@ const findActiveThreadForSource = (context: {
   if (exact) return exact;
   return findLatestRemoteThreadForSource({
     source: "feishu",
+    sourceBotId: context.botId,
     sourceChatId: context.chatId,
     sourceUserId: context.senderId,
   });
@@ -405,10 +778,7 @@ const findActiveThreadForSource = (context: {
 
 const findVisibleThreadByTarget = (
   target: string,
-  context: {
-    chatId: string;
-    senderId: string | null;
-  },
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
 ): RemoteThread | null => {
   const thread = getRemoteThread(normalizeThreadTarget(target));
   if (!thread || !isThreadVisibleToSource(thread, context)) return null;
@@ -416,10 +786,7 @@ const findVisibleThreadByTarget = (
 };
 
 const listVisibleThreads = (
-  context: {
-    chatId: string;
-    senderId: string | null;
-  },
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
   limit = 10,
 ): RemoteThread[] =>
   queryRemoteThreads({ source: "feishu", limit: 80 }).threads
@@ -455,12 +822,7 @@ const buildThreadDetailText = (thread: RemoteThread): string => {
   return lines.join("\n");
 };
 
-const buildStatusText = (context: {
-  chatId: string;
-  senderId: string | null;
-  sourceThreadId: string;
-  target?: string;
-}): string => {
+const buildStatusText = (context: FeishuContext & { target?: string }): string => {
   if (context.target) {
     const thread = findVisibleThreadByTarget(context.target, context);
     return thread
@@ -484,15 +846,9 @@ const buildStatusText = (context: {
   return lines.join("\n");
 };
 
-const buildThreadsText = (
-  filter: string | undefined,
-  context: {
-    chatId: string;
-    senderId: string | null;
-  },
-): string => {
+const parseThreadStatusFilter = (filter: string | undefined): RemoteThread["status"] | null => {
   const normalized = filter?.trim().toLowerCase();
-  const validStatuses = new Set([
+  const validStatuses = new Set<RemoteThread["status"]>([
     "pending",
     "queued",
     "running",
@@ -500,31 +856,158 @@ const buildThreadsText = (
     "done",
     "failed",
   ]);
-  const statusFilter = normalized && validStatuses.has(normalized) ? normalized : null;
-  const threads = listVisibleThreads(context, 12).filter((thread) =>
+  return normalized && validStatuses.has(normalized as RemoteThread["status"])
+    ? (normalized as RemoteThread["status"])
+    : null;
+};
+
+const listThreadsForDisplay = (
+  filter: string | undefined,
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
+  limit = 30,
+): { statusFilter: RemoteThread["status"] | null; threads: RemoteThread[] } => {
+  const statusFilter = parseThreadStatusFilter(filter);
+  const threads = listVisibleThreads(context, limit).filter((thread) =>
     statusFilter ? thread.status === statusFilter : true,
   );
+  return { statusFilter, threads };
+};
+
+const buildThreadsText = (
+  filter: string | undefined,
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
+): string => {
+  const { statusFilter, threads } = listThreadsForDisplay(filter, context, 30);
   const lines = [
-    statusFilter ? `最近远程对话 · ${statusFilter}` : "最近远程对话",
+    statusFilter ? `最近远程对话 · ${threadStatusLabel(statusFilter)}` : "最近远程对话",
   ];
   if (threads.length === 0) {
     lines.push("暂无可见远程对话。用 /new <项目> <任务> 新建一个。");
     return lines.join("\n");
   }
-  for (const thread of threads) {
+  for (const thread of threads.slice(0, TABLE_VISIBLE_COUNT)) {
     lines.push(`${formatThreadLine(thread)} · ${relativeTime(thread.updatedAt)}`);
+  }
+  if (threads.length > TABLE_VISIBLE_COUNT) {
+    lines.push(`还有 ${threads.length - TABLE_VISIBLE_COUNT} 个对话未显示，可用 /threads <状态> 过滤。`);
   }
   lines.push("", "用法：/use <threadId> 切换默认对话，/show <threadId> 查看详情。");
   return lines.join("\n");
 };
 
+const buildThreadsCard = (
+  filter: string | undefined,
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
+): Record<string, unknown> => {
+  const { statusFilter, threads } = listThreadsForDisplay(filter, context, 30);
+  const visibleThreads = threads.slice(0, TABLE_VISIBLE_COUNT);
+  const elements: Array<Record<string, unknown>> = [];
+
+  if (threads.length === 0) {
+    elements.push({
+      tag: "div",
+      text: plainText("暂无可见远程对话。用 /new <项目> <任务> 新建一个。"),
+    });
+  } else {
+    elements.push({
+      tag: "table",
+      page_size: TABLE_VISIBLE_COUNT,
+      row_height: "low",
+      freeze_first_column: true,
+      header_style: {
+        text_align: "left",
+        text_size: "normal",
+        background_style: "none",
+        text_color: "grey",
+        bold: true,
+        lines: 1,
+      },
+      columns: [
+        {
+          name: "thread",
+          display_name: "对话",
+          data_type: "text",
+          width: "90px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "status",
+          display_name: "状态",
+          data_type: "text",
+          width: "80px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "project",
+          display_name: "项目",
+          data_type: "text",
+          width: "120px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "updated",
+          display_name: "更新",
+          data_type: "text",
+          width: "80px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+        {
+          name: "title",
+          display_name: "标题",
+          data_type: "text",
+          width: "220px",
+          vertical_align: "top",
+          horizontal_align: "left",
+        },
+      ],
+      rows: visibleThreads.map((thread) => ({
+        thread: `#${thread.shortId}`,
+        status: threadStatusLabel(thread.status),
+        project: thread.cwd ? compactText(path.basename(thread.cwd), 16) : "unknown",
+        updated: relativeTime(thread.updatedAt),
+        title: compactText(
+          thread.title?.trim() || thread.cwd || thread.id,
+          28,
+        ),
+      })),
+    });
+  }
+
+  if (threads.length > TABLE_VISIBLE_COUNT) {
+    elements.push({
+      tag: "div",
+      text: plainText(`还有 ${threads.length - TABLE_VISIBLE_COUNT} 个对话未显示，可用 /threads <状态> 过滤。`),
+    });
+  }
+  elements.push({
+    tag: "div",
+    text: plainText("用法：/use <threadId> 切换默认对话 · /show <threadId> 查看详情"),
+  });
+
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    header: {
+      template: "grey",
+      title: {
+        tag: "plain_text",
+        content: statusFilter
+          ? `最近远程对话 · ${threadStatusLabel(statusFilter)}`
+          : "最近远程对话",
+      },
+    },
+    elements,
+  };
+};
+
 const buildUseThreadText = (
   target: string,
-  context: {
-    chatId: string;
-    senderId: string | null;
-    sourceThreadId: string;
-  },
+  context: FeishuContext,
 ): string => {
   const thread = findVisibleThreadByTarget(target, context);
   if (!thread) {
@@ -534,16 +1017,14 @@ const buildUseThreadText = (
     sourceThreadId: context.sourceThreadId,
     sourceChatId: context.chatId,
     sourceUserId: context.senderId,
+    sourceBotId: context.botId,
   });
   return `已切换当前聊天默认对话：${formatThreadLine(updated ?? thread)}`;
 };
 
 const buildShowThreadText = (
   target: string,
-  context: {
-    chatId: string;
-    senderId: string | null;
-  },
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
 ): string => {
   const thread = findVisibleThreadByTarget(target, context);
   return thread ? buildThreadDetailText(thread) : `找不到远程对话：${target}`;
@@ -551,11 +1032,7 @@ const buildShowThreadText = (
 
 const buildStopThreadText = (
   target: string | undefined,
-  context: {
-    chatId: string;
-    senderId: string | null;
-    sourceThreadId: string;
-  },
+  context: FeishuContext,
 ): string => {
   const thread = target
     ? findVisibleThreadByTarget(target, context)
@@ -578,17 +1055,13 @@ const buildUnknownCommandText = (name: string): string =>
 
 const commandToDirectReply = (
   command: FeishuRemoteCommand,
-  context: {
-    chatId: string;
-    senderId: string | null;
-    sourceThreadId: string;
-  },
+  context: FeishuContext,
 ): string | null => {
   switch (command.kind) {
     case "help":
       return buildHelpText();
     case "projects":
-      return buildProjectsText();
+      return buildProjectsText(context.botId);
     case "sessions":
       return buildSessionsText(command.filter);
     case "useSession":
@@ -613,12 +1086,14 @@ const commandToDirectReply = (
 };
 
 const sendFeishuText = async (
+  botId: string | null | undefined,
   chatId: string,
   text: string,
 ): Promise<void> => {
-  if (!client) return;
+  const runtime = runtimeForBot(botId);
+  if (!runtime) return;
   const content = JSON.stringify({ text });
-  await client.im.message.create({
+  await runtime.client.im.message.create({
     params: { receive_id_type: "chat_id" },
     data: {
       receive_id: chatId,
@@ -626,15 +1101,6 @@ const sendFeishuText = async (
       content,
     },
   });
-};
-
-const progressCardConfig = () => {
-  const cfg = readConfig().remoteBridge?.feishu?.progressCard;
-  return {
-    enabled: cfg?.enabled ?? true,
-    showPartialAnswer: cfg?.showPartialAnswer ?? true,
-    showToolEvents: cfg?.showToolEvents ?? true,
-  };
 };
 
 const assertFeishuOk = (
@@ -672,12 +1138,15 @@ const describeFeishuError = (err: unknown): string => {
 };
 
 const sendFeishuCard = async (input: {
+  botId?: string | null;
   chatId: string;
   card: Record<string, unknown>;
+  action?: string;
 }): Promise<string | null> => {
-  if (!client) return null;
+  const runtime = runtimeForBot(input.botId);
+  if (!runtime) return null;
   const content = JSON.stringify(input.card);
-  const result = await client.im.message.create({
+  const result = await runtime.client.im.message.create({
     params: { receive_id_type: "chat_id" },
     data: {
       receive_id: input.chatId,
@@ -685,16 +1154,77 @@ const sendFeishuCard = async (input: {
       content,
     },
   });
-  assertFeishuOk(result, "send progress card");
+  assertFeishuOk(result, input.action ?? "send card");
   return result.data?.message_id ?? null;
 };
 
+const sendCommandCard = async (input: {
+  botId: string | null | undefined;
+  chatId: string;
+  card: Record<string, unknown>;
+  fallbackText: string;
+  action: string;
+}): Promise<void> => {
+  try {
+    await sendFeishuCard({
+      botId: input.botId,
+      chatId: input.chatId,
+      card: input.card,
+      action: input.action,
+    });
+  } catch (err) {
+    console.warn(`[feishu] ${input.action} failed: ${describeFeishuError(err)}`);
+    await sendFeishuText(input.botId, input.chatId, input.fallbackText);
+  }
+};
+
+const sendProjectsCard = async (
+  botId: string | null | undefined,
+  chatId: string,
+): Promise<void> =>
+  sendCommandCard({
+    botId,
+    chatId,
+    card: buildProjectsCard(botId ?? undefined),
+    fallbackText: buildProjectsText(botId ?? undefined),
+    action: "send projects card",
+  });
+
+const sendSessionsCard = async (
+  botId: string | null | undefined,
+  chatId: string,
+  filter?: string,
+): Promise<void> =>
+  sendCommandCard({
+    botId,
+    chatId,
+    card: buildSessionsCard(filter),
+    fallbackText: buildSessionsText(filter),
+    action: "send sessions card",
+  });
+
+const sendThreadsCard = async (
+  botId: string | null | undefined,
+  chatId: string,
+  context: Pick<FeishuContext, "botId" | "chatId" | "senderId">,
+  filter?: string,
+): Promise<void> =>
+  sendCommandCard({
+    botId,
+    chatId,
+    card: buildThreadsCard(filter, context),
+    fallbackText: buildThreadsText(filter, context),
+    action: "send threads card",
+  });
+
 const patchFeishuCard = async (
+  botId: string | null | undefined,
   providerMessageId: string,
   card: Record<string, unknown>,
 ): Promise<void> => {
-  if (!client) return;
-  const result = await client.im.v1.message.patch({
+  const runtime = runtimeForBot(botId);
+  if (!runtime) return;
+  const result = await runtime.client.im.v1.message.patch({
     path: { message_id: providerMessageId },
     data: { content: JSON.stringify(card) },
   });
@@ -794,8 +1324,9 @@ const patchStoredProgressCard = async (
 
     try {
       await patchFeishuCard(
+        latest.sourceBotId,
         latest.providerMessageId,
-        buildFeishuProgressCard(snapshot, progressCardConfig()),
+        buildFeishuProgressCard(snapshot, progressCardConfig(latest.sourceBotId)),
       );
       const updated = updateRemoteMessageCard(latest.id, {
         status: snapshot.status,
@@ -811,6 +1342,7 @@ const patchStoredProgressCard = async (
       if (!cardPatchFailureNotified.has(latest.id) && !latest.error && latest.chatId) {
         cardPatchFailureNotified.add(latest.id);
         await sendFeishuText(
+          latest.sourceBotId,
           latest.chatId,
           `进度卡片更新失败，后续将降级为文本：${error}`,
         );
@@ -821,6 +1353,7 @@ const patchStoredProgressCard = async (
 };
 
 const sendFinalReplyText = async (
+  botId: string | null | undefined,
   chatId: string,
   thread: RemoteThread,
   text: string,
@@ -832,16 +1365,17 @@ const sendFinalReplyText = async (
       chunks.length > 1
         ? `#${thread.shortId} 回复 ${i + 1}/${chunks.length}\n${chunks[i]}`
         : chunks[i];
-    await sendFeishuText(chatId, body);
+    await sendFeishuText(botId, chatId, body);
   }
 };
 
 const createProgressCardForInbound = async (input: {
   thread: RemoteThread;
   message: RemoteMessage;
+  botId: string | null;
   chatId: string;
 }): Promise<void> => {
-  if (!progressCardConfig().enabled) return;
+  if (!progressCardConfig(input.botId).enabled) return;
   if (getRemoteMessageCardByInbound(input.message.id)) return;
   const ts = new Date().toISOString();
   const snapshot =
@@ -870,6 +1404,7 @@ const createProgressCardForInbound = async (input: {
     threadId: input.thread.id,
     inboundMessageId: input.message.id,
     provider: "feishu",
+    sourceBotId: input.botId,
     chatId: input.chatId,
     status: snapshot.status,
     lastSnapshot: snapshot,
@@ -877,8 +1412,9 @@ const createProgressCardForInbound = async (input: {
 
   try {
     const providerMessageId = await sendFeishuCard({
+      botId: input.botId,
       chatId: input.chatId,
-      card: buildFeishuProgressCard(snapshot, progressCardConfig()),
+      card: buildFeishuProgressCard(snapshot, progressCardConfig(input.botId)),
     });
     card =
       updateRemoteMessageCard(card.id, {
@@ -894,6 +1430,7 @@ const createProgressCardForInbound = async (input: {
     const error = err instanceof Error ? err.message : String(err);
     updateRemoteMessageCard(card.id, { error, status: "failed" });
     await sendFeishuText(
+      input.botId,
       input.chatId,
       `已开始执行，但进度卡片发送失败 · #${input.thread.shortId}\n${error}`,
     );
@@ -903,22 +1440,22 @@ const createProgressCardForInbound = async (input: {
 const handleRemoteProgress = async (
   snapshot: RemoteProgressSnapshot,
 ): Promise<void> => {
-  if (snapshot.source !== "feishu" || !progressCardConfig().enabled) return;
+  if (snapshot.source !== "feishu") return;
   const card = getRemoteMessageCardByInbound(snapshot.inboundMessageId);
   if (!card) return;
+  if (!progressCardConfig(card.sourceBotId).enabled) return;
   await patchStoredProgressCard(card, snapshot);
 };
 
 const handleFeishuText = async (
   event: Record<string, any>,
+  botId: string,
 ): Promise<void> => {
   const message = event.message ?? {};
   if (!shouldHandleGroupMessage(message)) return;
 
-  const cfg = readConfig().remoteBridge;
-  const feishuCfg = cfg?.feishu;
   const senderId = pickSenderId(event);
-  const allowed = feishuCfg?.allowedUserIds ?? [];
+  const allowed = allowedUsersForBot(botId);
   if (allowed.length > 0 && (!senderId || !allowed.includes(senderId))) {
     return;
   }
@@ -937,16 +1474,19 @@ const handleFeishuText = async (
         behavior: permission.behavior,
         source: {
           source: "feishu",
+          sourceBotId: botId,
           sourceChatId: chatId,
           sourceUserId: senderId,
         },
       });
       await sendFeishuText(
+        botId,
         chatId,
         `已记录审批：${permission.behavior} ${permission.requestId}`,
       );
     } catch (err) {
       await sendFeishuText(
+        botId,
         chatId,
         `审批处理失败：${err instanceof Error ? err.message : String(err)}`,
       );
@@ -956,27 +1496,41 @@ const handleFeishuText = async (
 
   let mode: "new" | "continue" = "continue";
   let threadId: string | undefined;
-  let cwd: string | null | undefined;
+  let cwd: string | null | undefined = defaultCwdForBot(botId);
   let claudeSessionId: string | null | undefined;
 
   const sourceThreadId =
     (message.root_id as string | undefined) ??
     (message.parent_id as string | undefined) ??
     chatId;
+  const context: FeishuContext = {
+    botId,
+    chatId,
+    senderId,
+    sourceThreadId,
+  };
 
   const command = parseFeishuRemoteCommand(text);
   if (command) {
-    const reply = commandToDirectReply(command, {
-      chatId,
-      senderId,
-      sourceThreadId,
-    });
+    if (command.kind === "projects") {
+      await sendProjectsCard(botId, chatId);
+      return;
+    }
+    if (command.kind === "sessions") {
+      await sendSessionsCard(botId, chatId, command.filter);
+      return;
+    }
+    if (command.kind === "threads") {
+      await sendThreadsCard(botId, chatId, context, command.filter);
+      return;
+    }
+    const reply = commandToDirectReply(command, context);
     if (reply) {
-      await sendFeishuText(chatId, reply);
+      await sendFeishuText(botId, chatId, reply);
       return;
     }
     if (command.kind === "new") {
-      const resolved = resolveNewCommandInput(command.input);
+      const resolved = resolveNewCommandInput(command.input, botId);
       mode = "new";
       cwd = resolved.cwd;
       text = resolved.text;
@@ -985,13 +1539,10 @@ const handleFeishuText = async (
       threadId = command.threadId;
       text = command.prompt;
     } else if (command.kind === "continueSession") {
-      const attached = attachLocalSessionToFeishu(command.target, {
-        chatId,
-        senderId,
-        sourceThreadId,
-      });
+      const attached = attachLocalSessionToFeishu(command.target, context);
       if (!attached.thread || !attached.session) {
         await sendFeishuText(
+          botId,
           chatId,
           attached.error ?? `无法继续本地 session：${command.target}`,
         );
@@ -1009,6 +1560,7 @@ const handleFeishuText = async (
   try {
     result = sendRemoteMessage({
       source: "feishu",
+      sourceBotId: botId,
       mode,
       threadId,
       cwd,
@@ -1022,22 +1574,25 @@ const handleFeishuText = async (
     });
   } catch (err) {
     await sendFeishuText(
+      botId,
       chatId,
       `远程消息发送失败：${err instanceof Error ? err.message : String(err)}`,
     );
     return;
   }
 
-  if (progressCardConfig().enabled) {
+  if (progressCardConfig(botId).enabled) {
     await createProgressCardForInbound({
       thread: result.thread,
       message: result.message,
+      botId,
       chatId,
     });
     return;
   }
 
   await sendFeishuText(
+    botId,
     chatId,
     result.dispatched
       ? `已开始执行，等待 Claude 回复 · #${result.thread.shortId}`
@@ -1057,13 +1612,14 @@ const sendOutboundToFeishu = async (
     if (finalTextSent) return;
     finalTextSent = true;
     await sendFinalReplyText(
+      thread.sourceBotId,
       thread.sourceChatId ?? "",
       thread,
       message.text,
     );
   };
 
-  if (progressCardConfig().enabled) {
+  if (progressCardConfig(thread.sourceBotId).enabled) {
     const card = getLatestRemoteMessageCardForThread(thread.id);
     if (card?.providerMessageId) {
       const baseSnapshot =
@@ -1095,36 +1651,42 @@ const sendOutboundToFeishu = async (
 export const startFeishuRemoteBridge = (): void => {
   const config = readConfig().remoteBridge;
   const feishu = config?.feishu;
-  if (!config?.enabled || !feishu?.enabled || !feishu.appId || !feishu.appSecret) {
+  if (!config?.enabled || !feishu?.enabled) {
     return;
   }
-  if (wsClient) return;
+  if (runtimes.size > 0) return;
 
-  client = new lark.Client({
-    appId: feishu.appId,
-    appSecret: feishu.appSecret,
-    appType: lark.AppType.SelfBuild,
-    domain: lark.Domain.Feishu,
-    loggerLevel: lark.LoggerLevel.warn,
-  });
+  const bots = activeFeishuBots();
+  if (bots.length === 0) return;
 
-  const eventDispatcher = new lark.EventDispatcher({
-    encryptKey: feishu.encryptKey,
-    verificationToken: feishu.verificationToken,
-    loggerLevel: lark.LoggerLevel.warn,
-  }).register({
-    "im.message.receive_v1": async (data: unknown) => {
-      await handleFeishuText(data as Record<string, any>);
-    },
-  });
+  for (const bot of bots) {
+    const client = new lark.Client({
+      appId: bot.appId,
+      appSecret: bot.appSecret,
+      appType: lark.AppType.SelfBuild,
+      domain: lark.Domain.Feishu,
+      loggerLevel: lark.LoggerLevel.warn,
+    });
 
-  wsClient = new lark.WSClient({
-    appId: feishu.appId,
-    appSecret: feishu.appSecret,
-    domain: lark.Domain.Feishu,
-    loggerLevel: lark.LoggerLevel.warn,
-  });
-  wsClient?.start({ eventDispatcher });
+    const eventDispatcher = new lark.EventDispatcher({
+      encryptKey: bot.encryptKey,
+      verificationToken: bot.verificationToken,
+      loggerLevel: lark.LoggerLevel.warn,
+    }).register({
+      "im.message.receive_v1": async (data: unknown) => {
+        await handleFeishuText(data as Record<string, any>, bot.id);
+      },
+    });
+
+    const wsClient = new lark.WSClient({
+      appId: bot.appId,
+      appSecret: bot.appSecret,
+      domain: lark.Domain.Feishu,
+      loggerLevel: lark.LoggerLevel.warn,
+    });
+    wsClient?.start({ eventDispatcher });
+    runtimes.set(bot.id, { bot, client, wsClient });
+  }
 
   unregisterSender = registerRemoteOutboundSender(sendOutboundToFeishu);
   unregisterProgress = onRemoteEvent((kind, data) => {
@@ -1132,18 +1694,19 @@ export const startFeishuRemoteBridge = (): void => {
     void handleRemoteProgress(data as RemoteProgressSnapshot);
   });
   if (process.env.CLAUDE_PROXY_VERBOSE === "1") {
-    console.log("[remote:feishu] long connection started");
+    console.log(`[remote:feishu] ${bots.length} long connection(s) started`);
   }
 };
 
 export const stopFeishuRemoteBridge = (): void => {
-  try {
-    wsClient?.stop?.();
-  } catch {
-    // ignore
+  for (const runtime of runtimes.values()) {
+    try {
+      runtime.wsClient?.stop?.();
+    } catch {
+      // ignore
+    }
   }
-  wsClient = null;
-  client = null;
+  runtimes = new Map();
   unregisterSender?.();
   unregisterSender = null;
   unregisterProgress?.();
@@ -1155,10 +1718,18 @@ export const restartFeishuRemoteBridge = (): void => {
   startFeishuRemoteBridge();
 };
 
-export const testFeishuApp = async (chatId?: string): Promise<void> => {
-  if (!client) startFeishuRemoteBridge();
-  if (!client) throw new Error("飞书自建应用未启用或缺少 appId/appSecret");
+export const testFeishuApp = async (
+  botId?: string,
+  chatId?: string,
+): Promise<void> => {
+  if (runtimes.size === 0) startFeishuRemoteBridge();
+  const runtime = runtimeForBot(botId);
+  if (!runtime) throw new Error("飞书自建应用未启用或缺少 appId/appSecret");
   if (chatId) {
-    await sendFeishuText(chatId, `Claude Code 飞书远程桥测试\n${new Date().toLocaleString()}`);
+    await sendFeishuText(
+      runtime.bot.id,
+      chatId,
+      `Claude Code 飞书远程桥测试\n${new Date().toLocaleString()}`,
+    );
   }
 };

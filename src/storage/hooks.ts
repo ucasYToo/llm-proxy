@@ -173,6 +173,8 @@ export interface SessionSummary {
   title: string | null;
   /** title 的来源：transcript = ai-title 事件；prompt = 首条用户消息 */
   titleSource: SessionTitleSource;
+  /** 最近一次 Stop/SubagentStop hook 上带回的助手最终回复；没有则 null */
+  lastAssistantMessage: string | null;
   /** 来自 cost_records 的总费用（USD） */
   totalCostUsd?: number;
   /** 来自 cost_records 的总 token 数 */
@@ -253,6 +255,13 @@ export const recentSessions = (
           FROM hooks WHERE sessionId IN (${placeholders}) AND eventName = 'UserPromptSubmit'
             AND json_extract(payload, '$.prompt') IS NOT NULL
             AND substr(json_extract(payload, '$.prompt'), 1, 1) != '/'
+        ),
+        last_assistant AS (
+          SELECT sessionId, json_extract(payload, '$.last_assistant_message') AS lastAssistantMessage,
+            ROW_NUMBER() OVER (PARTITION BY sessionId ORDER BY createdAt DESC, id DESC) AS rn
+          FROM hooks WHERE sessionId IN (${placeholders})
+            AND json_extract(payload, '$.last_assistant_message') IS NOT NULL
+            AND json_extract(payload, '$.last_assistant_message') != ''
         )
       SELECT
         le.sessionId,
@@ -260,21 +269,30 @@ export const recentSessions = (
         ec.cwd,
         sc.remark,
         t.tp AS transcriptPath,
-        fp.prompt
+        fp.prompt,
+        la.lastAssistantMessage
       FROM last_event le
       LEFT JOIN earliest_cwd ec ON ec.sessionId = le.sessionId AND ec.rn = 1
       LEFT JOIN session_cwds sc ON sc.cwd = ec.cwd AND sc.remark IS NOT NULL AND sc.remark != ''
       LEFT JOIN transcript t ON t.sessionId = le.sessionId AND t.rn = 1
       LEFT JOIN first_prompt fp ON fp.sessionId = le.sessionId AND fp.rn = 1
+      LEFT JOIN last_assistant la ON la.sessionId = le.sessionId AND la.rn = 1
       WHERE le.rn = 1`,
     )
-    .all(...sessionIds, ...sessionIds, ...sessionIds, ...sessionIds) as Array<{
+    .all(
+      ...sessionIds,
+      ...sessionIds,
+      ...sessionIds,
+      ...sessionIds,
+      ...sessionIds,
+    ) as Array<{
     sessionId: string;
     lastEventName: string | null;
     cwd: string | null;
     remark: string | null;
     transcriptPath: string | null;
     prompt: string | null;
+    lastAssistantMessage: string | null;
   }>;
 
   const enrichMap = new Map(enriched.map((e) => [e.sessionId, e]));
@@ -306,6 +324,7 @@ export const recentSessions = (
       remark: e?.remark ?? null,
       title,
       titleSource,
+      lastAssistantMessage: e?.lastAssistantMessage ?? null,
       totalCostUsd: cost.totalCostUsd,
       totalTokens: cost.totalTokens,
       requestCount: cost.requestCount,

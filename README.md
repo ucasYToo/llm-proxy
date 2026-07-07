@@ -108,8 +108,7 @@ Web / 飞书
 1. 启动 `claude-proxy start --ui`。
 2. 打开 Dashboard，进入远程/飞书配置区域。
 3. 启用 Remote Bridge。
-4. 配置 `defaultCwd`；`allowedCwds` 可补充未出现在项目列表里的固定目录。
-5. 在项目卡或 session list 中新建远程对话，或继续已有会话。
+4. 在项目卡或 session list 中新建远程对话，或继续已有会话；Dashboard 会直接使用当前项目/session 的 cwd。
 
 ### 飞书接入方式
 
@@ -126,7 +125,7 @@ Web / 飞书
 
 1. 在飞书开放平台创建自建应用。
 2. 启用机器人能力，打开消息事件订阅。
-3. 在 Dashboard 的远程配置表单中填入 `appId`、`appSecret`，以及可选的 `encryptKey`、`verificationToken`。
+3. 在 Dashboard 的远程配置表单中添加一个或多个飞书机器人，填入各自的默认项目路径、`appId`、`appSecret`，以及可选的 `encryptKey`、`verificationToken`。
 4. 把机器人加入私聊或群聊。
 5. 私聊默认继续最近 active thread；群聊里需要 @bot 或回复 bot 消息。
 
@@ -207,18 +206,25 @@ claude --dangerously-load-development-channels server:claude-proxy-remote
       "publicBaseUrl": "https://your-dashboard.example"
     },
     "allowedCwds": ["/Users/me/workspace/project"],
-    "defaultCwd": "/Users/me/workspace/project",
     "claudeCommand": "claude",
     "permissionMode": "default",
     "deliveryMode": "cli",
     "feishu": {
       "enabled": true,
-      "appId": "...",
-      "appSecret": "...",
-      "encryptKey": "...",
-      "verificationToken": "...",
       "ingress": "longConnection",
-      "allowedUserIds": [],
+      "bots": [
+        {
+          "id": "default",
+          "name": "默认机器人",
+          "enabled": true,
+          "defaultCwd": "/Users/me/workspace/project",
+          "appId": "...",
+          "appSecret": "...",
+          "encryptKey": "...",
+          "verificationToken": "...",
+          "allowedUserIds": []
+        }
+      ],
       "progressCard": {
         "enabled": true,
         "showToolEvents": true
@@ -232,8 +238,9 @@ claude --dangerously-load-development-channels server:claude-proxy-remote
 
 - 不要把 Dashboard 裸露到公网；需要远程访问时使用带鉴权的反向代理、Tailscale 或隧道。
 - `remoteBridge.authToken` 用于 channel/internal remote API，不会通过普通配置接口暴露给浏览器。
-- Remote Bridge 可启动 Dashboard 已发现项目，以及 `defaultCwd` / `allowedCwds` 中补充的目录；不要把 Dashboard 裸露给不可信用户。
-- 群聊场景建议配置 `allowedUserIds`，避免任意群成员触发本机 Claude Code。
+- Remote Bridge 可启动 Dashboard 已发现项目，以及 `allowedCwds` 和各 `feishu.bots[].defaultCwd` 中补充的目录；不要把 Dashboard 裸露给不可信用户。
+- 每个 `feishu.bots[]` 建议绑定自己的 `defaultCwd`，实现“一个飞书机器人对应一个项目目录”。
+- 群聊场景建议给每个 `feishu.bots[]` 配置 `allowedUserIds`，避免任意群成员触发本机 Claude Code。
 
 ## Hook 管理
 

@@ -43,11 +43,13 @@ const ProjectCard = ({
         {cwd && onNewRemoteThread && (
           <button
             type="button"
-            className="btnGhost btnSm"
+            className={styles.projectRemoteAction}
             onClick={onNewRemoteThread}
             title="在这个项目中新建远程 Claude Code 对话"
+            aria-label="新建远程对话"
           >
-            新建远程对话
+            <span aria-hidden="true">+</span>
+            <span>远程</span>
           </button>
         )}
       </div>

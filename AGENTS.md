@@ -61,9 +61,10 @@ Runtime state:
 - Prefer existing helpers in `src/config`, `src/storage`, `src/remote`, and `src/server`.
 - Add SQLite migrations only at the end of `MIGRATIONS` in `src/storage/db.ts`.
 - Keep channel/internal remote write APIs protected by `remoteBridge.authToken`; same-origin dashboard exceptions must not expose the token.
-- Keep cwd validation strict through `remoteBridge.allowedCwds` / `defaultCwd`.
+- Keep cwd validation strict through Dashboard-discovered projects, `remoteBridge.allowedCwds`, and each Feishu bot's `defaultCwd`.
 - Do not expose Claude hidden thinking in UI, Feishu cards, logs, or docs.
 - Feishu remote replies should not use topic replies; progress is one patched card and final output is normal text.
+- Feishu Remote Bridge may run multiple bots; preserve `sourceBotId` on threads/messages/cards so outbound text and card patches use the original bot, and keep each bot's `defaultCwd` independent.
 - Use the default `cli` Remote Bridge delivery mode unless a task explicitly targets Claude Code custom channels.
 
 ## Frontend Guidance

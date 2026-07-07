@@ -179,6 +179,11 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_remote_cards_inbound ON remote_message_cards(inboundMessageId);
   CREATE INDEX IF NOT EXISTS idx_remote_cards_thread ON remote_message_cards(threadId, updatedAt DESC);
   CREATE INDEX IF NOT EXISTS idx_remote_cards_provider ON remote_message_cards(provider, providerMessageId)`,
+  `ALTER TABLE remote_threads ADD COLUMN sourceBotId TEXT;
+   ALTER TABLE remote_messages ADD COLUMN sourceBotId TEXT;
+   ALTER TABLE remote_message_cards ADD COLUMN sourceBotId TEXT;
+   CREATE INDEX IF NOT EXISTS idx_remote_threads_source_bot ON remote_threads(source, sourceBotId, sourceChatId, updatedAt DESC);
+   CREATE INDEX IF NOT EXISTS idx_remote_messages_source_bot ON remote_messages(source, sourceBotId, sourceMessageId)`,
 ];
 
 let dbInstance: Database.Database | null = null;

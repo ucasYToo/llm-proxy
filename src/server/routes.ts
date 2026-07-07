@@ -927,6 +927,7 @@ export const setupApiRoutes = (app: Express) => {
           feishu: {
             ...(prev.feishu ?? {}),
             ...(remoteBridge?.feishu ?? {}),
+            bots: remoteBridge?.feishu?.bots ?? prev.feishu?.bots ?? [],
             progressCard: {
               ...(prev.feishu?.progressCard ?? {}),
               ...(remoteBridge?.feishu?.progressCard ?? {}),
@@ -969,9 +970,9 @@ export const setupApiRoutes = (app: Express) => {
       }
 
       case "testFeishuApp": {
-        const { chatId } = req.body as { chatId?: string };
+        const { botId, chatId } = req.body as { botId?: string; chatId?: string };
         try {
-          await testFeishuApp(chatId);
+          await testFeishuApp(botId, chatId);
           res.json({ ok: true });
         } catch (err) {
           res.status(400).json({ error: err instanceof Error ? err.message : String(err) });

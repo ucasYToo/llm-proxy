@@ -33,6 +33,7 @@ export interface RemoteThread {
   id: string;
   shortId: string;
   source: RemoteSource;
+  sourceBotId: string | null;
   sourceThreadId: string | null;
   sourceUserId: string | null;
   sourceChatId: string | null;
@@ -51,6 +52,7 @@ export interface RemoteMessage {
   threadId: string;
   direction: RemoteMessageDirection;
   source: RemoteSource;
+  sourceBotId: string | null;
   sourceMessageId: string | null;
   sourceUserId: string | null;
   text: string;
@@ -91,6 +93,7 @@ export interface RemoteMessageCard {
   threadId: string;
   inboundMessageId: string;
   provider: "feishu";
+  sourceBotId: string | null;
   providerMessageId: string | null;
   chatId: string | null;
   status: RemoteMessageCardStatus;
@@ -103,6 +106,7 @@ export interface RemoteMessageCard {
 
 export interface CreateRemoteThreadInput {
   source: RemoteSource;
+  sourceBotId?: string | null;
   sourceThreadId?: string | null;
   sourceUserId?: string | null;
   sourceChatId?: string | null;
@@ -115,6 +119,7 @@ export interface InsertRemoteMessageInput {
   threadId: string;
   direction: RemoteMessageDirection;
   source: RemoteSource;
+  sourceBotId?: string | null;
   sourceMessageId?: string | null;
   sourceUserId?: string | null;
   text: string;
@@ -138,6 +143,7 @@ const rowToThread = (row: Record<string, unknown>): RemoteThread => ({
   id: row.id as string,
   shortId: row.shortId as string,
   source: row.source as RemoteSource,
+  sourceBotId: (row.sourceBotId as string | null) ?? null,
   sourceThreadId: (row.sourceThreadId as string | null) ?? null,
   sourceUserId: (row.sourceUserId as string | null) ?? null,
   sourceChatId: (row.sourceChatId as string | null) ?? null,
@@ -156,6 +162,7 @@ const rowToMessage = (row: Record<string, unknown>): RemoteMessage => ({
   threadId: row.threadId as string,
   direction: row.direction as RemoteMessageDirection,
   source: row.source as RemoteSource,
+  sourceBotId: (row.sourceBotId as string | null) ?? null,
   sourceMessageId: (row.sourceMessageId as string | null) ?? null,
   sourceUserId: (row.sourceUserId as string | null) ?? null,
   text: row.text as string,
@@ -205,6 +212,7 @@ const rowToMessageCard = (row: Record<string, unknown>): RemoteMessageCard => ({
   threadId: row.threadId as string,
   inboundMessageId: row.inboundMessageId as string,
   provider: row.provider as "feishu",
+  sourceBotId: (row.sourceBotId as string | null) ?? null,
   providerMessageId: (row.providerMessageId as string | null) ?? null,
   chatId: (row.chatId as string | null) ?? null,
   status: row.status as RemoteMessageCardStatus,
@@ -233,6 +241,7 @@ export const createRemoteThread = (
     id: uuidv4(),
     shortId,
     source: input.source,
+    sourceBotId: input.sourceBotId ?? null,
     sourceThreadId: input.sourceThreadId ?? null,
     sourceUserId: input.sourceUserId ?? null,
     sourceChatId: input.sourceChatId ?? null,
@@ -248,14 +257,15 @@ export const createRemoteThread = (
 
   db.prepare(
     `INSERT INTO remote_threads (
-      id, shortId, source, sourceThreadId, sourceUserId, sourceChatId, cwd,
+      id, shortId, source, sourceBotId, sourceThreadId, sourceUserId, sourceChatId, cwd,
       claudeSessionId, channelInstanceId, status, title, createdAt, updatedAt,
       lastMessageAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     thread.id,
     thread.shortId,
     thread.source,
+    thread.sourceBotId,
     thread.sourceThreadId,
     thread.sourceUserId,
     thread.sourceChatId,
@@ -283,6 +293,7 @@ export const getRemoteThread = (idOrShortId: string): RemoteThread | null => {
 
 export const findLatestRemoteThreadForSource = (opts: {
   source: RemoteSource;
+  sourceBotId?: string | null;
   sourceThreadId?: string | null;
   sourceUserId?: string | null;
   sourceChatId?: string | null;
@@ -292,6 +303,10 @@ export const findLatestRemoteThreadForSource = (opts: {
   if (opts.sourceThreadId) {
     filters.push("sourceThreadId = ?");
     args.push(opts.sourceThreadId);
+  }
+  if (opts.sourceBotId) {
+    filters.push("(sourceBotId = ? OR sourceBotId IS NULL)");
+    args.push(opts.sourceBotId);
   }
   if (opts.sourceUserId) {
     filters.push("sourceUserId = ?");
@@ -316,6 +331,7 @@ export const updateRemoteThread = (
     Pick<
       RemoteThread,
       | "status"
+      | "sourceBotId"
       | "sourceThreadId"
       | "sourceUserId"
       | "sourceChatId"
@@ -382,6 +398,7 @@ export const insertRemoteMessage = (
     threadId: input.threadId,
     direction: input.direction,
     source: input.source,
+    sourceBotId: input.sourceBotId ?? null,
     sourceMessageId: input.sourceMessageId ?? null,
     sourceUserId: input.sourceUserId ?? null,
     text: input.text,
@@ -394,14 +411,15 @@ export const insertRemoteMessage = (
   const db = getDb();
   db.prepare(
     `INSERT INTO remote_messages (
-      id, threadId, direction, source, sourceMessageId, sourceUserId, text,
+      id, threadId, direction, source, sourceBotId, sourceMessageId, sourceUserId, text,
       status, error, raw, createdAt, deliveredAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     message.id,
     message.threadId,
     message.direction,
     message.source,
+    message.sourceBotId,
     message.sourceMessageId,
     message.sourceUserId,
     message.text,
@@ -452,6 +470,7 @@ export const getRemoteMessage = (
 
 export const findRemoteMessageBySource = (opts: {
   source: RemoteSource;
+  sourceBotId?: string | null;
   sourceMessageId: string;
   direction: RemoteMessageDirection;
 }): RemoteMessage | null => {
@@ -459,9 +478,10 @@ export const findRemoteMessageBySource = (opts: {
     .prepare(
       `SELECT * FROM remote_messages
        WHERE source = ? AND sourceMessageId = ? AND direction = ?
+         AND (? IS NULL OR sourceBotId = ? OR sourceBotId IS NULL)
        ORDER BY createdAt DESC LIMIT 1`,
     )
-    .get(opts.source, opts.sourceMessageId, opts.direction) as
+    .get(opts.source, opts.sourceMessageId, opts.direction, opts.sourceBotId ?? null, opts.sourceBotId ?? null) as
     | Record<string, unknown>
     | undefined;
   return row ? rowToMessage(row) : null;
@@ -507,6 +527,7 @@ export const createRemoteMessageCard = (input: {
   threadId: string;
   inboundMessageId: string;
   provider: "feishu";
+  sourceBotId?: string | null;
   providerMessageId?: string | null;
   chatId?: string | null;
   status?: RemoteMessageCardStatus;
@@ -518,6 +539,7 @@ export const createRemoteMessageCard = (input: {
     threadId: input.threadId,
     inboundMessageId: input.inboundMessageId,
     provider: input.provider,
+    sourceBotId: input.sourceBotId ?? null,
     providerMessageId: input.providerMessageId ?? null,
     chatId: input.chatId ?? null,
     status: input.status ?? "queued",
@@ -530,15 +552,16 @@ export const createRemoteMessageCard = (input: {
   getDb()
     .prepare(
       `INSERT INTO remote_message_cards (
-        id, threadId, inboundMessageId, provider, providerMessageId, chatId,
+        id, threadId, inboundMessageId, provider, sourceBotId, providerMessageId, chatId,
         status, lastSnapshot, lastPatchedAt, error, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       card.id,
       card.threadId,
       card.inboundMessageId,
       card.provider,
+      card.sourceBotId,
       card.providerMessageId,
       card.chatId,
       card.status,

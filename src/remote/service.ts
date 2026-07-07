@@ -127,10 +127,14 @@ const updateProgressSnapshot = (
 const isCwdAllowed = (cwd: string): boolean => {
   const remoteBridge = readConfig().remoteBridge;
   const allowed = remoteBridge?.allowedCwds ?? [];
+  const botDefaultCwds = remoteBridge?.feishu?.bots
+    ?.map((bot) => bot.defaultCwd)
+    .filter((item): item is string => !!item?.trim()) ?? [];
   const known = getKnownProjects().map((project) => project.cwd);
   const candidates = [
     ...known,
     ...allowed,
+    ...botDefaultCwds,
     ...(remoteBridge?.defaultCwd ? [remoteBridge.defaultCwd] : []),
   ];
   if (!candidates.length) return false;
@@ -172,11 +176,13 @@ const isThreadVisibleToInput = (
   thread: RemoteThread,
   input: {
     source: RemoteSource;
+    sourceBotId?: string | null;
     sourceUserId?: string | null;
     sourceChatId?: string | null;
   },
 ): boolean => {
   if (thread.source !== input.source) return false;
+  if (thread.sourceBotId && thread.sourceBotId !== input.sourceBotId) return false;
   if (thread.sourceChatId && thread.sourceChatId !== input.sourceChatId) return false;
   if (thread.sourceUserId && thread.sourceUserId !== input.sourceUserId) return false;
   return true;
@@ -186,6 +192,7 @@ const assertThreadVisibleToInput = (
   thread: RemoteThread,
   input: {
     source: RemoteSource;
+    sourceBotId?: string | null;
     sourceUserId?: string | null;
     sourceChatId?: string | null;
   },
@@ -591,6 +598,7 @@ export interface SendRemoteMessageInput {
   sourceThreadId?: string | null;
   sourceUserId?: string | null;
   sourceChatId?: string | null;
+  sourceBotId?: string | null;
   sourceMessageId?: string | null;
   raw?: unknown;
 }
@@ -603,6 +611,7 @@ export interface AttachRemoteSessionInput {
   sourceThreadId?: string | null;
   sourceUserId?: string | null;
   sourceChatId?: string | null;
+  sourceBotId?: string | null;
 }
 
 export const attachRemoteSession = (
@@ -619,6 +628,7 @@ export const attachRemoteSession = (
       sourceThreadId: input.sourceThreadId ?? existing.sourceThreadId,
       sourceUserId: input.sourceUserId ?? existing.sourceUserId,
       sourceChatId: input.sourceChatId ?? existing.sourceChatId,
+      sourceBotId: input.sourceBotId ?? existing.sourceBotId,
       cwd,
       title: input.title ?? existing.title,
       claudeSessionId: input.claudeSessionId,
@@ -629,6 +639,7 @@ export const attachRemoteSession = (
 
   const thread = createRemoteThread({
     source: input.source,
+    sourceBotId: input.sourceBotId,
     sourceThreadId: input.sourceThreadId,
     sourceUserId: input.sourceUserId,
     sourceChatId: input.sourceChatId,
@@ -641,6 +652,7 @@ export const attachRemoteSession = (
     threadId: thread.id,
     direction: "system",
     source: input.source,
+    sourceBotId: input.sourceBotId,
     text: `已绑定本地 Claude session: ${input.claudeSessionId}`,
     status: "delivered",
   });
@@ -658,6 +670,7 @@ export const sendRemoteMessage = (
   if (input.sourceMessageId) {
     const existing = findRemoteMessageBySource({
       source: input.source,
+      sourceBotId: input.sourceBotId,
       sourceMessageId: input.sourceMessageId,
       direction: "inbound",
     });
@@ -682,6 +695,7 @@ export const sendRemoteMessage = (
   if (!thread && mode === "continue") {
     thread = findLatestRemoteThreadForSource({
       source: input.source,
+      sourceBotId: input.sourceBotId,
       sourceThreadId: input.sourceThreadId,
       sourceUserId: input.sourceUserId,
       sourceChatId: input.sourceChatId,
@@ -690,11 +704,13 @@ export const sendRemoteMessage = (
 
   if (!thread) {
     const cfg = readConfig().remoteBridge;
-    const cwd = normalizeCwd(input.cwd ?? cfg?.defaultCwd ?? process.cwd());
+    const fallbackCwd = input.source === "feishu" ? cfg?.defaultCwd : undefined;
+    const cwd = normalizeCwd(input.cwd ?? fallbackCwd);
     if (!cwd) throw new Error("cwd is required for a new remote thread");
     assertAllowedCwd(cwd);
     thread = createRemoteThread({
       source: input.source,
+      sourceBotId: input.sourceBotId,
       sourceThreadId: input.sourceThreadId,
       sourceUserId: input.sourceUserId,
       sourceChatId: input.sourceChatId,
@@ -709,6 +725,7 @@ export const sendRemoteMessage = (
     threadId: thread.id,
     direction: "inbound",
     source: input.source,
+    sourceBotId: input.sourceBotId,
     sourceMessageId: input.sourceMessageId,
     sourceUserId: input.sourceUserId,
     text,
@@ -818,6 +835,7 @@ export const receiveRemoteReply = async (input: {
     threadId: thread.id,
     direction: "outbound",
     source: thread.source,
+    sourceBotId: thread.sourceBotId,
     text: input.text,
     status: "delivered",
   });
@@ -920,6 +938,7 @@ export const submitPermissionVerdict = (input: {
   behavior: RemotePermissionBehavior;
   source?: {
     source: RemoteSource;
+    sourceBotId?: string | null;
     sourceUserId?: string | null;
     sourceChatId?: string | null;
   };
