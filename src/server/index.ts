@@ -36,12 +36,14 @@ export interface ServerOptions {
   port: number;
   host: string;
   serveUI?: boolean;
+  verbose?: boolean;
 }
 
 export const startServer = async (
   options: ServerOptions,
 ): Promise<ReturnType<Express["listen"]>> => {
   const app = express();
+  const verbose = Boolean(options.verbose || process.env.CLAUDE_PROXY_VERBOSE === "1");
 
   // 中间件
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -73,12 +75,20 @@ export const startServer = async (
   app.use(express.json({ limit: "50mb" }));
   app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
 
-  // 日志中间件
+  // 默认只打印异常请求；排查时用 --verbose 打开完整访问日志。
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     res.on("finish", () => {
+      if (!verbose && res.statusCode < 400) return;
       const duration = Date.now() - start;
-      console.log(`${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+      const message = `${req.method} ${req.path} ${res.statusCode} ${duration}ms`;
+      if (res.statusCode >= 500) {
+        console.error(message);
+      } else if (res.statusCode >= 400) {
+        console.warn(message);
+      } else {
+        console.log(message);
+      }
     });
     next();
   });

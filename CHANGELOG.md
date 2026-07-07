@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.1 (2026-07-07)
+
+### 新增
+
+- 飞书远程命令新增 `/threads`、`/show`、`/stop`，支持查看当前聊天可见的远程 thread、查看详情和停止运行中的 CLI fallback 任务。
+- 飞书远程命令新增 `/sessions`、`/use-session`、`/continue-session`，支持在飞书中绑定并继续本机已有 Claude Code session。
+- Dashboard 继续本地 session 时会把选中的 `claudeSessionId` 传入 Remote Bridge，新建 remote thread 后通过 `claude -p --resume <sessionId>` 续上本地会话。
+
+### 变更
+
+- 启动日志默认改为精简模式，只显示关键地址、状态栏状态和异常请求；`--verbose` 可查看端点列表和每请求访问日志。
+- 飞书 `/help` 文案重写，明确区分远程 thread、本地 Claude session、项目、审批和停止命令。
+- 飞书 `/projects` 复用 Dashboard 项目发现逻辑，列出已发现项目；项目备注可作为 `/new` 别名。
+- Remote Bridge CLI 模式允许启动 Dashboard 已发现项目，`allowedCwds` 作为补充固定目录使用。
+- Dashboard session list 的远程继续逻辑改为只匹配相同 `claudeSessionId` 的 remote thread，避免同 cwd 误续到其他远程对话。
+- Dashboard 暂时隐藏 Remote Bridge 的 MCP channel 安装/安装并启动入口，避免默认 CLI fallback 路径下误写 `.mcp.json`。
+
+### 修复
+
+- 修复飞书 `/threads` 等未实现命令被误投递给 Claude，导致 `Unknown command` 的问题。
+- 修复 `/use <threadId>` 只刷新时间、不真正绑定当前飞书聊天上下文的问题。
+
 ## 2.0.0 (2026-07-07)
 
 ### 新增

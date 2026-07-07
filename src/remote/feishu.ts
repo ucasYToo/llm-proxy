@@ -1,11 +1,15 @@
 import path from "path";
 import * as lark from "@larksuiteoapi/node-sdk";
 import { readConfig } from "../config/store";
+import { getKnownProjects, type KnownProject } from "../core/session";
+import { recentSessions, type SessionSummary } from "../storage/hooks";
 import {
+  attachRemoteSession,
   getRemoteProgressSnapshot,
   onRemoteEvent,
   registerRemoteOutboundSender,
   sendRemoteMessage,
+  stopRemoteThread,
   submitPermissionVerdict,
   type RemoteOutboundKind,
 } from "./service";
@@ -17,6 +21,7 @@ import {
   getLatestRemoteMessageCardForThread,
   getRemoteMessageCardByInbound,
   queryRemoteChannelInstances,
+  queryRemoteMessages,
   queryRemoteThreads,
   updateRemoteThread,
   updateRemoteMessageCard,
@@ -78,6 +83,11 @@ const resolveCwdFromAlias = (raw: string | undefined): string | null => {
   return found ?? cfg?.defaultCwd ?? null;
 };
 
+const matchesProjectAlias = (project: KnownProject, value: string): boolean =>
+  project.cwd === value ||
+  path.basename(project.cwd) === value ||
+  project.remark === value;
+
 const resolveCwdFromAliasStrict = (raw: string | undefined): string | null => {
   const value = raw?.trim();
   if (!value) return null;
@@ -87,7 +97,12 @@ const resolveCwdFromAliasStrict = (raw: string | undefined): string | null => {
     ...(cfg?.allowedCwds ?? []),
     ...(cfg?.defaultCwd ? [cfg.defaultCwd] : []),
   ];
-  return candidates.find((cwd) => path.basename(cwd) === value || cwd === value) ?? null;
+  const configured = candidates.find((cwd) => path.basename(cwd) === value || cwd === value);
+  if (configured) return configured;
+  const known = getKnownProjects().find((project) =>
+    matchesProjectAlias(project, value),
+  );
+  return known?.cwd ?? null;
 };
 
 const splitFirstToken = (
@@ -111,38 +126,249 @@ const resolveNewCommandInput = (
 
 const formatThreadLine = (thread: RemoteThread): string => {
   const project = thread.cwd ? path.basename(thread.cwd) : "unknown";
-  return `#${thread.shortId} · ${thread.status} · ${project}`;
+  const title = thread.title?.trim();
+  return title
+    ? `#${thread.shortId} · ${thread.status} · ${project} · ${truncateText(title, 30)}`
+    : `#${thread.shortId} · ${thread.status} · ${project}`;
+};
+
+const normalizeThreadTarget = (target: string): string =>
+  target.trim().replace(/^#/, "");
+
+const truncateText = (value: string, max: number): string =>
+  value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`;
+
+const relativeTime = (iso: string | null): string => {
+  if (!iso) return "未知时间";
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return iso;
+  const diff = Math.max(0, Date.now() - ts);
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s前`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h前`;
+  const days = Math.floor(hours / 24);
+  return `${days}d前`;
 };
 
 const buildHelpText = (): string =>
   [
-    "Claude Code 远程命令",
-    "/help 查看帮助",
-    "/new [项目别名或路径] <prompt> 新建远程对话",
-    "/continue <threadId> <prompt> 继续指定对话",
-    "/status 查看当前远程状态",
-    "/projects 查看可用项目别名",
-    "/use <threadId> 切换当前聊天默认继续的对话",
-    "审批：同意 <id> / 拒绝 <id>",
-    "兼容写法：以上命令也可以写成 /cc ...",
-    "普通消息会继续当前聊天最近使用的远程对话。",
+    "Claude Code 远程助手",
+    "",
+    "常用：",
+    "/new <项目> <任务> 新建远程任务",
+    "/use <threadId> 切换当前聊天默认对话",
+    "/status [threadId] 查看当前或指定对话状态",
+    "/projects 查看可用项目",
+    "/threads 查看最近对话",
+    "/sessions [项目] 查看最近本地 Claude 会话",
+    "",
+    "继续：",
+    "普通消息 继续当前默认对话",
+    "/continue <threadId> <任务> 继续指定对话",
+    "/use-session <sessionId> 绑定本地 Claude 会话",
+    "/continue-session <sessionId> <任务> 继续本地 Claude 会话",
+    "",
+    "管理：",
+    "/show <threadId> 查看对话详情",
+    "/stop [threadId] 停止当前或指定任务",
+    "",
+    "审批：",
+    "同意 <id>",
+    "拒绝 <id>",
+    "",
+    "兼容：以上命令也可以写成 /cc ...",
   ].join("\n");
 
 const buildProjectsText = (): string => {
   const cfg = readConfig().remoteBridge;
   const allowed = cfg?.allowedCwds ?? [];
   const defaultCwd = cfg?.defaultCwd ?? process.cwd();
-  const lines = ["可用项目"];
-  lines.push(`默认：${path.basename(defaultCwd)} — ${defaultCwd}`);
-  if (allowed.length > 0) {
-    for (const cwd of allowed) {
-      lines.push(`${path.basename(cwd)} — ${cwd}`);
-    }
-  } else {
-    lines.push("allowedCwds 未配置；/new <prompt> 会使用默认项目。");
+  const knownProjects = getKnownProjects();
+  const projectMap = new Map<string, KnownProject>();
+  for (const project of knownProjects) projectMap.set(project.cwd, project);
+  if (defaultCwd && !projectMap.has(defaultCwd)) {
+    projectMap.set(defaultCwd, {
+      cwd: defaultCwd,
+      remark: null,
+      lastSeen: new Date().toISOString(),
+    });
   }
-  lines.push("用法：/new <项目别名> <prompt> 或 /new <prompt>");
+  for (const cwd of allowed) {
+    if (!projectMap.has(cwd)) {
+      projectMap.set(cwd, {
+        cwd,
+        remark: null,
+        lastSeen: new Date().toISOString(),
+      });
+    }
+  }
+
+  const projects = [...projectMap.values()].sort((a, b) => {
+    const aDefault = a.cwd === defaultCwd ? 1 : 0;
+    const bDefault = b.cwd === defaultCwd ? 1 : 0;
+    if (aDefault !== bDefault) return bDefault - aDefault;
+    return Date.parse(b.lastSeen) - Date.parse(a.lastSeen);
+  });
+
+  const lines = ["项目列表"];
+  lines.push(`默认：${path.basename(defaultCwd)} — ${defaultCwd}`);
+  if (projects.length === 0) {
+    lines.push("暂无项目记录。先在 Dashboard 或 Claude Code 中运行一次项目。");
+  } else {
+    for (const project of projects.slice(0, 30)) {
+      const alias = project.remark?.trim() || path.basename(project.cwd);
+      const marker = project.cwd === defaultCwd ? "默认" : "项目";
+      const remark = project.remark?.trim() ? `（备注：${project.remark.trim()}）` : "";
+      lines.push(`${marker} · ${alias} — ${project.cwd}${remark}`);
+    }
+    if (projects.length > 30) {
+      lines.push(`还有 ${projects.length - 30} 个项目未显示，请到 Dashboard 项目页查看。`);
+    }
+  }
+  lines.push("");
+  lines.push("用法：/new <项目别名或备注> <prompt> 或 /new <prompt>");
+  if (allowed.length > 0) {
+    lines.push("补充 allowedCwds 仍可用于启动未出现在项目列表里的固定目录。");
+  }
   return lines.join("\n");
+};
+
+const shortSessionId = (sessionId: string): string => sessionId.slice(0, 8);
+
+const sessionProjectName = (session: SessionSummary): string =>
+  session.remark?.trim() ||
+  (session.cwd ? path.basename(session.cwd) : "unknown");
+
+const sessionTitle = (session: SessionSummary): string =>
+  session.title?.trim() || session.lastEventName || "无标题";
+
+const normalizeSessionTarget = (target: string): string =>
+  target.trim().replace(/^#/, "").replace(/^session[:：]?/i, "");
+
+const listLocalSessions = (filter?: string): SessionSummary[] => {
+  const needle = filter?.trim().toLowerCase();
+  return recentSessions(undefined, 200)
+    .filter((session) => {
+      if (!needle) return true;
+      return [
+        session.sessionId,
+        shortSessionId(session.sessionId),
+        session.cwd ?? "",
+        session.remark ?? "",
+        path.basename(session.cwd ?? ""),
+        session.title ?? "",
+      ].some((item) => item.toLowerCase().includes(needle));
+    })
+    .slice(0, 30);
+};
+
+const resolveLocalSession = (
+  target: string,
+): { session: SessionSummary | null; error: string | null } => {
+  const value = normalizeSessionTarget(target);
+  if (!value) return { session: null, error: "sessionId 不能为空" };
+  const sessions = recentSessions(undefined, 200);
+  const exact = sessions.find((session) => session.sessionId === value);
+  if (exact) return { session: exact, error: null };
+  const prefixMatches = sessions.filter(
+    (session) =>
+      session.sessionId.startsWith(value) ||
+      shortSessionId(session.sessionId) === value,
+  );
+  if (prefixMatches.length === 1) {
+    return { session: prefixMatches[0], error: null };
+  }
+  if (prefixMatches.length > 1) {
+    return {
+      session: null,
+      error: `session 前缀不唯一：${value}\n${prefixMatches
+        .slice(0, 5)
+        .map((session) => `- ${shortSessionId(session.sessionId)} · ${sessionProjectName(session)} · ${sessionTitle(session)}`)
+        .join("\n")}`,
+    };
+  }
+  return { session: null, error: `找不到本地 Claude session：${target}` };
+};
+
+const attachLocalSessionToFeishu = (
+  target: string,
+  context: {
+    chatId: string;
+    senderId: string | null;
+    sourceThreadId: string;
+  },
+): { thread: RemoteThread | null; session: SessionSummary | null; error: string | null } => {
+  const resolved = resolveLocalSession(target);
+  if (!resolved.session) {
+    return { thread: null, session: null, error: resolved.error };
+  }
+  const session = resolved.session;
+  const cwd = session.cwd ?? readConfig().remoteBridge?.defaultCwd ?? null;
+  if (!cwd) {
+    return {
+      thread: null,
+      session,
+      error: `本地 session ${shortSessionId(session.sessionId)} 缺少 cwd，无法在 CLI 模式续上。`,
+    };
+  }
+  const thread = attachRemoteSession({
+    source: "feishu",
+    cwd,
+    claudeSessionId: session.sessionId,
+    title: session.title ?? `本地会话 ${shortSessionId(session.sessionId)}`,
+    sourceThreadId: context.sourceThreadId,
+    sourceChatId: context.chatId,
+    sourceUserId: context.senderId,
+  });
+  return { thread, session, error: null };
+};
+
+const buildSessionsText = (filter?: string): string => {
+  const sessions = listLocalSessions(filter);
+  const lines = [
+    filter?.trim()
+      ? `最近本地 Claude 会话 · ${filter.trim()}`
+      : "最近本地 Claude 会话",
+  ];
+  if (sessions.length === 0) {
+    lines.push("暂无可用本地会话。先在本机 Claude Code 里产生 hook 记录。");
+    return lines.join("\n");
+  }
+  for (const session of sessions.slice(0, 12)) {
+    lines.push(
+      `${shortSessionId(session.sessionId)} · ${sessionProjectName(session)} · ${relativeTime(session.lastEventAt)} · ${truncateText(sessionTitle(session).replace(/\s+/g, " "), 40)}`,
+    );
+  }
+  if (sessions.length > 12) {
+    lines.push(`还有 ${sessions.length - 12} 个会话未显示，可用 /sessions <项目> 过滤。`);
+  }
+  lines.push("");
+  lines.push("用法：/use-session <session前缀> 绑定后，普通消息会继续这个本地会话。");
+  lines.push("也可以：/continue-session <session前缀> <任务>");
+  return lines.join("\n");
+};
+
+const buildUseSessionText = (
+  target: string,
+  context: {
+    chatId: string;
+    senderId: string | null;
+    sourceThreadId: string;
+  },
+): string => {
+  const result = attachLocalSessionToFeishu(target, context);
+  if (!result.thread || !result.session) {
+    return result.error ?? `无法绑定本地 session：${target}`;
+  }
+  return [
+    `已绑定本地 Claude 会话：${shortSessionId(result.session.sessionId)}`,
+    `当前远程对话：#${result.thread.shortId}`,
+    `项目：${sessionProjectName(result.session)}`,
+    "后续普通消息会继续这个本地会话。",
+  ].join("\n");
 };
 
 const isThreadVisibleToSource = (
@@ -162,25 +388,89 @@ const findActiveThreadForSource = (context: {
   chatId: string;
   senderId: string | null;
   sourceThreadId: string;
-}): RemoteThread | null =>
-  findLatestRemoteThreadForSource({
+}): RemoteThread | null => {
+  const exact = findLatestRemoteThreadForSource({
     source: "feishu",
     sourceThreadId: context.sourceThreadId,
     sourceChatId: context.chatId,
     sourceUserId: context.senderId,
   });
+  if (exact) return exact;
+  return findLatestRemoteThreadForSource({
+    source: "feishu",
+    sourceChatId: context.chatId,
+    sourceUserId: context.senderId,
+  });
+};
+
+const findVisibleThreadByTarget = (
+  target: string,
+  context: {
+    chatId: string;
+    senderId: string | null;
+  },
+): RemoteThread | null => {
+  const thread = getRemoteThread(normalizeThreadTarget(target));
+  if (!thread || !isThreadVisibleToSource(thread, context)) return null;
+  return thread;
+};
+
+const listVisibleThreads = (
+  context: {
+    chatId: string;
+    senderId: string | null;
+  },
+  limit = 10,
+): RemoteThread[] =>
+  queryRemoteThreads({ source: "feishu", limit: 80 }).threads
+    .filter((thread) => isThreadVisibleToSource(thread, context))
+    .slice(0, limit);
+
+const buildThreadDetailText = (thread: RemoteThread): string => {
+  const messages = queryRemoteMessages({ threadId: thread.id, limit: 80 }).messages;
+  const recent = messages.slice(-5);
+  const lines = [
+    `远程对话 #${thread.shortId}`,
+    `状态：${thread.status}`,
+    `项目：${thread.cwd ? path.basename(thread.cwd) : "unknown"}`,
+    `路径：${thread.cwd ?? "unknown"}`,
+    `Session：${thread.claudeSessionId ?? "暂无"}`,
+    `最近更新：${relativeTime(thread.updatedAt)}`,
+  ];
+  if (thread.title) lines.push(`标题：${thread.title}`);
+  if (recent.length > 0) {
+    lines.push("", "最近消息：");
+    for (const message of recent) {
+      const direction =
+        message.direction === "inbound"
+          ? "用户"
+          : message.direction === "outbound"
+            ? "Claude"
+            : message.direction;
+      lines.push(
+        `${direction}：${truncateText(message.text.replace(/\s+/g, " "), 80)}`,
+      );
+    }
+  }
+  return lines.join("\n");
+};
 
 const buildStatusText = (context: {
   chatId: string;
   senderId: string | null;
   sourceThreadId: string;
+  target?: string;
 }): string => {
+  if (context.target) {
+    const thread = findVisibleThreadByTarget(context.target, context);
+    return thread
+      ? buildThreadDetailText(thread)
+      : `找不到远程对话：${context.target}`;
+  }
   const cfg = readConfig().remoteBridge;
   const active = findActiveThreadForSource(context);
   const instances = queryRemoteChannelInstances({ limit: 5 });
-  const recent = queryRemoteThreads({ source: "feishu", limit: 30 }).threads
-    .filter((thread) => isThreadVisibleToSource(thread, context))
-    .slice(0, 5);
+  const recent = listVisibleThreads(context, 5);
   const lines = [
     "远程状态",
     `Bridge：${cfg?.enabled ? "已启用" : "未启用"} · ${cfg?.deliveryMode ?? "cli"}`,
@@ -194,20 +484,97 @@ const buildStatusText = (context: {
   return lines.join("\n");
 };
 
+const buildThreadsText = (
+  filter: string | undefined,
+  context: {
+    chatId: string;
+    senderId: string | null;
+  },
+): string => {
+  const normalized = filter?.trim().toLowerCase();
+  const validStatuses = new Set([
+    "pending",
+    "queued",
+    "running",
+    "waiting_permission",
+    "done",
+    "failed",
+  ]);
+  const statusFilter = normalized && validStatuses.has(normalized) ? normalized : null;
+  const threads = listVisibleThreads(context, 12).filter((thread) =>
+    statusFilter ? thread.status === statusFilter : true,
+  );
+  const lines = [
+    statusFilter ? `最近远程对话 · ${statusFilter}` : "最近远程对话",
+  ];
+  if (threads.length === 0) {
+    lines.push("暂无可见远程对话。用 /new <项目> <任务> 新建一个。");
+    return lines.join("\n");
+  }
+  for (const thread of threads) {
+    lines.push(`${formatThreadLine(thread)} · ${relativeTime(thread.updatedAt)}`);
+  }
+  lines.push("", "用法：/use <threadId> 切换默认对话，/show <threadId> 查看详情。");
+  return lines.join("\n");
+};
+
 const buildUseThreadText = (
+  target: string,
+  context: {
+    chatId: string;
+    senderId: string | null;
+    sourceThreadId: string;
+  },
+): string => {
+  const thread = findVisibleThreadByTarget(target, context);
+  if (!thread) {
+    return `找不到可切换的远程对话：${target}`;
+  }
+  const updated = updateRemoteThread(thread.id, {
+    sourceThreadId: context.sourceThreadId,
+    sourceChatId: context.chatId,
+    sourceUserId: context.senderId,
+  });
+  return `已切换当前聊天默认对话：${formatThreadLine(updated ?? thread)}`;
+};
+
+const buildShowThreadText = (
   target: string,
   context: {
     chatId: string;
     senderId: string | null;
   },
 ): string => {
-  const thread = getRemoteThread(target);
-  if (!thread || !isThreadVisibleToSource(thread, context)) {
-    return `找不到可切换的远程对话：${target}`;
-  }
-  const updated = updateRemoteThread(thread.id, {});
-  return `已切换当前聊天默认对话：${formatThreadLine(updated ?? thread)}`;
+  const thread = findVisibleThreadByTarget(target, context);
+  return thread ? buildThreadDetailText(thread) : `找不到远程对话：${target}`;
 };
+
+const buildStopThreadText = (
+  target: string | undefined,
+  context: {
+    chatId: string;
+    senderId: string | null;
+    sourceThreadId: string;
+  },
+): string => {
+  const thread = target
+    ? findVisibleThreadByTarget(target, context)
+    : findActiveThreadForSource(context);
+  if (!thread) {
+    return target
+      ? `找不到可停止的远程对话：${target}`
+      : "当前聊天没有默认远程对话。先用 /threads 查看，或用 /use <threadId> 切换。";
+  }
+  const result = stopRemoteThread(thread.id);
+  return result.message;
+};
+
+const buildUnknownCommandText = (name: string): string =>
+  [
+    `未知远程命令：/${name}`,
+    "可用命令：/help、/new、/continue、/use、/status、/projects、/threads、/sessions、/use-session、/continue-session、/show、/stop",
+    "如果想把斜杠内容原样发给 Claude，可以先用普通文字说明，例如：请处理这个命令文本：/xxx",
+  ].join("\n");
 
 const commandToDirectReply = (
   command: FeishuRemoteCommand,
@@ -222,12 +589,25 @@ const commandToDirectReply = (
       return buildHelpText();
     case "projects":
       return buildProjectsText();
+    case "sessions":
+      return buildSessionsText(command.filter);
+    case "useSession":
+      return buildUseSessionText(command.target, context);
     case "status":
-      return buildStatusText(context);
+      return buildStatusText({ ...context, target: command.target });
+    case "threads":
+      return buildThreadsText(command.filter, context);
+    case "show":
+      return buildShowThreadText(command.target, context);
+    case "stop":
+      return buildStopThreadText(command.target, context);
     case "use":
       return buildUseThreadText(command.target, context);
+    case "unknown":
+      return buildUnknownCommandText(command.name);
     case "new":
     case "continue":
+    case "continueSession":
       return null;
   }
 };
@@ -577,6 +957,7 @@ const handleFeishuText = async (
   let mode: "new" | "continue" = "continue";
   let threadId: string | undefined;
   let cwd: string | null | undefined;
+  let claudeSessionId: string | null | undefined;
 
   const sourceThreadId =
     (message.root_id as string | undefined) ??
@@ -603,6 +984,24 @@ const handleFeishuText = async (
       mode = "continue";
       threadId = command.threadId;
       text = command.prompt;
+    } else if (command.kind === "continueSession") {
+      const attached = attachLocalSessionToFeishu(command.target, {
+        chatId,
+        senderId,
+        sourceThreadId,
+      });
+      if (!attached.thread || !attached.session) {
+        await sendFeishuText(
+          chatId,
+          attached.error ?? `无法继续本地 session：${command.target}`,
+        );
+        return;
+      }
+      mode = "continue";
+      threadId = attached.thread.id;
+      cwd = attached.thread.cwd;
+      claudeSessionId = attached.session.sessionId;
+      text = command.prompt;
     }
   }
 
@@ -613,6 +1012,7 @@ const handleFeishuText = async (
       mode,
       threadId,
       cwd,
+      claudeSessionId,
       text,
       sourceThreadId,
       sourceChatId: chatId,
@@ -705,11 +1105,13 @@ export const startFeishuRemoteBridge = (): void => {
     appSecret: feishu.appSecret,
     appType: lark.AppType.SelfBuild,
     domain: lark.Domain.Feishu,
+    loggerLevel: lark.LoggerLevel.warn,
   });
 
   const eventDispatcher = new lark.EventDispatcher({
     encryptKey: feishu.encryptKey,
     verificationToken: feishu.verificationToken,
+    loggerLevel: lark.LoggerLevel.warn,
   }).register({
     "im.message.receive_v1": async (data: unknown) => {
       await handleFeishuText(data as Record<string, any>);
@@ -729,7 +1131,9 @@ export const startFeishuRemoteBridge = (): void => {
     if (kind !== "progress") return;
     void handleRemoteProgress(data as RemoteProgressSnapshot);
   });
-  console.log("[remote:feishu] long connection started");
+  if (process.env.CLAUDE_PROXY_VERBOSE === "1") {
+    console.log("[remote:feishu] long connection started");
+  }
 };
 
 export const stopFeishuRemoteBridge = (): void => {

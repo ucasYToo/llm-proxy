@@ -107,6 +107,7 @@ export interface CreateRemoteThreadInput {
   sourceUserId?: string | null;
   sourceChatId?: string | null;
   cwd?: string | null;
+  claudeSessionId?: string | null;
   title?: string | null;
 }
 
@@ -236,7 +237,7 @@ export const createRemoteThread = (
     sourceUserId: input.sourceUserId ?? null,
     sourceChatId: input.sourceChatId ?? null,
     cwd: input.cwd ?? null,
-    claudeSessionId: null,
+    claudeSessionId: input.claudeSessionId ?? null,
     channelInstanceId: null,
     status: "pending",
     title: input.title ?? null,
@@ -315,6 +316,9 @@ export const updateRemoteThread = (
     Pick<
       RemoteThread,
       | "status"
+      | "sourceThreadId"
+      | "sourceUserId"
+      | "sourceChatId"
       | "claudeSessionId"
       | "channelInstanceId"
       | "cwd"

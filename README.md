@@ -4,7 +4,7 @@
 
 它主要解决中文互联网环境里的几个实际问题：多上游模型代理、Claude Code hook 可视化、费用统计、飞书通知，以及从 Web/飞书远程继续或新建本机 Claude Code 对话。
 
-当前版本：**2.0.0**
+当前版本：**2.0.1**
 
 ## 适合谁
 
@@ -63,6 +63,8 @@ claude-proxy hook status
 claude-proxy channel status
 ```
 
+启动日志默认保持精简，只显示关键地址和异常请求；排查时可用 `claude-proxy start --ui --verbose` 查看端点列表和每请求访问日志。
+
 ## Dashboard
 
 启动时带上 `--ui` 后，Dashboard 会由同一个代理进程提供。
@@ -81,7 +83,7 @@ claude-proxy channel status
 
 ### 当前执行链路
 
-2.0.0 默认使用 CLI fallback：
+2.0.1 默认使用 CLI fallback：
 
 ```text
 Web / 飞书
@@ -106,7 +108,7 @@ Web / 飞书
 1. 启动 `claude-proxy start --ui`。
 2. 打开 Dashboard，进入远程/飞书配置区域。
 3. 启用 Remote Bridge。
-4. 配置 `allowedCwds` 和 `defaultCwd`。
+4. 配置 `defaultCwd`；`allowedCwds` 可补充未出现在项目列表里的固定目录。
 5. 在项目卡或 session list 中新建远程对话，或继续已有会话。
 
 ### 飞书接入方式
@@ -133,13 +135,30 @@ Web / 飞书
 ```text
 /help
 /status
+/status <threadId>
 /projects
+/threads
+/threads <status>
+/sessions
+/sessions <项目>
 /new <项目别名或路径> <prompt>
 /continue <threadId> <prompt>
 /use <threadId>
+/show <threadId>
+/stop [threadId]
+/use-session <sessionId>
+/continue-session <sessionId> <prompt>
 同意 <permissionId>
 拒绝 <permissionId>
 ```
+
+命令语义：
+
+- `/projects` 列出 Dashboard 已发现的项目和补充配置目录，项目备注也可以作为 `/new` 的别名。
+- `/threads` 查看当前飞书聊天可见的远程对话 thread；它不会泄露其他聊天、其他用户或 Web 创建的 thread。
+- `/sessions` 查看本机最近 Claude Code 会话；`/use-session` 会把当前飞书聊天绑定到本地 session，之后普通消息会通过 `claude -p --resume <sessionId>` 继续它。
+- `/continue-session` 是一步到位的本地会话继续命令；`sessionId` 支持唯一前缀。
+- 普通消息会继续当前飞书聊天最近使用或 `/use`、`/use-session` 绑定的远程对话。
 
 飞书展示规则：
 
@@ -213,7 +232,7 @@ claude --dangerously-load-development-channels server:claude-proxy-remote
 
 - 不要把 Dashboard 裸露到公网；需要远程访问时使用带鉴权的反向代理、Tailscale 或隧道。
 - `remoteBridge.authToken` 用于 channel/internal remote API，不会通过普通配置接口暴露给浏览器。
-- `allowedCwds` 尽量收窄；为空时只允许 `defaultCwd`。
+- Remote Bridge 可启动 Dashboard 已发现项目，以及 `defaultCwd` / `allowedCwds` 中补充的目录；不要把 Dashboard 裸露给不可信用户。
 - 群聊场景建议配置 `allowedUserIds`，避免任意群成员触发本机 Claude Code。
 
 ## Hook 管理

@@ -203,6 +203,7 @@ const runMigrations = (db: Database.Database): void => {
 const warnLegacyOnce = (): void => {
   if (legacyWarned) return;
   legacyWarned = true;
+  if (process.env.CLAUDE_PROXY_VERBOSE !== "1" && process.env.CLAUDE_PROXY_WARN_LEGACY_LOGS !== "1") return;
   if (fs.existsSync(LEGACY_LOGS_PATH)) {
     console.warn(
       `[claude-llm-proxy] 检测到旧版 logs.json（${LEGACY_LOGS_PATH}）。新版日志已迁移到 SQLite（logs.db），旧文件不再使用，可手动删除。`,

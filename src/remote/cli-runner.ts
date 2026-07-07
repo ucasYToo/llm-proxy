@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import type { RemoteBridgeConfig } from "../interfaces";
 import {
   buildClaudePermissionArgs,
@@ -77,6 +77,7 @@ export const runClaudePrint = (input: {
   resumeSessionId?: string | null;
   timeoutMs?: number;
   onEvent?: (event: unknown) => void;
+  onChild?: (child: ChildProcess) => void;
 }): Promise<ClaudePrintResult> => {
   const argv = buildClaudePrintArgv(input);
   const command = stringifyCommand(argv);
@@ -88,6 +89,7 @@ export const runClaudePrint = (input: {
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    input.onChild?.(child);
 
     let stdout = "";
     let stderr = "";

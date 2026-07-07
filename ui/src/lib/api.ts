@@ -553,6 +553,7 @@ export async function sendRemoteMessageApi(params: {
   mode: "new" | "continue";
   threadId?: string;
   cwd?: string | null;
+  claudeSessionId?: string | null;
   title?: string | null;
 }): Promise<{ thread: RemoteThread; message: RemoteMessage; dispatched: boolean }> {
   const res = await fetch("/api/remote/send", {
@@ -565,6 +566,7 @@ export async function sendRemoteMessageApi(params: {
       mode: params.mode,
       threadId: params.threadId,
       cwd: params.cwd,
+      claudeSessionId: params.claudeSessionId,
       title: params.title,
     }),
   });

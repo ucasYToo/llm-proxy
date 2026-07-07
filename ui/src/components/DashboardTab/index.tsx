@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Config, RemoteBridgeConfig, RemoteThread, TimelineEntry } from '../../lib/api';
 import {
-  installRemoteBridgeChannelApi,
-  launchRemoteBridgeChannelApi,
   sendRemoteMessageApi,
   testFeishuApp,
   updateRemoteBridge,
@@ -34,7 +32,6 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
   const data = useDashboardData();
   const [remotePrompt, setRemotePrompt] = useState('');
   const [remoteSending, setRemoteSending] = useState(false);
-  const [remoteBooting, setRemoteBooting] = useState(false);
   const [remoteConfigOpen, setRemoteConfigOpen] = useState(false);
   const [remoteSaving, setRemoteSaving] = useState(false);
   const [remoteTesting, setRemoteTesting] = useState(false);
@@ -101,12 +98,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     const sameSession = data.remoteThreads
       .filter((t) => t.source === 'web' && t.claudeSessionId === selectedSessionSummary.sessionId)
       .sort(byFreshness)[0];
-    if (sameSession) return sameSession;
-    return (
-      data.remoteThreads
-        .filter((t) => t.source === 'web' && t.cwd && t.cwd === selectedSessionSummary.cwd && t.status !== 'failed')
-        .sort(byFreshness)[0] ?? null
-    );
+    return sameSession ?? null;
   }, [data.remoteThreads, selectedSessionSummary]);
 
   const remoteEnabled = !!config.remoteBridge?.enabled && !!config.remoteBridge?.web?.enabled;
@@ -114,49 +106,6 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
   const remoteUsesChannel = remoteDeliveryMode !== 'cli';
   const hasRemoteInstance = data.remoteInstances.length > 0;
   const hasRemoteRuntime = remoteEnabled && (!remoteUsesChannel || hasRemoteInstance);
-  const suggestedRemoteCwd =
-    selectedSessionSummary?.cwd ??
-    config.remoteBridge?.defaultCwd ??
-    data.sessionGroups.find((g) => g.cwd)?.cwd ??
-    null;
-
-  const getRemoteActionCwd = () => {
-    if (suggestedRemoteCwd) return suggestedRemoteCwd;
-    const cwd = window.prompt('输入要启动 Claude Code 的项目路径', config.remoteBridge?.defaultCwd ?? '');
-    return cwd?.trim() || null;
-  };
-
-  const handleInstallRemoteBridge = async () => {
-    const cwd = getRemoteActionCwd();
-    if (!cwd) return;
-    setRemoteBooting(true);
-    try {
-      const result = await installRemoteBridgeChannelApi(cwd);
-      await onRefresh();
-      await data.refreshRemote();
-      alert(`已写入 ${result.serverName}\n${result.file}`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRemoteBooting(false);
-    }
-  };
-
-  const handleLaunchRemoteBridge = async () => {
-    const cwd = getRemoteActionCwd();
-    if (!cwd) return;
-    setRemoteBooting(true);
-    try {
-      const result = await launchRemoteBridgeChannelApi(cwd);
-      await onRefresh();
-      await data.refreshRemote();
-      alert(`已写入 ${result.mcpFile}\n已尝试启动：${result.command}`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRemoteBooting(false);
-    }
-  };
 
   const handleSaveRemoteBridge = async (next: RemoteBridgeConfig) => {
     setRemoteSaving(true);
@@ -209,6 +158,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         mode: selectedRemoteThread ? 'continue' : 'new',
         threadId: selectedRemoteThread?.id,
         cwd: selectedSessionSummary.cwd,
+        claudeSessionId: selectedSessionSummary.sessionId,
         text,
       });
       setRemotePrompt('');
@@ -343,22 +293,6 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           <button
             type="button"
             className="btnGhost btnSm"
-            onClick={() => void handleInstallRemoteBridge()}
-            disabled={remoteBooting}
-          >
-            启用/安装
-          </button>
-          <button
-            type="button"
-            className="btnGhost btnSm"
-            onClick={() => void handleLaunchRemoteBridge()}
-            disabled={remoteBooting}
-          >
-            {remoteBooting ? '启动中…' : '安装并启动'}
-          </button>
-          <button
-            type="button"
-            className="btnGhost btnSm"
             onClick={() => setRemoteConfigOpen((v) => !v)}
           >
             {remoteConfigOpen ? '收起配置' : '飞书远程配置'}
@@ -436,8 +370,8 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
       {(!remoteEnabled || (remoteUsesChannel && !hasRemoteInstance)) && (
         <div className={styles.remoteWarning}>
           {!remoteEnabled
-            ? '远程对话尚未启用。可以直接点上方「安装并启动」，会写入当前项目 .mcp.json 并打开 Claude Code。'
-            : '未检测到在线 Claude Code channel。可以直接点上方「安装并启动」；新建远程对话也会尝试自动拉起。'}
+            ? '远程对话尚未启用。可以打开「飞书远程配置」启用 Web/飞书入口，并使用 CLI fallback 执行。'
+            : '当前执行方式需要 Claude Code channel，但 dashboard 暂时隐藏了 MCP 安装入口；如不使用 channel，请在「飞书远程配置」将执行方式切到 CLI fallback。'}
         </div>
       )}
 

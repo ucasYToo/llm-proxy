@@ -37,6 +37,8 @@ node bin/cli.js hook status
 node bin/cli.js channel status
 ```
 
+`node bin/cli.js start --ui` 默认只输出启动摘要和异常请求；排查端点或请求日志时加 `--verbose`。
+
 ## Architecture Map
 
 - `src/cli/`: Commander CLI commands.

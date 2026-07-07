@@ -83,6 +83,7 @@ export const setupRemoteRoutes = (app: Express) => {
         mode?: "new" | "continue";
         threadId?: string;
         cwd?: string | null;
+        claudeSessionId?: string | null;
         title?: string | null;
       };
       const result = sendRemoteMessage({
@@ -91,6 +92,7 @@ export const setupRemoteRoutes = (app: Express) => {
         mode: body.mode,
         threadId: body.threadId,
         cwd: body.cwd,
+        claudeSessionId: body.claudeSessionId,
         title: body.title,
       });
       res.json({ ok: true, ...result });

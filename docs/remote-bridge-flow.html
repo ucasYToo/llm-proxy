@@ -1,0 +1,1230 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web/飞书远程 Claude Code 对话技术架构报告</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f9;
+        --paper: #ffffff;
+        --paper-soft: #fbfcfe;
+        --ink: #182230;
+        --muted: #667085;
+        --line: #d9e0ea;
+        --line-strong: #b7c2d2;
+        --blue: #175cd3;
+        --blue-bg: #e9f2ff;
+        --green: #087443;
+        --green-bg: #e8f6ef;
+        --amber: #b54708;
+        --amber-bg: #fff2dc;
+        --red: #b42318;
+        --red-bg: #fff0ed;
+        --violet: #6941c6;
+        --violet-bg: #f2edff;
+        --slate: #344054;
+        --shadow: 0 18px 40px rgba(24, 34, 48, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      code {
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: #eef2f7;
+        color: #1d2939;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      pre {
+        margin: 0;
+        overflow: auto;
+        white-space: pre;
+      }
+
+      .shell,
+      .diagram {
+        border-radius: 9px;
+        background: #111827;
+        color: #e7edf8;
+        padding: 15px 16px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 26px;
+        width: min(1360px, calc(100% - 42px));
+        margin: 0 auto;
+        padding: 28px 0 64px;
+      }
+
+      .toc {
+        position: sticky;
+        top: 18px;
+        align-self: start;
+        max-height: calc(100vh - 36px);
+        overflow: auto;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .toc-title {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .toc a {
+        display: block;
+        padding: 7px 8px;
+        border-radius: 7px;
+        color: var(--slate);
+        font-weight: 700;
+      }
+
+      .toc a:hover {
+        background: #eef3f9;
+        text-decoration: none;
+      }
+
+      .toc .sub {
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .report {
+        min-width: 0;
+      }
+
+      .hero,
+      .section,
+      .callout {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        padding: 30px;
+        margin-bottom: 18px;
+      }
+
+      .eyebrow {
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 920px;
+        font-size: 36px;
+        line-height: 1.18;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin-bottom: 14px;
+        font-size: 24px;
+        line-height: 1.32;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 17px;
+        line-height: 1.35;
+      }
+
+      .lead {
+        max-width: 980px;
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .meta {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--paper-soft);
+      }
+
+      .meta span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .meta strong {
+        display: block;
+        margin-top: 2px;
+        font-size: 15px;
+      }
+
+      .section {
+        padding: 26px;
+        margin-top: 18px;
+      }
+
+      .section > p {
+        color: var(--muted);
+      }
+
+      .summary-grid,
+      .card-grid,
+      .two-col,
+      .three-col {
+        display: grid;
+        gap: 14px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1.15fr 0.85fr;
+        margin-top: 16px;
+      }
+
+      .two-col {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .three-col {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--paper-soft);
+      }
+
+      .card p,
+      .card li {
+        color: var(--muted);
+      }
+
+      .card strong {
+        color: var(--ink);
+      }
+
+      .callout {
+        margin-top: 18px;
+        padding: 18px 20px;
+        border-left: 5px solid var(--blue);
+      }
+
+      .callout.warning {
+        border-left-color: var(--amber);
+      }
+
+      .callout h3 {
+        color: var(--blue);
+      }
+
+      .callout.warning h3 {
+        color: var(--amber);
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: #eef2f7;
+        color: var(--slate);
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .pill.blue {
+        background: var(--blue-bg);
+        color: var(--blue);
+      }
+
+      .pill.green {
+        background: var(--green-bg);
+        color: var(--green);
+      }
+
+      .pill.amber {
+        background: var(--amber-bg);
+        color: var(--amber);
+      }
+
+      .pill.violet {
+        background: var(--violet-bg);
+        color: var(--violet);
+      }
+
+      .table-wrap {
+        margin-top: 14px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+
+      table {
+        width: 100%;
+        min-width: 980px;
+        border-collapse: collapse;
+        background: #fff;
+      }
+
+      th,
+      td {
+        padding: 12px 13px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+
+      th {
+        background: #f1f4f8;
+        color: #475467;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      td {
+        color: #344054;
+      }
+
+      .score {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 34px;
+        height: 24px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .score.good {
+        background: var(--green-bg);
+        color: var(--green);
+      }
+
+      .score.mid {
+        background: var(--amber-bg);
+        color: var(--amber);
+      }
+
+      .score.bad {
+        background: var(--red-bg);
+        color: var(--red);
+      }
+
+      .architecture {
+        margin-top: 16px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fbff;
+      }
+
+      .arch-grid {
+        display: grid;
+        grid-template-columns: 1fr 1.2fr 1fr;
+        gap: 14px;
+        align-items: stretch;
+      }
+
+      .lane {
+        display: grid;
+        gap: 10px;
+      }
+
+      .lane-title {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .node {
+        min-height: 86px;
+        padding: 14px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .node h3 {
+        margin-bottom: 6px;
+        font-size: 15px;
+      }
+
+      .node p {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .node.blue {
+        border-color: #a4cafe;
+        background: #f6fbff;
+      }
+
+      .node.violet {
+        border-color: #c7b9ff;
+        background: #fbf9ff;
+      }
+
+      .node.green {
+        border-color: #a6d9bf;
+        background: #f7fff9;
+      }
+
+      .connector {
+        display: grid;
+        place-items: center;
+        min-height: 44px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .sequence {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .step {
+        position: relative;
+        min-height: 145px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .step::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -10px;
+        width: 10px;
+        border-top: 2px solid var(--line-strong);
+      }
+
+      .step:last-child::after {
+        display: none;
+      }
+
+      .step-num {
+        display: inline-grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        margin-bottom: 9px;
+        border-radius: 50%;
+        background: #eef2f7;
+        color: var(--slate);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .step p {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .state-row {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .state {
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--paper-soft);
+        text-align: center;
+        font-weight: 900;
+      }
+
+      .state small {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .list {
+        margin: 10px 0 0;
+        padding-left: 20px;
+      }
+
+      .list li {
+        margin: 6px 0;
+      }
+
+      .refs {
+        margin: 10px 0 0;
+        padding-left: 20px;
+        color: var(--muted);
+      }
+
+      .refs li {
+        margin: 6px 0;
+      }
+
+      .caption {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 1080px) {
+        .page {
+          grid-template-columns: 1fr;
+        }
+
+        .toc {
+          position: static;
+          max-height: none;
+        }
+
+        .meta-grid,
+        .summary-grid,
+        .two-col,
+        .three-col,
+        .arch-grid,
+        .sequence,
+        .state-row {
+          grid-template-columns: 1fr;
+        }
+
+        .step::after {
+          top: auto;
+          right: auto;
+          left: 27px;
+          bottom: -10px;
+          width: 0;
+          height: 10px;
+          border-top: 0;
+          border-left: 2px solid var(--line-strong);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <nav class="toc" aria-label="目录">
+        <p class="toc-title">报告目录</p>
+        <a href="#summary">0. 摘要结论</a>
+        <a href="#background">1. 背景</a>
+        <a class="sub" href="#goals">目标与约束</a>
+        <a href="#research">2. 技术方案调研对比</a>
+        <a class="sub" href="#decision">方案决策</a>
+        <a href="#architecture">3. 技术架构设计</a>
+        <a class="sub" href="#runtime">运行时链路</a>
+        <a class="sub" href="#data-model">数据模型</a>
+        <a class="sub" href="#state-machine">状态机</a>
+        <a href="#implementation">4. 核心实现</a>
+        <a class="sub" href="#feishu">飞书接入</a>
+        <a class="sub" href="#cli">CLI fallback</a>
+        <a class="sub" href="#channel">MCP channel</a>
+        <a href="#risk">5. 风险与演进</a>
+        <a href="#references">参考资料</a>
+      </nav>
+
+      <article class="report">
+        <header class="hero">
+          <div class="eyebrow">技术架构报告</div>
+          <h1>Web/飞书远程继续与新建 Claude Code 对话</h1>
+          <p class="lead">
+            本报告说明 llm-proxy 2.0.0 远程对话能力的背景、技术调研、架构设计和核心实现。
+            结论是：当前发布版以 <code>claude -p</code> stream-json 作为稳定主链路，
+            同时保留 MCP channel 作为 Claude Code channels 可用后的增强链路。
+          </p>
+          <div class="meta-grid">
+            <div class="meta">
+              <span>版本</span>
+              <strong>2.0.0</strong>
+            </div>
+            <div class="meta">
+              <span>报告日期</span>
+              <strong>2026-07-07</strong>
+            </div>
+            <div class="meta">
+              <span>当前主路径</span>
+              <strong>deliveryMode = cli</strong>
+            </div>
+            <div class="meta">
+              <span>目标平台</span>
+              <strong>Web Dashboard / 飞书</strong>
+            </div>
+          </div>
+          <div class="pill-row">
+            <span class="pill blue">本机 Claude Code</span>
+            <span class="pill green">飞书自建应用长连接</span>
+            <span class="pill amber">单卡片进度 + 最终文本</span>
+            <span class="pill violet">MCP channel 预留</span>
+          </div>
+        </header>
+
+        <section id="summary" class="section">
+          <h2>0. 摘要结论</h2>
+          <div class="summary-grid">
+            <div class="card">
+              <h3>一句话方案</h3>
+              <p>
+                Web/飞书把远程消息送到 llm-proxy，服务端按 thread/cwd 选择或创建远程对话，
+                当前默认通过 <code>claude -p --output-format stream-json</code> 在本机项目目录执行，
+                将 stream-json 和 hook 事件聚合成进度快照，Dashboard 用 SSE 展示，飞书用一张交互卡片持续更新，
+                最终答案再以普通聊天文本推回。
+              </p>
+            </div>
+            <div class="card">
+              <h3>为什么不是 channel 主链路</h3>
+              <p>
+                MCP channel 是架构上更接近“把外部消息注入正在运行的 Claude Code session”的方案，
+                但 Claude Code channels 仍处在 research preview，且本机实际启动时出现过
+                <code>Channels are not currently available</code>。发布版需要可用性优先，所以用 CLI fallback
+                作为主路径，channel 作为 <code>auto</code> 或 <code>channel</code> 模式保留。
+              </p>
+            </div>
+          </div>
+
+          <div class="callout">
+            <h3>当前发布策略</h3>
+            <p>
+              v2.0.0 的默认策略是“先稳定可用，再平滑升级”：飞书输入、卡片进度、最终文本、Web Dashboard
+              都基于 CLI fallback 完成；当 Claude Code channels 在用户环境里可用时，切换到
+              <code>deliveryMode = auto</code>，在线 channel instance 会优先接管，没有在线 instance 时继续回退 CLI。
+            </p>
+          </div>
+        </section>
+
+        <section id="background" class="section">
+          <h2>1. 背景</h2>
+          <p>
+            这个项目原本已经具备 Claude Code 代理、hook 采集和 Dashboard 展示能力。远程对话的需求来自一个很具体的使用场景：
+            用户不一定坐在本机终端前，但希望通过 Web 或飞书把任务投递给本机 Claude Code，让它在真实项目目录、真实本机环境和现有代理配置下执行。
+          </p>
+
+          <div class="three-col" style="margin-top: 14px">
+            <div class="card">
+              <h3>业务场景</h3>
+              <ul class="list">
+                <li>飞书私聊里发送普通消息，继续最近活跃远程 thread。</li>
+                <li>飞书群里 @bot 或回复 bot 消息，创建或继续指定任务。</li>
+                <li>Dashboard 项目卡或 session list 里直接新建或继续远程对话。</li>
+                <li>执行过程中能看到状态、工具摘要、错误和最终结果。</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h3>现有基础</h3>
+              <ul class="list">
+                <li>Proxy server 已经拥有本地 HTTP 服务、配置管理和 SQLite。</li>
+                <li>Hooks 已经能捕获 Claude Code session、tool、notification、stop 事件。</li>
+                <li>Dashboard 已经有 SSE 和会话视图，可承载远程执行状态。</li>
+                <li>通知系统已有飞书 webhook 输出，但不能接收用户消息。</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h3>关键差异</h3>
+              <ul class="list">
+                <li>远程对话是双向链路，不只是 hook 通知。</li>
+                <li>需要 thread、cwd、session、消息投递状态的持久映射。</li>
+                <li>飞书必须使用自建应用事件接收，不能依赖自定义 webhook 机器人。</li>
+                <li>不能展示 Claude 隐藏思考，只展示可观察过程和结果。</li>
+              </ul>
+            </div>
+          </div>
+
+          <section id="goals" class="callout">
+            <h3>目标与约束</h3>
+            <div class="two-col">
+              <div>
+                <strong>功能目标</strong>
+                <ul class="list">
+                  <li>支持 Web/飞书新建 Claude Code 远程对话。</li>
+                  <li>支持按 thread 继续远程对话，并尽量复用 Claude session。</li>
+                  <li>飞书显示单卡片进度，最终答案像聊天一样回到主会话。</li>
+                  <li>支持权限请求 relay 的架构预留。</li>
+                  <li>保留 MCP channel 路径，等待 Claude Code channels 可用。</li>
+                </ul>
+              </div>
+              <div>
+                <strong>非功能约束</strong>
+                <ul class="list">
+                  <li>远程 API 必须有 token 或同源边界保护。</li>
+                  <li>cwd 必须被 allowlist 限制，避免任意目录执行。</li>
+                  <li>飞书卡片更新必须低于单消息频控，并控制卡片体积。</li>
+                  <li>服务端要能审计 inbound/outbound/system/permission 消息。</li>
+                  <li>当前能力优先保证本机、局域网、Tailscale、隧道场景可用。</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="research" class="section">
+          <h2>2. 技术方案调研对比</h2>
+          <p>
+            调研分为三个层面：消息入口、Claude Code 执行通道、进度与回复展示。核心取舍不是“哪一个方案最先进”，而是“哪个方案在当前用户环境里可发布、可恢复、可观测”。
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>方案</th>
+                  <th>能解决什么</th>
+                  <th>优点</th>
+                  <th>限制</th>
+                  <th>当前评分</th>
+                  <th>结论</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>飞书自定义机器人 webhook</strong></td>
+                  <td>向群里发通知。</td>
+                  <td>配置简单，适合 hook 事件通知。</td>
+                  <td>只能作为输出入口，不能可靠接收用户消息和维护双向对话。</td>
+                  <td><span class="score bad">低</span></td>
+                  <td>保留通知用途，不用于远程输入。</td>
+                </tr>
+                <tr>
+                  <td><strong>飞书自建应用长连接</strong></td>
+                  <td>接收私聊/群聊消息，发送文本和卡片。</td>
+                  <td>官方支持消息事件，适合 IM bot；不需要公网 request URL。</td>
+                  <td>需要应用权限、机器人能力、事件订阅和 app secret；事件处理要快速返回。</td>
+                  <td><span class="score good">高</span></td>
+                  <td>作为飞书输入主路径。</td>
+                </tr>
+                <tr>
+                  <td><strong>Claude Code MCP channel</strong></td>
+                  <td>把外部事件注入已经运行的 Claude Code session。</td>
+                  <td>架构最贴近“继续当前会话”，支持双向 reply tool 和 permission relay。</td>
+                  <td>官方仍标记为 research preview，需要版本、认证和组织开关；事件只在 session 打开时到达。</td>
+                  <td><span class="score mid">中</span></td>
+                  <td>实现并保留，但不作为默认发布主链路。</td>
+                </tr>
+                <tr>
+                  <td><strong>Claude CLI print 模式</strong></td>
+                  <td>以命令行方式执行 prompt，输出 JSON/stream-json。</td>
+                  <td>当前可用性最好；支持 <code>--resume</code>；stream-json 能聚合进度。</td>
+                  <td>每条远程消息是一次 CLI 进程，不等价于把消息注入正在交互的 TTY。</td>
+                  <td><span class="score good">高</span></td>
+                  <td>作为 v2.0.0 默认主链路。</td>
+                </tr>
+                <tr>
+                  <td><strong>只依赖 hooks/dashboard</strong></td>
+                  <td>观察本机 Claude Code 执行过程。</td>
+                  <td>已有基础扎实，适合做接收和展示。</td>
+                  <td>hooks 不是输入通道，无法主动把远程消息送给 Claude。</td>
+                  <td><span class="score mid">中</span></td>
+                  <td>作为可观测层，不承担消息投递。</td>
+                </tr>
+                <tr>
+                  <td><strong>官方 Claude Web/App/Slack</strong></td>
+                  <td>官方远程或团队聊天入口。</td>
+                  <td>体验成熟，维护成本低。</td>
+                  <td>不能直接满足飞书、本机代理、本地项目目录、私有 Dashboard 和中文办公 IM 场景。</td>
+                  <td><span class="score mid">中</span></td>
+                  <td>不是本项目目标替代方案。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>维度</th>
+                  <th>CLI fallback</th>
+                  <th>MCP channel</th>
+                  <th>项目取舍</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>本机可用性</td>
+                  <td>只依赖 Claude CLI，可立即验证。</td>
+                  <td>依赖 Claude Code channels 可用、认证和组织开关。</td>
+                  <td>默认 CLI。</td>
+                </tr>
+                <tr>
+                  <td>会话连续性</td>
+                  <td>通过 <code>--resume sessionId</code> 继续。</td>
+                  <td>直接注入正在运行的 session。</td>
+                  <td>channel 更理想，但 CLI 足够支撑 v1 体验。</td>
+                </tr>
+                <tr>
+                  <td>进度观测</td>
+                  <td>stream-json、partial messages、hook events。</td>
+                  <td>需要 channel 内事件和 Claude tool reply 组合。</td>
+                  <td>CLI 进度更容易落地。</td>
+                </tr>
+                <tr>
+                  <td>飞书体验</td>
+                  <td>单卡片进度 + 最终文本。</td>
+                  <td>同样可复用进度卡片聚合器。</td>
+                  <td>展示层与执行器解耦。</td>
+                </tr>
+                <tr>
+                  <td>失败恢复</td>
+                  <td>进程退出即可标记 failed，错误清晰。</td>
+                  <td>要处理 instance 心跳、SSE 断线、session 关闭。</td>
+                  <td>v2 先确保失败可解释。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <section id="decision" class="callout warning">
+            <h3>方案决策</h3>
+            <p>
+              采用“飞书自建应用长连接 + llm-proxy Remote Bridge + CLI fallback 主执行器 + MCP channel 可选增强”的组合方案。
+              这不是否定 channel，而是把 channel 放在合适的位置：当它在用户环境可用时提供更强的会话注入能力；在不可用时不影响远程对话的基本可用性。
+            </p>
+          </section>
+        </section>
+
+        <section id="architecture" class="section">
+          <h2>3. 技术架构设计</h2>
+          <p>
+            架构分为入口层、控制层、执行层、展示层和存储层。入口层负责接收 Web/飞书消息，控制层负责 thread 选择、权限和路由，执行层负责 CLI 或 channel 投递，展示层负责 Dashboard SSE 和飞书卡片/文本，存储层负责审计和恢复。
+          </p>
+
+          <div class="architecture">
+            <div class="arch-grid">
+              <div class="lane">
+                <div class="lane-title">入口层</div>
+                <div class="node blue">
+                  <h3>Web Dashboard</h3>
+                  <p><code>POST /api/remote/send</code> 新建或继续远程对话。</p>
+                </div>
+                <div class="connector">输入消息</div>
+                <div class="node blue">
+                  <h3>飞书自建应用</h3>
+                  <p><code>WSClient</code> 长连接接收 <code>im.message.receive_v1</code>。</p>
+                </div>
+              </div>
+
+              <div class="lane">
+                <div class="lane-title">llm-proxy 控制层</div>
+                <div class="node green">
+                  <h3>Remote Service</h3>
+                  <p><code>sendRemoteMessage</code> 创建 thread/message，校验 cwd，选择执行器。</p>
+                </div>
+                <div class="node">
+                  <h3>SQLite</h3>
+                  <p>保存 threads、messages、cards、instances、permissions。</p>
+                </div>
+                <div class="node">
+                  <h3>Progress Aggregator</h3>
+                  <p>聚合 stream-json/hook/tool 事件，生成可展示快照。</p>
+                </div>
+              </div>
+
+              <div class="lane">
+                <div class="lane-title">执行与展示层</div>
+                <div class="node blue">
+                  <h3>CLI fallback</h3>
+                  <p><code>claude -p --output-format stream-json --verbose</code>。</p>
+                </div>
+                <div class="node violet">
+                  <h3>MCP channel</h3>
+                  <p><code>notifications/claude/channel</code> + <code>remote_reply</code>。</p>
+                </div>
+                <div class="node green">
+                  <h3>输出</h3>
+                  <p>Dashboard SSE、飞书进度卡片、最终普通文本。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <section id="runtime">
+            <h3 style="margin-top: 22px">运行时主链路：CLI fallback</h3>
+            <div class="sequence">
+              <div class="step">
+                <span class="step-num">1</span>
+                <h3>接收消息</h3>
+                <p>Web API 或飞书长连接收到 prompt，解析命令、sender、chat 和 source message。</p>
+              </div>
+              <div class="step">
+                <span class="step-num">2</span>
+                <h3>选择 thread</h3>
+                <p>新建时按 cwd 创建，继续时按 shortId、最近 active thread 或 sourceThreadId 查找。</p>
+              </div>
+              <div class="step">
+                <span class="step-num">3</span>
+                <h3>写入消息</h3>
+                <p>创建 inbound remote_message，初始化 progress snapshot 和飞书 progress card。</p>
+              </div>
+              <div class="step">
+                <span class="step-num">4</span>
+                <h3>执行 Claude</h3>
+                <p>根据 <code>deliveryMode=cli</code> 进入 <code>dispatchToCli</code> 并 spawn Claude CLI。</p>
+              </div>
+              <div class="step">
+                <span class="step-num">5</span>
+                <h3>聚合进度</h3>
+                <p>逐行解析 stream-json，更新 phase、events、tools、answerPreview 和 card。</p>
+              </div>
+              <div class="step">
+                <span class="step-num">6</span>
+                <h3>发送回复</h3>
+                <p>Stop hook 或 result 出现最终文本后，写 outbound 并向飞书/Web 推送。</p>
+              </div>
+            </div>
+          </section>
+
+          <section id="data-model">
+            <h3 style="margin-top: 22px">数据模型</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>表</th>
+                    <th>职责</th>
+                    <th>关键字段</th>
+                    <th>设计原因</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>remote_threads</code></td>
+                    <td>远程会话主实体。</td>
+                    <td><code>shortId</code>、<code>source</code>、<code>cwd</code>、<code>claudeSessionId</code>、<code>channelInstanceId</code>、<code>status</code></td>
+                    <td>把飞书/Web thread 映射到本机 cwd 和 Claude session。</td>
+                  </tr>
+                  <tr>
+                    <td><code>remote_messages</code></td>
+                    <td>远程消息流水。</td>
+                    <td><code>direction</code>、<code>sourceMessageId</code>、<code>sourceUserId</code>、<code>status</code>、<code>error</code></td>
+                    <td>审计 inbound/outbound/system/permission，并支持失败追踪。</td>
+                  </tr>
+                  <tr>
+                    <td><code>remote_message_cards</code></td>
+                    <td>飞书进度卡片映射。</td>
+                    <td><code>inboundMessageId</code>、<code>providerMessageId</code>、<code>lastSnapshot</code>、<code>lastPatchedAt</code></td>
+                    <td>确保每条飞书入站消息只更新自己的卡片，不互相覆盖。</td>
+                  </tr>
+                  <tr>
+                    <td><code>remote_channel_instances</code></td>
+                    <td>MCP channel 进程心跳。</td>
+                    <td><code>id</code>、<code>pid</code>、<code>cwd</code>、<code>claudeSessionId</code>、<code>lastSeenAt</code></td>
+                    <td>channel 模式下选择在线 instance，识别 session 是否还活着。</td>
+                  </tr>
+                  <tr>
+                    <td><code>remote_permissions</code></td>
+                    <td>远程权限审批。</td>
+                    <td><code>requestId</code>、<code>toolName</code>、<code>inputPreview</code>、<code>behavior</code>、<code>status</code></td>
+                    <td>把 Claude Code permission_request 转成 Web/飞书可审批事件。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="state-machine">
+            <h3 style="margin-top: 22px">状态机</h3>
+            <div class="state-row">
+              <div class="state">pending<small>thread 已创建</small></div>
+              <div class="state">queued<small>等待执行器</small></div>
+              <div class="state">running<small>Claude 正在处理</small></div>
+              <div class="state">waiting_permission<small>等待审批</small></div>
+              <div class="state">done<small>最终回复已产出</small></div>
+              <div class="state">failed<small>执行或投递失败</small></div>
+            </div>
+            <p class="caption">
+              message 状态独立于 thread 状态，使用 <code>queued</code>、<code>sent</code>、<code>delivered</code>、<code>failed</code> 表示投递生命周期。
+            </p>
+          </section>
+        </section>
+
+        <section id="implementation" class="section">
+          <h2>4. 核心实现</h2>
+          <p>
+            下面按照代码模块说明关键实现点。路径均为当前仓库实际代码。
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>模块</th>
+                  <th>核心文件</th>
+                  <th>关键职责</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>配置</td>
+                  <td><code>src/config/store.ts</code>、<code>src/interfaces/config.ts</code></td>
+                  <td><code>remoteBridge</code> 默认值、飞书配置、cwd allowlist、deliveryMode。</td>
+                </tr>
+                <tr>
+                  <td>远程编排</td>
+                  <td><code>src/remote/service.ts</code></td>
+                  <td><code>sendRemoteMessage</code>、thread 选择、cwd 校验、CLI/channel 路由、reply 写回。</td>
+                </tr>
+                <tr>
+                  <td>CLI 执行器</td>
+                  <td><code>src/remote/cli-runner.ts</code></td>
+                  <td>构造 <code>claude -p</code> 参数、spawn 子进程、解析 stream-json/result。</td>
+                </tr>
+                <tr>
+                  <td>进度聚合</td>
+                  <td><code>src/remote/progress.ts</code></td>
+                  <td>把 assistant text、tool_use、hook、error、result 归约为 snapshot。</td>
+                </tr>
+                <tr>
+                  <td>飞书桥</td>
+                  <td><code>src/remote/feishu.ts</code>、<code>src/remote/feishu-card.ts</code>、<code>src/remote/feishu/parser.ts</code></td>
+                  <td>长连接、命令解析、卡片发送/patch、最终文本发送、错误降级。</td>
+                </tr>
+                <tr>
+                  <td>MCP channel</td>
+                  <td><code>src/channel/server.ts</code>、<code>src/cli/commands/channel.ts</code></td>
+                  <td>注册 channel instance、接收内部 SSE、发送 Claude channel notification、暴露 <code>remote_reply</code>。</td>
+                </tr>
+                <tr>
+                  <td>存储</td>
+                  <td><code>src/storage/remote.ts</code>、<code>src/storage/db.ts</code></td>
+                  <td>remote tables CRUD、SQLite migration 和历史数据兼容。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <section id="feishu" class="card" style="margin-top: 16px">
+            <h3>4.1 飞书接入实现</h3>
+            <div class="two-col">
+              <div>
+                <strong>输入侧</strong>
+                <ul class="list">
+                  <li><code>startFeishuRemoteBridge</code> 使用飞书 SDK <code>WSClient</code> 建立长连接。</li>
+                  <li><code>handleFeishuText</code> 过滤群聊触发条件、校验 allowlist、解析文本。</li>
+                  <li><code>parseFeishuRemoteCommand</code> 支持 <code>/help</code>、<code>/status</code>、<code>/projects</code>、<code>/new</code>、<code>/continue</code>、<code>/use</code>。</li>
+                  <li><code>parsePermissionReply</code> 支持 <code>同意 id</code>、<code>拒绝 id</code>、<code>yes id</code>、<code>no id</code>。</li>
+                </ul>
+              </div>
+              <div>
+                <strong>输出侧</strong>
+                <ul class="list">
+                  <li>入站消息创建 <code>remote_message_cards</code>，发送一张共享卡片。</li>
+                  <li><code>buildFeishuProgressCard</code> 固定 <code>wide_screen_mode</code> 和 <code>update_multi</code>。</li>
+                  <li>patch 使用单卡片队列、最小间隔和 trailing update 合并，降低频控风险。</li>
+                  <li>最终回复通过 <code>sendFinalReplyText</code> 发送普通文本，超长内容分段。</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section id="cli" class="card" style="margin-top: 14px">
+            <h3>4.2 CLI fallback 实现</h3>
+            <p>
+              CLI fallback 的核心是 <code>runClaudePrint</code>。它不是简单执行一条命令，而是把 Claude CLI
+              包装成可观测、可恢复、可失败归因的执行器。
+            </p>
+            <pre class="shell">claude -p \
+  --output-format stream-json \
+  --verbose \
+  --include-partial-messages \
+  --include-hook-events \
+  [permission args] \
+  [--resume sessionId] \
+  -- &lt;prompt&gt;</pre>
+            <ul class="list">
+              <li><code>--verbose</code> 是 stream-json 模式下必要参数，避免 Claude CLI 报错。</li>
+              <li><code>--include-partial-messages</code> 让进度卡片能展示生成中摘要。</li>
+              <li><code>--include-hook-events</code> 让 Stop hook、tool/hook 事件进入 reducer。</li>
+              <li>当 Stop hook 的 <code>last_assistant_message</code> 或 result 事件出现时，提前发送最终回复，减少飞书等待。</li>
+              <li>进程关闭后仍会解析最终 result，作为 early final 的兜底。</li>
+            </ul>
+          </section>
+
+          <section id="channel" class="card" style="margin-top: 14px">
+            <h3>4.3 MCP channel 实现</h3>
+            <p>
+              channel 路径已经实现，但默认不启用。它的核心是一个本地 MCP server：<code>claude-proxy-channel</code>。
+            </p>
+            <div class="diagram">Claude Code session
+  -> starts claude-proxy-channel MCP server
+  -> channel registers instance to llm-proxy
+  -> channel opens /api/remote/channel/events SSE
+  -> llm-proxy pushes remote message event
+  -> channel sends notifications/claude/channel
+  -> Claude handles the message
+  -> Claude calls remote_reply tool
+  -> llm-proxy writes outbound message and pushes Web/Feishu reply</div>
+            <ul class="list">
+              <li>能力声明包含 <code>experimental["claude/channel"]</code>。</li>
+              <li>权限 relay 预留 <code>experimental["claude/channel/permission"]</code>。</li>
+              <li>内部 SSE 不在 URL query 放 token，而是使用 <code>X-Remote-Bridge-Token</code>。</li>
+              <li><code>remote_reply</code> 必须携带 <code>remote_thread_id</code>，服务端校验 instance/thread 绑定。</li>
+              <li>安装命令 <code>claude-proxy channel install --scope project --port 1998</code> 写入项目 <code>.mcp.json</code>。</li>
+            </ul>
+          </section>
+
+          <section class="card" style="margin-top: 14px">
+            <h3>4.4 安全边界</h3>
+            <div class="three-col">
+              <div>
+                <strong>执行目录</strong>
+                <p>所有新建远程对话都要通过 <code>allowedCwds</code> 和 <code>defaultCwd</code> 校验，避免远程任意目录执行。</p>
+              </div>
+              <div>
+                <strong>远程 API</strong>
+                <p>channel/internal API 使用 <code>remoteBridge.authToken</code>。Dashboard 走同源边界，配置响应隐藏 token。</p>
+              </div>
+              <div>
+                <strong>飞书权限</strong>
+                <p>支持 <code>allowedUserIds</code>；群聊只处理 @bot 或回复 bot 链路，降低误触发和群成员滥用风险。</p>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="risk" class="section">
+          <h2>5. 风险与演进</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>风险</th>
+                  <th>当前处理</th>
+                  <th>后续演进</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Claude Code channels 不可用或协议变动。</td>
+                  <td>默认 CLI fallback，channel 仅在 <code>auto/channel</code> 模式使用。</td>
+                  <td>跟随官方 channels 稳定后，逐步把 <code>auto</code> 设为推荐模式。</td>
+                </tr>
+                <tr>
+                  <td>CLI fallback 不是真正注入现有 TTY。</td>
+                  <td>用 <code>--resume sessionId</code> 保持上下文连续，并写回 thread 的 <code>claudeSessionId</code>。</td>
+                  <td>channel 可用后，用在线 instance 接管长会话场景。</td>
+                </tr>
+                <tr>
+                  <td>飞书卡片 patch 频控和大小限制。</td>
+                  <td>单卡片队列、最小间隔、合并 trailing update、失败只降级提示一次。</td>
+                  <td>引入快照 diff 和动态降采样，进一步减少 patch。</td>
+                </tr>
+                <tr>
+                  <td>公网暴露 Dashboard 的安全风险。</td>
+                  <td>文档要求使用带鉴权隧道/反代，API token 与 cwd allowlist 限制执行范围。</td>
+                  <td>后续补账号体系、一次性访问链接和更细粒度 RBAC。</td>
+                </tr>
+                <tr>
+                  <td>权限审批卡在远程链路。</td>
+                  <td>channel permission relay 已预留，CLI 侧依赖 Claude CLI permission 参数。</td>
+                  <td>统一 Web/飞书审批中心，支持超时、撤销和审批审计。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="references" class="section">
+          <h2>参考资料</h2>
+          <ul class="refs">
+            <li>
+              <a href="https://code.claude.com/docs/en/channels">Claude Code Docs: Push events into a running session with channels</a>
+              ：官方说明 channels 是把外部事件推入运行中 session 的 MCP server，处于 research preview，并受版本、认证、组织开关影响。
+            </li>
+            <li>
+              <a href="https://code.claude.com/docs/en/channels-reference">Claude Code Docs: Channels reference</a>
+              ：自定义 channel 的 notification、reply tool 和 permission relay 协议参考。
+            </li>
+            <li>
+              <a href="https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/request-url-configuration-case?lang=zh-CN">飞书开放平台：使用长连接接收事件</a>
+              ：长连接适用于企业自建应用，适合作为本项目飞书输入通道。
+            </li>
+            <li>
+              <a href="https://open.feishu.cn/document/server-docs/im-v1/message/events/receive?lang=zh-CN">飞书开放平台：接收消息 im.message.receive_v1</a>
+              ：机器人接收私聊和群聊消息事件的入口。
+            </li>
+            <li>
+              <a href="https://open.feishu.cn/document/server-docs/im-v1/message/create">飞书开放平台：发送消息</a>
+              ：普通文本和卡片消息发送能力。
+            </li>
+            <li>
+              <a href="https://open.feishu.cn/document/server-docs/im-v1/message-card/patch?lang=zh-CN">飞书开放平台：更新已发送的消息卡片</a>
+              ：进度卡片 patch 能力及共享卡片、时间窗口、频控和大小限制。
+            </li>
+          </ul>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>

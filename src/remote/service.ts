@@ -1,5 +1,6 @@
 import fs from "fs";
 import { readConfig } from "../config/store";
+import { getKnownProjects } from "../core/session";
 import {
   createRemotePermission,
   createRemoteThread,
@@ -58,6 +59,7 @@ type RemoteOutboundSender = (
 const remoteEventListeners = new Set<RemoteEventListener>();
 const outboundSenders = new Set<RemoteOutboundSender>();
 const cliQueues = new Map<string, Promise<void>>();
+const runningCliStops = new Map<string, () => void>();
 const progressSnapshots = new Map<string, RemoteProgressSnapshot>();
 
 export const onRemoteEvent = (fn: RemoteEventListener): (() => void) => {
@@ -125,12 +127,12 @@ const updateProgressSnapshot = (
 const isCwdAllowed = (cwd: string): boolean => {
   const remoteBridge = readConfig().remoteBridge;
   const allowed = remoteBridge?.allowedCwds ?? [];
-  const candidates =
-    allowed.length > 0
-      ? allowed
-      : remoteBridge?.defaultCwd
-        ? [remoteBridge.defaultCwd]
-        : [];
+  const known = getKnownProjects().map((project) => project.cwd);
+  const candidates = [
+    ...known,
+    ...allowed,
+    ...(remoteBridge?.defaultCwd ? [remoteBridge.defaultCwd] : []),
+  ];
   if (!candidates.length) return false;
   const realCwd = fs.realpathSync.native(cwd);
   return candidates.some((item) => {
@@ -324,6 +326,8 @@ const dispatchToCli = (
     const latestThread = getRemoteThread(thread.id) ?? thread;
     let finalReplySent = false;
     let finalReplyTask: Promise<void> | null = null;
+    let stoppedByUser = false;
+    let currentStopper: (() => void) | null = null;
     const sendFinalReplyOnce = async (
       text: string,
       sessionId: string | null,
@@ -372,6 +376,13 @@ const dispatchToCli = (
       config,
       prompt: message.text,
       resumeSessionId: latestThread.claudeSessionId,
+      onChild: (child) => {
+        currentStopper = () => {
+          stoppedByUser = true;
+          if (!child.killed) child.kill("SIGTERM");
+        };
+        runningCliStops.set(thread.id, currentStopper);
+      },
       onEvent: (event) => {
         updateProgressSnapshot(message.id, (snapshot) =>
           reduceClaudeStreamEvent(snapshot, event),
@@ -384,6 +395,13 @@ const dispatchToCli = (
           );
         }
       },
+    }).finally(() => {
+      if (
+        currentStopper &&
+        runningCliStops.get(thread.id) === currentStopper
+      ) {
+        runningCliStops.delete(thread.id);
+      }
     });
 
     if (result.ok) {
@@ -396,20 +414,25 @@ const dispatchToCli = (
       return;
     }
 
+    const failureText = stoppedByUser
+      ? "用户已停止远程任务"
+      : result.error ?? "Claude CLI failed";
     updateProgressSnapshot(message.id, (snapshot) =>
-      markProgressFailed(snapshot, result.error ?? "Claude CLI failed"),
+      markProgressFailed(snapshot, failureText),
     );
     const failed = updateRemoteMessageStatus(
       message.id,
       "failed",
-      result.error ?? "Claude CLI failed",
+      failureText,
     );
     if (failed) emitRemoteEvent("message", failed);
     const failedThread = updateRemoteThread(thread.id, { status: "failed" });
     if (failedThread) emitRemoteEvent("thread", failedThread);
     await insertAndDeliverOutbound(
       failedThread ?? latestThread,
-      `Claude CLI 执行失败：${result.error ?? "unknown error"}`,
+      stoppedByUser
+        ? `远程任务已停止 · #${thread.shortId}`
+        : `Claude CLI 执行失败：${result.error ?? "unknown error"}`,
       "error",
     );
   };
@@ -445,6 +468,30 @@ const dispatchToCli = (
     });
   cliQueues.set(thread.id, next);
   return true;
+};
+
+export const stopRemoteThread = (
+  idOrShortId: string,
+): { ok: boolean; thread: RemoteThread | null; message: string } => {
+  const target = idOrShortId.trim().replace(/^#/, "");
+  const thread = target ? getRemoteThread(target) : null;
+  if (!thread) {
+    return { ok: false, thread: null, message: `找不到远程对话：${idOrShortId}` };
+  }
+  const stop = runningCliStops.get(thread.id);
+  if (!stop) {
+    return {
+      ok: false,
+      thread,
+      message: `#${thread.shortId} 当前没有可停止的 CLI 任务`,
+    };
+  }
+  stop();
+  return {
+    ok: true,
+    thread,
+    message: `已请求停止远程任务 · #${thread.shortId}`,
+  };
 };
 
 const maybeLaunchForThread = (thread: RemoteThread): void => {
@@ -539,6 +586,7 @@ export interface SendRemoteMessageInput {
   mode?: "new" | "continue";
   threadId?: string;
   cwd?: string | null;
+  claudeSessionId?: string | null;
   title?: string | null;
   sourceThreadId?: string | null;
   sourceUserId?: string | null;
@@ -546,6 +594,59 @@ export interface SendRemoteMessageInput {
   sourceMessageId?: string | null;
   raw?: unknown;
 }
+
+export interface AttachRemoteSessionInput {
+  source: RemoteSource;
+  cwd: string;
+  claudeSessionId: string;
+  title?: string | null;
+  sourceThreadId?: string | null;
+  sourceUserId?: string | null;
+  sourceChatId?: string | null;
+}
+
+export const attachRemoteSession = (
+  input: AttachRemoteSessionInput,
+): RemoteThread => {
+  const cwd = normalizeCwd(input.cwd);
+  if (!cwd) throw new Error("cwd is required");
+  assertAllowedCwd(cwd);
+  const existing = queryRemoteThreads({ source: input.source, limit: 500 }).threads
+    .filter((thread) => thread.claudeSessionId === input.claudeSessionId)
+    .find((thread) => isThreadVisibleToInput(thread, input));
+  if (existing) {
+    const updated = updateRemoteThread(existing.id, {
+      sourceThreadId: input.sourceThreadId ?? existing.sourceThreadId,
+      sourceUserId: input.sourceUserId ?? existing.sourceUserId,
+      sourceChatId: input.sourceChatId ?? existing.sourceChatId,
+      cwd,
+      title: input.title ?? existing.title,
+      claudeSessionId: input.claudeSessionId,
+    }) ?? existing;
+    emitRemoteEvent("thread", updated);
+    return updated;
+  }
+
+  const thread = createRemoteThread({
+    source: input.source,
+    sourceThreadId: input.sourceThreadId,
+    sourceUserId: input.sourceUserId,
+    sourceChatId: input.sourceChatId,
+    cwd,
+    claudeSessionId: input.claudeSessionId,
+    title: input.title ?? `本地会话 ${input.claudeSessionId.slice(0, 8)}`,
+  });
+  emitRemoteEvent("thread", thread);
+  const system = insertRemoteMessage({
+    threadId: thread.id,
+    direction: "system",
+    source: input.source,
+    text: `已绑定本地 Claude session: ${input.claudeSessionId}`,
+    status: "delivered",
+  });
+  emitRemoteEvent("message", system);
+  return thread;
+};
 
 export const sendRemoteMessage = (
   input: SendRemoteMessageInput,
@@ -572,6 +673,11 @@ export const sendRemoteMessage = (
     thread = getRemoteThread(input.threadId);
     if (!thread) throw new Error(`remote thread not found: ${input.threadId}`);
     assertThreadVisibleToInput(thread, input);
+    if (input.claudeSessionId && !thread.claudeSessionId) {
+      thread =
+        updateRemoteThread(thread.id, { claudeSessionId: input.claudeSessionId }) ??
+        thread;
+    }
   }
   if (!thread && mode === "continue") {
     thread = findLatestRemoteThreadForSource({
@@ -593,6 +699,7 @@ export const sendRemoteMessage = (
       sourceUserId: input.sourceUserId,
       sourceChatId: input.sourceChatId,
       cwd,
+      claudeSessionId: input.claudeSessionId,
       title: input.title ?? text.slice(0, 80),
     });
     emitRemoteEvent("thread", thread);

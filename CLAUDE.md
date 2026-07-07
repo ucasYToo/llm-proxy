@@ -46,6 +46,8 @@ claude-proxy hook install --port 1998
 claude-proxy channel install --scope project --port 1998
 ```
 
+`claude-proxy start` 默认只输出启动摘要和异常请求；需要端点列表或每请求访问日志时加 `--verbose`。
+
 ## Architecture
 
 ```text
