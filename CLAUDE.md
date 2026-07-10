@@ -14,7 +14,7 @@ Guidance for Claude Code when working in this repository.
 - a React/Vite dashboard
 - Web and Feishu remote conversation support for creating or continuing Claude Code sessions
 
-Release target in this working tree: **2.0.0**.
+Release target in this working tree: **2.1.1**.
 
 ## Common Commands
 
@@ -99,8 +99,10 @@ Feishu output behavior:
 - send one interactive progress card per inbound user message
 - patch that same card with coalesced progress updates
 - send the final Claude answer as normal text
+- send user-requested files as Feishu file messages through the protected local remote API
 - do not use Feishu `reply_in_thread` for remote progress or final answers
 - preserve `sourceBotId` on Feishu remote threads/messages/cards so replies are sent by the same bot that received the inbound message
+- install/update the project-local `feishu-remote` skill from Dashboard per Feishu bot `defaultCwd`; do not make users configure this through CLI
 
 ## API Surface
 
@@ -113,6 +115,8 @@ Channel/internal Remote endpoints require `remoteBridge.authToken` through one o
 - `Authorization: Bearer <token>`
 
 Same-origin dashboard calls may use the local server origin check for Web send/permission actions, but the token must not be returned in the public config payload. Do not add cross-origin remote write paths.
+
+Feishu file upload uses `/api/remote/feishu/send-file` and requires `remoteBridge.authToken`. The CLI fallback child process receives the remote context in environment variables so the installed skill helper can call this API without exposing the token in argv or dashboard config.
 
 ## Persistence
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.1 (2026-07-10)
+
+### 新增
+
+- Dashboard 飞书远程配置支持按机器人默认项目目录安装、更新和移除 `feishu-remote` Claude skill，不再要求用户手动走 CLI。
+- Feishu Remote Bridge 为 CLI fallback 注入远程 thread/message/bot/chat/cwd 上下文，skill 可通过受保护的本机 API 把项目目录内文件回传到原飞书会话。
+- 新增 `/api/remote/feishu/send-file` 内部接口，校验文件必须位于当前远程项目目录内并遵守飞书 30MB 上传限制。
+
+### 变更
+
+- 飞书远程回传文件会上传为飞书文件消息，仍保持进度卡片与最终文本回复分离。
+- 飞书 `/status` 会显示当前用户飞书 ID、远程对话 ID、Chat ID 和消息链 ID，方便诊断远程上下文。
+
 ## 2.1.0 (2026-07-07)
 
 ### 新增

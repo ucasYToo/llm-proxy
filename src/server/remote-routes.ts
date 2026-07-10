@@ -1,6 +1,8 @@
 import { Express, Request, Response } from "express";
 import { readConfig } from "../config/store";
 import { addRemoteChannelClient } from "../remote/channel-hub";
+import { sendFeishuFileToThread } from "../remote/feishu";
+import { resolveRemoteFeishuFile } from "../remote/feishu-file";
 import {
   dispatchQueuedMessagesForInstanceId,
   heartbeatRemoteChannel,
@@ -12,6 +14,7 @@ import {
   sendRemoteMessage,
   submitPermissionVerdict,
 } from "../remote/service";
+import { getRemoteThread } from "../storage/remote";
 
 const getBearer = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
@@ -132,6 +135,56 @@ export const setupRemoteRoutes = (app: Express) => {
       };
       const instance = registerRemoteChannelInstance(body);
       res.json({ ok: true, instance });
+    }),
+  );
+
+  app.post(
+    "/api/remote/feishu/send-file",
+    asyncRoute(async (req, res) => {
+      if (!requireRemoteBridge(req, res)) return;
+      const body = req.body as {
+        remote_thread_id?: string;
+        remoteThreadId?: string;
+        path?: string;
+        filePath?: string;
+        name?: string | null;
+        text?: string | null;
+      };
+      const remoteThreadId = body.remote_thread_id ?? body.remoteThreadId;
+      const rawPath = body.path ?? body.filePath;
+      if (!remoteThreadId || !rawPath) {
+        res.status(400).json({ error: "remote_thread_id and path are required" });
+        return;
+      }
+      const thread = getRemoteThread(remoteThreadId);
+      if (!thread) {
+        res.status(404).json({ error: "remote thread not found" });
+        return;
+      }
+      if (thread.source !== "feishu") {
+        res.status(400).json({ error: "remote thread is not a Feishu conversation" });
+        return;
+      }
+      const file = resolveRemoteFeishuFile({
+        thread,
+        filePath: rawPath,
+        displayName: body.name,
+      });
+      const sent = await sendFeishuFileToThread({
+        thread,
+        filePath: file.filePath,
+        fileName: file.displayName,
+        text: body.text,
+      });
+      res.json({
+        ok: true,
+        file: {
+          name: file.displayName,
+          sizeBytes: file.sizeBytes,
+        },
+        fileKey: sent.fileKey,
+        messageId: sent.messageId,
+      });
     }),
   );
 

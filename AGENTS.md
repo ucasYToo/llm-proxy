@@ -65,6 +65,7 @@ Runtime state:
 - Do not expose Claude hidden thinking in UI, Feishu cards, logs, or docs.
 - Feishu remote replies should not use topic replies; progress is one patched card and final output is normal text.
 - Feishu Remote Bridge may run multiple bots; preserve `sourceBotId` on threads/messages/cards so outbound text and card patches use the original bot, and keep each bot's `defaultCwd` independent.
+- Feishu remote file return is handled by the Dashboard-installed project skill under each bot's `defaultCwd`; keep its API token-protected and keep file paths constrained to the remote thread cwd.
 - Use the default `cli` Remote Bridge delivery mode unless a task explicitly targets Claude Code custom channels.
 
 ## Frontend Guidance
@@ -89,4 +90,4 @@ When changing user-visible behavior, update the relevant docs:
 - Version is updated in `package.json` and `package-lock.json`.
 - `README.md`, `CHANGELOG.md`, `CLAUDE.md`, and `AGENTS.md` match the current behavior.
 - `npm run build` succeeds.
-- Feishu Remote Bridge smoke path is understood: inbound text -> compact progress card -> final normal text.
+- Feishu Remote Bridge smoke path is understood: inbound text -> compact progress card -> final normal text, with optional skill-driven file upload back to Feishu.

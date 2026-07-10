@@ -153,13 +153,39 @@ const normalizeCwd = (cwd: string | null | undefined): string | null => {
   return cwd.replace(/[/\\]+$/, "");
 };
 
-const assertAllowedCwd = (cwd: string): void => {
+export const assertAllowedCwd = (cwd: string): void => {
   if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
     throw new Error(`cwd does not exist or is not a directory: ${cwd}`);
   }
   if (!isCwdAllowed(cwd)) {
     throw new Error(`cwd is not allowed by remoteBridge.allowedCwds: ${cwd}`);
   }
+};
+
+const buildRemoteClaudeEnv = (
+  thread: RemoteThread,
+  message: RemoteMessage,
+  config: NonNullable<ReturnType<typeof readConfig>["remoteBridge"]>,
+): Record<string, string> => {
+  const port = getServerPort();
+  const env: Record<string, string> = {
+    CLAUDE_PROXY_REMOTE: "1",
+    CLAUDE_PROXY_REMOTE_BASE_URL: `http://127.0.0.1:${port}`,
+    CLAUDE_PROXY_REMOTE_PORT: String(port),
+    CLAUDE_PROXY_REMOTE_THREAD_ID: thread.id,
+    CLAUDE_PROXY_REMOTE_SHORT_ID: thread.shortId,
+    CLAUDE_PROXY_REMOTE_MESSAGE_ID: message.id,
+    CLAUDE_PROXY_REMOTE_SOURCE: thread.source,
+  };
+  if (thread.source === "feishu" && config.authToken) {
+    env.CLAUDE_PROXY_REMOTE_TOKEN = config.authToken;
+  }
+  if (thread.sourceBotId) env.CLAUDE_PROXY_REMOTE_BOT_ID = thread.sourceBotId;
+  if (thread.sourceChatId) env.CLAUDE_PROXY_REMOTE_CHAT_ID = thread.sourceChatId;
+  if (thread.sourceUserId) env.CLAUDE_PROXY_REMOTE_USER_ID = thread.sourceUserId;
+  if (thread.sourceThreadId) env.CLAUDE_PROXY_REMOTE_SOURCE_THREAD_ID = thread.sourceThreadId;
+  if (thread.cwd) env.CLAUDE_PROXY_REMOTE_CWD = thread.cwd;
+  return env;
 };
 
 const selectInstanceForThread = (
@@ -383,6 +409,7 @@ const dispatchToCli = (
       config,
       prompt: message.text,
       resumeSessionId: latestThread.claudeSessionId,
+      env: buildRemoteClaudeEnv(latestThread, message, config),
       onChild: (child) => {
         currentStopper = () => {
           stoppedByUser = true;

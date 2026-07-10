@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  fetchFeishuRemoteSkillStatuses,
+  installFeishuRemoteSkillApi,
+  uninstallFeishuRemoteSkillApi,
+} from "../../../lib/api";
 import type {
+  FeishuRemoteSkillStatus,
   RemoteBridgeConfig,
   RemoteBridgeDeliveryMode,
   RemoteBridgeFeishuBotConfig,
@@ -139,6 +145,17 @@ const botsFromConfig = (config: RemoteBridgeConfig | undefined): FeishuBotDraft[
   return [emptyBot(0)];
 };
 
+const skillStatusText = (status: FeishuRemoteSkillStatus | undefined): string => {
+  if (!status) return "保存后可安装";
+  if (status.error) return "目录不可用";
+  if (!status.installed) return "未安装";
+  if (status.needsUpdate) return "需更新";
+  return `已安装 ${status.version ?? ""}`.trim();
+};
+
+const normalizeCwdText = (value: string | null | undefined): string =>
+  (value ?? "").trim().replace(/[/\\]+$/, "");
+
 const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) => {
   const [enabled, setEnabled] = useState(!!config?.enabled);
   const [webEnabled, setWebEnabled] = useState(config?.web?.enabled ?? true);
@@ -153,6 +170,9 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
   );
   const [feishuEnabled, setFeishuEnabled] = useState(!!config?.feishu?.enabled);
   const [bots, setBots] = useState<FeishuBotDraft[]>(() => botsFromConfig(config));
+  const [skillStatuses, setSkillStatuses] = useState<FeishuRemoteSkillStatus[]>([]);
+  const [skillBusyBotId, setSkillBusyBotId] = useState<string | null>(null);
+  const [skillError, setSkillError] = useState<string | null>(null);
 
   useEffect(() => {
     setEnabled(!!config?.enabled);
@@ -165,6 +185,32 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
     setFeishuEnabled(!!config?.feishu?.enabled);
     setBots(botsFromConfig(config));
   }, [config]);
+
+  const refreshSkillStatuses = async () => {
+    if (!config?.feishu?.enabled) {
+      setSkillStatuses([]);
+      return;
+    }
+    try {
+      const result = await fetchFeishuRemoteSkillStatuses();
+      setSkillStatuses(result.statuses);
+      setSkillError(null);
+    } catch (e) {
+      setSkillError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  useEffect(() => {
+    void refreshSkillStatuses();
+  }, [config?.feishu?.enabled, config?.feishu?.bots]);
+
+  const skillStatusByBotId = useMemo(() => {
+    const map = new Map<string, FeishuRemoteSkillStatus>();
+    for (const status of skillStatuses) {
+      if (status.botId) map.set(status.botId, status);
+    }
+    return map;
+  }, [skillStatuses]);
 
   const enabledBots = useMemo(
     () => bots.filter((bot) => bot.enabled),
@@ -193,6 +239,40 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
       const next = current.filter((bot) => bot.id !== id);
       return next.length > 0 ? next : [emptyBot(0)];
     });
+  };
+
+  const updateSkillStatus = (status: FeishuRemoteSkillStatus) => {
+    setSkillStatuses((current) => {
+      const key = status.botId ?? "";
+      const next = current.filter((item) => (item.botId ?? "") !== key);
+      return [...next, status];
+    });
+  };
+
+  const handleInstallSkill = async (botId: string) => {
+    setSkillBusyBotId(botId);
+    try {
+      const result = await installFeishuRemoteSkillApi(botId);
+      updateSkillStatus(result.status);
+      setSkillError(null);
+    } catch (e) {
+      setSkillError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSkillBusyBotId(null);
+    }
+  };
+
+  const handleUninstallSkill = async (botId: string) => {
+    setSkillBusyBotId(botId);
+    try {
+      const result = await uninstallFeishuRemoteSkillApi(botId);
+      updateSkillStatus(result.status);
+      setSkillError(null);
+    } catch (e) {
+      setSkillError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSkillBusyBotId(null);
+    }
   };
 
   const buildConfig = (): RemoteBridgeConfig => ({
@@ -294,8 +374,21 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
             </button>
           </div>
 
-          {bots.map((bot, index) => (
-            <div key={bot.id} className={styles.feishuBotCard}>
+          {bots.map((bot, index) => {
+            const normalizedBotId = normalizeBotId(bot.id, index);
+            const savedSkillStatus = skillStatusByBotId.get(normalizedBotId);
+            const skillStatus =
+              savedSkillStatus &&
+              normalizeCwdText(savedSkillStatus.cwd) === normalizeCwdText(bot.defaultCwd)
+                ? savedSkillStatus
+                : undefined;
+            const installDisabled =
+              !!skillBusyBotId ||
+              !bot.defaultCwd.trim() ||
+              !!skillStatus?.error ||
+              !skillStatus;
+            return (
+              <div key={bot.id} className={styles.feishuBotCard}>
               <div className={styles.feishuBotHeader}>
                 <label className={styles.toggleChip}>
                   <input
@@ -378,6 +471,52 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
                 </div>
               </div>
 
+              <div className={styles.feishuSkillRow}>
+                <div className={styles.feishuSkillMeta}>
+                  <span
+                    className={`${styles.feishuSkillBadge}${
+                      skillStatus?.installed && !skillStatus.needsUpdate
+                        ? ` ${styles.feishuSkillBadgeOk}`
+                        : ""
+                    }`}
+                  >
+                    Skill · {skillStatusText(skillStatus)}
+                  </span>
+                  <span
+                    className={styles.feishuSkillPath}
+                    title={skillStatus?.skillPath ?? bot.defaultCwd}
+                  >
+                    {skillStatus?.skillPath ?? (bot.defaultCwd || "未配置默认路径")}
+                  </span>
+                </div>
+                <div className={styles.feishuSkillActions}>
+                  <button
+                    type="button"
+                    className="btnGhost btnSm"
+                    disabled={installDisabled}
+                    onClick={() => void handleInstallSkill(normalizedBotId)}
+                  >
+                    {skillBusyBotId === normalizedBotId
+                      ? "处理中…"
+                      : skillStatus?.installed
+                        ? skillStatus.needsUpdate
+                          ? "更新"
+                          : "重装"
+                        : "安装"}
+                  </button>
+                  {skillStatus?.installed && (
+                    <button
+                      type="button"
+                      className="btnGhost btnSm"
+                      disabled={!!skillBusyBotId}
+                      onClick={() => void handleUninstallSkill(normalizedBotId)}
+                    >
+                      移除
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <details className={styles.remoteAdvanced}>
                 <summary>高级配置</summary>
                 <div className={styles.feishuBotMainGrid}>
@@ -441,8 +580,10 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
                   />
                 </label>
               </details>
-            </div>
-          ))}
+              </div>
+            );
+          })}
+          {skillError && <div className={styles.remoteInlineError}>{skillError}</div>}
         </div>
       )}
 

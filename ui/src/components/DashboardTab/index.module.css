@@ -390,6 +390,66 @@
   align-items: center;
 }
 
+.feishuSkillRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg);
+  min-width: 0;
+}
+
+.feishuSkillMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.feishuSkillBadge {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: var(--bg-card);
+}
+
+.feishuSkillBadgeOk {
+  color: var(--success);
+  border-color: var(--success-light);
+  background: var(--success-light);
+}
+
+.feishuSkillPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.feishuSkillActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.remoteInlineError {
+  font-size: 12px;
+  color: var(--error);
+  font-family: var(--font-mono);
+}
+
 .remoteAdvanced {
   display: flex;
   flex-direction: column;
@@ -464,6 +524,20 @@
 
   .feishuBotNameInput {
     grid-column: 1 / -1;
+  }
+
+  .feishuSkillRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .feishuSkillMeta,
+  .feishuSkillActions {
+    width: 100%;
+  }
+
+  .feishuSkillActions {
+    justify-content: flex-end;
   }
 
   .dingPanelActions {

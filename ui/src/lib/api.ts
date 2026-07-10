@@ -163,6 +163,19 @@ export interface RemoteBridgeFeishuBotConfig {
   };
 }
 
+export interface FeishuRemoteSkillStatus {
+  botId?: string | null;
+  botName?: string | null;
+  cwd: string | null;
+  installed: boolean;
+  version: string | null;
+  expectedVersion: string;
+  needsUpdate: boolean;
+  skillPath: string | null;
+  helperPath: string | null;
+  error?: string;
+}
+
 export interface Config {
   activeTarget: string;
   targets: Target[];
@@ -750,6 +763,47 @@ export async function testFeishuApp(botId?: string, chatId?: string): Promise<vo
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error ?? "飞书应用测试失败");
   }
+}
+
+export async function fetchFeishuRemoteSkillStatuses(): Promise<{
+  statuses: FeishuRemoteSkillStatus[];
+}> {
+  const res = await fetch("/api/query?type=remote-feishu-skill-status");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "获取飞书 Skill 状态失败");
+  }
+  return res.json();
+}
+
+export async function installFeishuRemoteSkillApi(
+  botId?: string | null,
+): Promise<{ status: FeishuRemoteSkillStatus }> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "installRemoteFeishuSkill", botId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "安装飞书 Skill 失败");
+  }
+  return res.json();
+}
+
+export async function uninstallFeishuRemoteSkillApi(
+  botId?: string | null,
+): Promise<{ status: FeishuRemoteSkillStatus }> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "uninstallRemoteFeishuSkill", botId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "移除飞书 Skill 失败");
+  }
+  return res.json();
 }
 
 // ── Cost Analytics ──

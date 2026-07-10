@@ -4,7 +4,7 @@
 
 它主要解决中文互联网环境里的几个实际问题：多上游模型代理、Claude Code hook 可视化、费用统计、飞书通知，以及从 Web/飞书远程继续或新建本机 Claude Code 对话。
 
-当前版本：**2.0.1**
+当前版本：**2.1.1**
 
 ## 适合谁
 
@@ -83,7 +83,7 @@ claude-proxy channel status
 
 ### 当前执行链路
 
-2.0.1 默认使用 CLI fallback：
+2.1.1 默认使用 CLI fallback：
 
 ```text
 Web / 飞书
@@ -110,6 +110,15 @@ Web / 飞书
 3. 启用 Remote Bridge。
 4. 在项目卡或 session list 中新建远程对话，或继续已有会话；Dashboard 会直接使用当前项目/session 的 cwd。
 
+### 飞书远程 Skill
+
+飞书远程配置面板会按每个机器人自己的 `defaultCwd` 显示 `feishu-remote` skill 状态，并支持安装、更新和移除。这个 skill 安装在项目目录的 `.claude/skills/feishu-remote/` 下，用来让远程 Claude 在用户要求“把文件发回飞书”时调用本机受保护接口上传文件。
+
+- 安装入口在 Dashboard，不需要用户手动运行 CLI。
+- 每个飞书机器人建议绑定独立 `defaultCwd`，skill 也安装在该机器人对应的项目目录。
+- 文件回传只允许发送当前远程 thread 项目目录内的普通文件，单文件不超过飞书上传限制 30MB。
+- skill 只读取运行时注入的远程上下文和 token；`remoteBridge.authToken` 不会通过普通配置接口返回给浏览器。
+
 ### 飞书接入方式
 
 飞书输入使用 **飞书自建应用长连接**，不是旧的飞书自定义机器人 webhook。自定义机器人只能做通知输出，不能作为稳定的消息输入入口。
@@ -120,6 +129,7 @@ Web / 飞书
 - 发送普通文本消息
 - 发送交互卡片
 - 更新已经发送的交互卡片
+- 上传并发送文件消息（如果需要远程 Claude 回传文件）
 
 推荐配置步骤：
 
@@ -153,6 +163,7 @@ Web / 飞书
 
 命令语义：
 
+- `/status` 除了 Bridge 和当前 thread 状态，还会返回当前用户飞书 ID、完整/短远程对话 ID、当前群或私聊 Chat ID，以及当前消息链 ID，便于排查远程上下文。
 - `/projects` 列出 Dashboard 已发现的项目和补充配置目录，项目备注也可以作为 `/new` 的别名。
 - `/threads` 查看当前飞书聊天可见的远程对话 thread；它不会泄露其他聊天、其他用户或 Web 创建的 thread。
 - `/sessions` 查看本机最近 Claude Code 会话；`/use-session` 会把当前飞书聊天绑定到本地 session，之后普通消息会通过 `claude -p --resume <sessionId>` 继续它。
@@ -331,7 +342,7 @@ npm run build        # TypeScript + UI + macOS 状态栏（可用时）
 npm run build:statusbar
 ```
 
-2.0.0 发布前常用检查：
+2.1.1 发布前常用检查：
 
 ```bash
 npx tsc --noEmit

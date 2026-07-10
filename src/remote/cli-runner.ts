@@ -76,16 +76,21 @@ export const runClaudePrint = (input: {
   prompt: string;
   resumeSessionId?: string | null;
   timeoutMs?: number;
+  env?: Record<string, string | null | undefined>;
   onEvent?: (event: unknown) => void;
   onChild?: (child: ChildProcess) => void;
 }): Promise<ClaudePrintResult> => {
   const argv = buildClaudePrintArgv(input);
   const command = stringifyCommand(argv);
+  const env = { ...process.env };
+  for (const [key, value] of Object.entries(input.env ?? {})) {
+    if (typeof value === "string") env[key] = value;
+  }
 
   return new Promise((resolve) => {
     const child = spawn(argv[0], argv.slice(1), {
       cwd: input.cwd,
-      env: process.env,
+      env,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });

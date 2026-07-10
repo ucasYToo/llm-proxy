@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import * as lark from "@larksuiteoapi/node-sdk";
 import { readConfig } from "../config/store";
@@ -42,6 +43,7 @@ import {
   parsePermissionReply,
   type FeishuRemoteCommand,
 } from "./feishu/parser";
+import { buildFeishuStatusContextLines } from "./feishu/status";
 
 interface FeishuRuntime {
   bot: ActiveFeishuBot;
@@ -826,7 +828,17 @@ const buildStatusText = (context: FeishuContext & { target?: string }): string =
   if (context.target) {
     const thread = findVisibleThreadByTarget(context.target, context);
     return thread
-      ? buildThreadDetailText(thread)
+      ? [
+          buildThreadDetailText(thread),
+          "",
+          ...buildFeishuStatusContextLines({
+            senderId: context.senderId,
+            chatId: context.chatId,
+            sourceThreadId: context.sourceThreadId,
+            remoteThreadId: thread.id,
+            remoteThreadShortId: thread.shortId,
+          }),
+        ].join("\n")
       : `找不到远程对话：${context.target}`;
   }
   const cfg = readConfig().remoteBridge;
@@ -839,7 +851,18 @@ const buildStatusText = (context: FeishuContext & { target?: string }): string =
     `在线 channel：${instances.length}`,
     active ? `当前默认：${formatThreadLine(active)}` : "当前默认：暂无",
   ];
+  lines.push(
+    "",
+    ...buildFeishuStatusContextLines({
+      senderId: context.senderId,
+      chatId: context.chatId,
+      sourceThreadId: context.sourceThreadId,
+      remoteThreadId: active?.id,
+      remoteThreadShortId: active?.shortId,
+    }),
+  );
   if (recent.length > 0) {
+    lines.push("");
     lines.push("最近对话：");
     for (const thread of recent) lines.push(formatThreadLine(thread));
   }
@@ -1101,6 +1124,56 @@ const sendFeishuText = async (
       content,
     },
   });
+};
+
+export const sendFeishuFileToThread = async (input: {
+  thread: RemoteThread;
+  filePath: string;
+  fileName?: string | null;
+  text?: string | null;
+}): Promise<{ fileKey: string; messageId: string | null }> => {
+  if (runtimes.size === 0) startFeishuRemoteBridge();
+  const runtime = runtimeForBot(input.thread.sourceBotId);
+  if (!runtime) throw new Error("飞书自建应用未启用或缺少 appId/appSecret");
+  if (input.thread.source !== "feishu" || !input.thread.sourceChatId) {
+    throw new Error("remote thread is not a Feishu conversation");
+  }
+
+  const note = input.text?.trim();
+  if (note) {
+    await sendFeishuText(
+      runtime.bot.id,
+      input.thread.sourceChatId,
+      note,
+    );
+  }
+
+  const uploadResult = await runtime.client.im.v1.file.create({
+    data: {
+      file_type: "stream",
+      file_name: input.fileName?.trim() || path.basename(input.filePath),
+      file: fs.createReadStream(input.filePath),
+    },
+  });
+  const uploaded = uploadResult as
+    | { file_key?: string; data?: { file_key?: string } }
+    | null;
+  const fileKey = uploaded?.file_key ?? uploaded?.data?.file_key;
+  if (!fileKey) throw new Error("Feishu upload succeeded without file_key");
+
+  const result = await runtime.client.im.message.create({
+    params: { receive_id_type: "chat_id" },
+    data: {
+      receive_id: input.thread.sourceChatId,
+      msg_type: "file",
+      content: JSON.stringify({ file_key: fileKey }),
+    },
+  });
+  assertFeishuOk(result, "send file message");
+  return {
+    fileKey,
+    messageId: result.data?.message_id ?? null,
+  };
 };
 
 const assertFeishuOk = (

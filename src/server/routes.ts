@@ -4,6 +4,7 @@ import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTar
 import { queryLogs, getLogDetail, clearLogs } from "../storage/logs";
 import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations, getActivityStatus } from "../storage/hooks";
 import {
+  assertAllowedCwd,
   listRemoteInstances,
   listRemoteMessages,
   listRemotePermissions,
@@ -38,6 +39,11 @@ import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
 import { restartFeishuRemoteBridge, testFeishuApp } from "../remote/feishu";
 import { installRemoteMcpConfig } from "../remote/mcp-config";
+import {
+  getFeishuRemoteSkillStatus,
+  installFeishuRemoteSkill,
+  uninstallFeishuRemoteSkill,
+} from "../remote/feishu-skill";
 
 /**
  * 根据 target 构建 Claude Code 直连模式的环境变量。
@@ -173,6 +179,25 @@ const publicConfig = (config: Config): Config => ({
     : config.remoteBridge,
 });
 
+const remoteFeishuSkillTargets = (config: Config) =>
+  (config.remoteBridge?.feishu?.bots ?? []).map((bot) => ({
+    botId: bot.id ?? null,
+    botName: bot.name ?? null,
+    cwd: bot.defaultCwd?.trim() || null,
+  }));
+
+const findRemoteFeishuSkillTarget = (
+  config: Config,
+  botId: string | undefined,
+) => {
+  const targets = remoteFeishuSkillTargets(config);
+  if (!botId) {
+    if (targets.length === 1) return targets[0];
+    return null;
+  }
+  return targets.find((target) => target.botId === botId) ?? null;
+};
+
 export const setupApiRoutes = (app: Express) => {
   // 查询配置或日志
   app.get("/api/query", (req: Request, res: Response) => {
@@ -289,6 +314,20 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
+    if (type === "remote-feishu-skill-status") {
+      const config = readConfig();
+      res.json({
+        statuses: remoteFeishuSkillTargets(config).map((target) =>
+          getFeishuRemoteSkillStatus({
+            cwd: target.cwd,
+            botId: target.botId,
+            botName: target.botName,
+          }),
+        ),
+      });
+      return;
+    }
+
     if (type === "caffeinate") {
       res.json({
         supported: caffeinate.isSupported(),
@@ -396,7 +435,7 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | remote-threads | remote-messages | remote-instances | remote-permissions | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
+    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | remote-threads | remote-messages | remote-instances | remote-permissions | remote-feishu-skill-status | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
   });
 
   // SSE：实时事件流
@@ -976,6 +1015,60 @@ export const setupApiRoutes = (app: Express) => {
           res.json({ ok: true });
         } catch (err) {
           res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+        }
+        break;
+      }
+
+      case "installRemoteFeishuSkill": {
+        const { botId } = req.body as { botId?: string };
+        const target = findRemoteFeishuSkillTarget(config, botId);
+        if (!target) {
+          res.status(400).json({ error: "Feishu bot not found" });
+          return;
+        }
+        if (!target.cwd) {
+          res.status(400).json({ error: "机器人需要先配置默认路径" });
+          return;
+        }
+        try {
+          assertAllowedCwd(target.cwd);
+          const result = installFeishuRemoteSkill({
+            cwd: target.cwd,
+            botId: target.botId,
+            botName: target.botName,
+          });
+          res.json({ ok: true, status: result.status });
+        } catch (err) {
+          res.status(400).json({
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+
+      case "uninstallRemoteFeishuSkill": {
+        const { botId } = req.body as { botId?: string };
+        const target = findRemoteFeishuSkillTarget(config, botId);
+        if (!target) {
+          res.status(400).json({ error: "Feishu bot not found" });
+          return;
+        }
+        if (!target.cwd) {
+          res.status(400).json({ error: "机器人需要先配置默认路径" });
+          return;
+        }
+        try {
+          assertAllowedCwd(target.cwd);
+          const result = uninstallFeishuRemoteSkill({
+            cwd: target.cwd,
+            botId: target.botId,
+            botName: target.botName,
+          });
+          res.json({ ok: true, status: result.status });
+        } catch (err) {
+          res.status(400).json({
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
         break;
       }
