@@ -14,7 +14,7 @@ Guidance for Claude Code when working in this repository.
 - a React/Vite dashboard
 - Web and Feishu remote conversation support for creating or continuing Claude Code sessions
 
-Release target in this working tree: **2.1.1**.
+Release target in this working tree: **2.1.2**.
 
 ## Common Commands
 
@@ -100,6 +100,7 @@ Feishu output behavior:
 - patch that same card with coalesced progress updates
 - send the final Claude answer as normal text
 - send user-requested files as Feishu file messages through the protected local remote API
+- in CLI fallback, an explicit `remote_reply` is the sole final text reply for that turn; do not also forward the CLI result
 - do not use Feishu `reply_in_thread` for remote progress or final answers
 - preserve `sourceBotId` on Feishu remote threads/messages/cards so replies are sent by the same bot that received the inbound message
 - install/update the project-local `feishu-remote` skill from Dashboard per Feishu bot `defaultCwd`; do not make users configure this through CLI

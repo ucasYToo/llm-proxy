@@ -61,6 +61,12 @@ const outboundSenders = new Set<RemoteOutboundSender>();
 const cliQueues = new Map<string, Promise<void>>();
 const runningCliStops = new Map<string, () => void>();
 const progressSnapshots = new Map<string, RemoteProgressSnapshot>();
+// A CLI child can load the channel MCP config and explicitly call remote_reply.
+// Track that reply for the active turn so its final text is not sent twice.
+const activeCliReplyStates = new Map<
+  string,
+  { explicitFinalText: string | null }
+>();
 
 export const onRemoteEvent = (fn: RemoteEventListener): (() => void) => {
   remoteEventListeners.add(fn);
@@ -357,118 +363,137 @@ const dispatchToCli = (
   if (!thread.cwd) return false;
   const run = async (): Promise<void> => {
     const latestThread = getRemoteThread(thread.id) ?? thread;
+    const cliReplyState = {
+      explicitFinalText: null as string | null,
+    };
+    activeCliReplyStates.set(thread.id, cliReplyState);
     let finalReplySent = false;
     let finalReplyTask: Promise<void> | null = null;
     let stoppedByUser = false;
     let currentStopper: (() => void) | null = null;
-    const sendFinalReplyOnce = async (
-      text: string,
-      sessionId: string | null,
-    ): Promise<void> => {
-      if (finalReplySent) return;
-      finalReplySent = true;
+    try {
+      const sendFinalReplyOnce = async (
+        text: string,
+        sessionId: string | null,
+      ): Promise<void> => {
+        if (finalReplySent) return;
+        finalReplySent = true;
+        const finalText = cliReplyState.explicitFinalText ?? text;
+        updateProgressSnapshot(message.id, (snapshot) =>
+          markProgressDone(snapshot, finalText),
+        );
+        const delivered = updateRemoteMessageStatus(message.id, "delivered");
+        if (delivered) emitRemoteEvent("message", delivered);
+        const linkedThread = updateRemoteThread(thread.id, {
+          claudeSessionId: sessionId ?? latestThread.claudeSessionId,
+        });
+        if (linkedThread) emitRemoteEvent("thread", linkedThread);
+        if (cliReplyState.explicitFinalText !== null) return;
+        await receiveRemoteReply({
+          remoteThreadId: thread.id,
+          text,
+          final: true,
+          origin: "cli",
+        });
+      };
+      const sent = updateRemoteMessageStatus(message.id, "sent");
+      if (sent) emitRemoteEvent("message", sent);
+      const runningThread = updateRemoteThread(thread.id, { status: "running" });
+      if (runningThread) emitRemoteEvent("thread", runningThread);
       updateProgressSnapshot(message.id, (snapshot) =>
-        markProgressDone(snapshot, text),
+        markProgressRunning(snapshot, "Claude 正在处理"),
       );
-      const delivered = updateRemoteMessageStatus(message.id, "delivered");
-      if (delivered) emitRemoteEvent("message", delivered);
-      const linkedThread = updateRemoteThread(thread.id, {
-        claudeSessionId: sessionId ?? latestThread.claudeSessionId,
-      });
-      if (linkedThread) emitRemoteEvent("thread", linkedThread);
-      await receiveRemoteReply({
-        remoteThreadId: thread.id,
-        text,
-        final: true,
-      });
-    };
-    const sent = updateRemoteMessageStatus(message.id, "sent");
-    if (sent) emitRemoteEvent("message", sent);
-    const runningThread = updateRemoteThread(thread.id, { status: "running" });
-    if (runningThread) emitRemoteEvent("thread", runningThread);
-    updateProgressSnapshot(message.id, (snapshot) =>
-      markProgressRunning(snapshot, "Claude 正在处理"),
-    );
 
-    const config = readConfig().remoteBridge;
-    if (!config) {
+      const config = readConfig().remoteBridge;
+      if (!config) {
+        updateProgressSnapshot(message.id, (snapshot) =>
+          markProgressFailed(snapshot, "remoteBridge config is missing"),
+        );
+        const failed = updateRemoteMessageStatus(
+          message.id,
+          "failed",
+          "remoteBridge config is missing",
+        );
+        if (failed) emitRemoteEvent("message", failed);
+        return;
+      }
+
+      const result = await runClaudePrint({
+        cwd: latestThread.cwd ?? thread.cwd ?? process.cwd(),
+        config,
+        prompt: message.text,
+        resumeSessionId: latestThread.claudeSessionId,
+        env: buildRemoteClaudeEnv(latestThread, message, config),
+        onChild: (child) => {
+          currentStopper = () => {
+            stoppedByUser = true;
+            if (!child.killed) child.kill("SIGTERM");
+          };
+          runningCliStops.set(thread.id, currentStopper);
+        },
+        onEvent: (event) => {
+          updateProgressSnapshot(message.id, (snapshot) =>
+            reduceClaudeStreamEvent(snapshot, event),
+          );
+          const earlyFinal = pickEarlyFinalFromCliEvent(event);
+          if (earlyFinal && !finalReplySent) {
+            finalReplyTask = sendFinalReplyOnce(
+              earlyFinal.text,
+              earlyFinal.sessionId,
+            );
+          }
+        },
+      }).finally(() => {
+        if (
+          currentStopper &&
+          runningCliStops.get(thread.id) === currentStopper
+        ) {
+          runningCliStops.delete(thread.id);
+        }
+      });
+
+      if (result.ok) {
+        await (finalReplyTask ?? sendFinalReplyOnce(result.text, result.sessionId));
+        return;
+      }
+
+      if (finalReplySent) {
+        await finalReplyTask;
+        return;
+      }
+
+      if (cliReplyState.explicitFinalText !== null) {
+        const delivered = updateRemoteMessageStatus(message.id, "delivered");
+        if (delivered) emitRemoteEvent("message", delivered);
+        return;
+      }
+
+      const failureText = stoppedByUser
+        ? "用户已停止远程任务"
+        : result.error ?? "Claude CLI failed";
       updateProgressSnapshot(message.id, (snapshot) =>
-        markProgressFailed(snapshot, "remoteBridge config is missing"),
+        markProgressFailed(snapshot, failureText),
       );
       const failed = updateRemoteMessageStatus(
         message.id,
         "failed",
-        "remoteBridge config is missing",
+        failureText,
       );
       if (failed) emitRemoteEvent("message", failed);
-      return;
-    }
-
-    const result = await runClaudePrint({
-      cwd: latestThread.cwd ?? thread.cwd ?? process.cwd(),
-      config,
-      prompt: message.text,
-      resumeSessionId: latestThread.claudeSessionId,
-      env: buildRemoteClaudeEnv(latestThread, message, config),
-      onChild: (child) => {
-        currentStopper = () => {
-          stoppedByUser = true;
-          if (!child.killed) child.kill("SIGTERM");
-        };
-        runningCliStops.set(thread.id, currentStopper);
-      },
-      onEvent: (event) => {
-        updateProgressSnapshot(message.id, (snapshot) =>
-          reduceClaudeStreamEvent(snapshot, event),
-        );
-        const earlyFinal = pickEarlyFinalFromCliEvent(event);
-        if (earlyFinal && !finalReplySent) {
-          finalReplyTask = sendFinalReplyOnce(
-            earlyFinal.text,
-            earlyFinal.sessionId,
-          );
-        }
-      },
-    }).finally(() => {
-      if (
-        currentStopper &&
-        runningCliStops.get(thread.id) === currentStopper
-      ) {
-        runningCliStops.delete(thread.id);
+      const failedThread = updateRemoteThread(thread.id, { status: "failed" });
+      if (failedThread) emitRemoteEvent("thread", failedThread);
+      await insertAndDeliverOutbound(
+        failedThread ?? latestThread,
+        stoppedByUser
+          ? `远程任务已停止 · #${thread.shortId}`
+          : `Claude CLI 执行失败：${result.error ?? "unknown error"}`,
+        "error",
+      );
+    } finally {
+      if (activeCliReplyStates.get(thread.id) === cliReplyState) {
+        activeCliReplyStates.delete(thread.id);
       }
-    });
-
-    if (result.ok) {
-      await (finalReplyTask ?? sendFinalReplyOnce(result.text, result.sessionId));
-      return;
     }
-
-    if (finalReplySent) {
-      await finalReplyTask;
-      return;
-    }
-
-    const failureText = stoppedByUser
-      ? "用户已停止远程任务"
-      : result.error ?? "Claude CLI failed";
-    updateProgressSnapshot(message.id, (snapshot) =>
-      markProgressFailed(snapshot, failureText),
-    );
-    const failed = updateRemoteMessageStatus(
-      message.id,
-      "failed",
-      failureText,
-    );
-    if (failed) emitRemoteEvent("message", failed);
-    const failedThread = updateRemoteThread(thread.id, { status: "failed" });
-    if (failedThread) emitRemoteEvent("thread", failedThread);
-    await insertAndDeliverOutbound(
-      failedThread ?? latestThread,
-      stoppedByUser
-        ? `远程任务已停止 · #${thread.shortId}`
-        : `Claude CLI 执行失败：${result.error ?? "unknown error"}`,
-      "error",
-    );
   };
 
   const previous = cliQueues.get(thread.id) ?? Promise.resolve();
@@ -848,6 +873,7 @@ export const receiveRemoteReply = async (input: {
   text: string;
   final?: boolean;
   channelInstanceId?: string | null;
+  origin?: "cli";
 }): Promise<RemoteMessage> => {
   const thread = getRemoteThread(input.remoteThreadId);
   if (!thread) throw new Error(`remote thread not found: ${input.remoteThreadId}`);
@@ -858,6 +884,11 @@ export const receiveRemoteReply = async (input: {
   ) {
     throw new Error("remote reply instance does not own this thread");
   }
+  const final = input.final !== false;
+  if (final && input.origin !== "cli") {
+    const cliReplyState = activeCliReplyStates.get(thread.id);
+    if (cliReplyState) cliReplyState.explicitFinalText = input.text;
+  }
   const message = insertRemoteMessage({
     threadId: thread.id,
     direction: "outbound",
@@ -866,7 +897,6 @@ export const receiveRemoteReply = async (input: {
     text: input.text,
     status: "delivered",
   });
-  const final = input.final !== false;
   const updatedThread = updateRemoteThread(thread.id, {
     status: final ? "done" : "running",
     channelInstanceId: input.channelInstanceId ?? thread.channelInstanceId,

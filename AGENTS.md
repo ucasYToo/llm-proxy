@@ -64,6 +64,7 @@ Runtime state:
 - Keep cwd validation strict through Dashboard-discovered projects, `remoteBridge.allowedCwds`, and each Feishu bot's `defaultCwd`.
 - Do not expose Claude hidden thinking in UI, Feishu cards, logs, or docs.
 - Feishu remote replies should not use topic replies; progress is one patched card and final output is normal text.
+- In CLI delivery mode, an explicit `remote_reply` is the final text for that turn; do not also forward the CLI result.
 - Feishu Remote Bridge may run multiple bots; preserve `sourceBotId` on threads/messages/cards so outbound text and card patches use the original bot, and keep each bot's `defaultCwd` independent.
 - Feishu remote file return is handled by the Dashboard-installed project skill under each bot's `defaultCwd`; keep its API token-protected and keep file paths constrained to the remote thread cwd.
 - Use the default `cli` Remote Bridge delivery mode unless a task explicitly targets Claude Code custom channels.

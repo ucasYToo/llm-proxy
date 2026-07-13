@@ -4,7 +4,7 @@
 
 它主要解决中文互联网环境里的几个实际问题：多上游模型代理、Claude Code hook 可视化、费用统计、飞书通知，以及从 Web/飞书远程继续或新建本机 Claude Code 对话。
 
-当前版本：**2.1.1**
+当前版本：**2.1.2**
 
 ## 适合谁
 
@@ -83,7 +83,7 @@ claude-proxy channel status
 
 ### 当前执行链路
 
-2.1.1 默认使用 CLI fallback：
+2.1.2 默认使用 CLI fallback：
 
 ```text
 Web / 飞书
@@ -102,6 +102,8 @@ Web / 飞书
 - `auto`：优先使用在线 channel instance，没有可用 channel 时回退到 `cli`。
 
 为什么现在默认不是 channel：Claude Code channels 仍是实验能力，而且部分版本会提示 `Channels are not currently available`。为了保证飞书/Web 远程对话先稳定可用，当前发布版把 `claude -p` 作为主路径，channel 代码保留为后续增强路径。
+
+CLI fallback 对每条入站消息只生成一份最终文本回复：如果 Claude 已显式调用 `remote_reply`，该回复会优先，代理不会再转发 CLI 的同轮最终文本。用户请求的文件上传仍会作为独立飞书文件消息发送。
 
 ### Dashboard 使用方式
 
@@ -342,7 +344,7 @@ npm run build        # TypeScript + UI + macOS 状态栏（可用时）
 npm run build:statusbar
 ```
 
-2.1.1 发布前常用检查：
+2.1.2 发布前常用检查：
 
 ```bash
 npx tsc --noEmit
