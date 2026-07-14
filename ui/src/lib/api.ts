@@ -943,3 +943,167 @@ export async function updateBudget(
   });
   if (!res.ok) throw new Error("Failed to update budget");
 }
+
+export interface CodexSessionSummary {
+  sessionId: string;
+  lastEventAt: string;
+  lastEventName: string;
+  eventCount: number;
+  promptCount: number;
+  replyCount: number;
+  cwd: string | null;
+  model: string | null;
+  title: string | null;
+  lastAssistantMessage: string | null;
+  traceBundleCount: number;
+}
+
+export interface CodexOverview {
+  sessionCount: number;
+  hookCount: number;
+  promptCount: number;
+  replyCount: number;
+  traceBundleCount: number;
+}
+
+export interface CodexHookStatus {
+  file: string;
+  installed: boolean;
+  events: string[];
+}
+
+export interface CodexStatus {
+  hooks: CodexHookStatus;
+  trace: CodexTraceStatus;
+  databasePath: string;
+  captureMode: "hooks+rollout-trace";
+  preservesLogin: boolean;
+}
+
+export interface CodexTraceStatus {
+  configured: boolean;
+  configuredRoot: string | null;
+  rootPath: string;
+  maxBytes: number;
+  usedBytes: number;
+  bundleCount: number;
+  restartRequired: true;
+}
+
+export interface CodexTraceEventSummary {
+  kind: "trace";
+  id: string;
+  bundleId: string;
+  seq: number;
+  at: string;
+  sessionId: string;
+  threadId: string | null;
+  turnId: string | null;
+  eventType: string;
+  category: "model" | "tool" | "lifecycle";
+  summary: string;
+  model: string | null;
+  provider: string | null;
+  hasPayload: boolean;
+}
+
+export type CodexTimelineEntry =
+  | { kind: "hook"; at: string; hook: HookEntry }
+  | CodexTraceEventSummary;
+
+export interface CodexTraceEventDetail {
+  event: Record<string, unknown>;
+  payloads: Array<{ kind: string; path: string; content: unknown }>;
+  bundlePath: string;
+}
+
+export async function fetchCodexStatus(): Promise<CodexStatus> {
+  const res = await fetch("/api/codex/status");
+  if (!res.ok) throw new Error("Failed to fetch Codex status");
+  return res.json();
+}
+
+export async function installCodexHooksApi(): Promise<{ hooks: CodexHookStatus }> {
+  const res = await fetch("/api/codex/setup/hooks", { method: "POST" });
+  if (!res.ok) throw new Error("Failed to install Codex hooks");
+  return res.json();
+}
+
+export async function fetchCodexHooks(
+  params: { sessionId?: string; limit?: number } = {},
+): Promise<{ entries: HookEntry[]; total: number }> {
+  const search = new URLSearchParams({ limit: String(params.limit ?? 200) });
+  if (params.sessionId) search.set("sessionId", params.sessionId);
+  const res = await fetch(`/api/codex/hooks?${search}`);
+  if (!res.ok) throw new Error("Failed to fetch Codex hooks");
+  return res.json();
+}
+
+export async function fetchCodexSessions(): Promise<{
+  sessions: CodexSessionSummary[];
+}> {
+  const res = await fetch("/api/codex/sessions");
+  if (!res.ok) throw new Error("Failed to fetch Codex sessions");
+  return res.json();
+}
+
+export async function fetchCodexTimeline(
+  sessionId: string,
+): Promise<{ entries: CodexTimelineEntry[] }> {
+  const res = await fetch(
+    `/api/codex/sessions/${encodeURIComponent(sessionId)}/timeline`,
+  );
+  if (!res.ok) throw new Error("Failed to fetch Codex timeline");
+  return res.json();
+}
+
+export async function fetchCodexGlobalTimeline(): Promise<{
+  entries: CodexTimelineEntry[];
+}> {
+  const res = await fetch("/api/codex/timeline?limit=300");
+  if (!res.ok) throw new Error("Failed to fetch Codex timeline");
+  return res.json();
+}
+
+export async function startCodexTraceCaptureApi(): Promise<{
+  trace: CodexTraceStatus;
+  message: string;
+}> {
+  const res = await fetch("/api/codex/traces/capture", { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Failed to start Codex raw logging");
+  return data;
+}
+
+export async function stopCodexTraceCaptureApi(): Promise<{
+  trace: CodexTraceStatus;
+  message: string;
+}> {
+  const res = await fetch("/api/codex/traces/capture", { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Failed to stop Codex raw logging");
+  return data;
+}
+
+export async function fetchCodexTraceEventDetail(
+  bundleId: string,
+  seq: number,
+): Promise<CodexTraceEventDetail> {
+  const res = await fetch(
+    `/api/codex/traces/${encodeURIComponent(bundleId)}/events/${seq}`,
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Failed to read Codex trace payload");
+  return data;
+}
+
+export async function fetchCodexOverview(): Promise<CodexOverview> {
+  const res = await fetch("/api/codex/overview");
+  if (!res.ok) throw new Error("Failed to fetch Codex overview");
+  return res.json();
+}
+
+export async function clearCodexDataApi(): Promise<void> {
+  const res = await fetch("/api/codex/data", { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to clear Codex data");
+}

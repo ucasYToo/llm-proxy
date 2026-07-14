@@ -1,10 +1,10 @@
 # claude-proxy
 
-一个给 Claude Code 用的本地代理、Dashboard 和远程控制工具。
+一个面向 Claude Code、并兼容 Codex 日志采集的本地代理、Dashboard 和远程控制工具。
 
 它主要解决中文互联网环境里的几个实际问题：多上游模型代理、Claude Code hook 可视化、费用统计、飞书通知，以及从 Web/飞书远程继续或新建本机 Claude Code 对话。
 
-当前版本：**2.1.2**
+当前版本：**2.2.0**
 
 ## 适合谁
 
@@ -20,6 +20,7 @@
 - **Claude Code 代理**：把 Claude Code API 请求转发到你配置的上游服务。
 - **多通道路由**：不同项目目录可以路由到不同目标模型或不同代理通道。
 - **Dashboard**：查看请求日志、SSE 流、hook 事件、会话、项目和费用统计。
+- **Codex Dashboard**：独立 Tab 查看 Codex 用户消息、助手最终回复、工具 hooks，以及手动开启的本地 Rollout Trace 原文；使用独立 SQLite 索引，不与 Claude 会话混合。
 - **Hook 管理**：一键写入 Claude Code hooks，捕获 SessionStart、工具调用、Stop 等事件。
 - **Web/飞书远程对话**：从 Dashboard 或飞书继续已有 Claude Code 会话，或按项目新建远程任务。
 - **飞书进度卡片**：每条飞书消息对应一张紧凑进度卡片，执行中更新卡片，最终答案用普通聊天文本发回。
@@ -72,8 +73,48 @@ claude-proxy channel status
 - **配置**：管理上游目标、认证 header、模型映射、通道和项目目录路由。
 - **日志**：查看代理请求、响应耗时、token、费用和原始 SSE 输出。
 - **Dashboard**：按项目查看 Claude Code 会话、hook 事件和远程对话入口。
+- **Codex**：查看 Codex 用户消息、助手最终回复和工具事件；数据物理写入独立数据库。
 - **分析**：查看费用趋势、模型分布、会话排行和健康状态。
 - **状态栏**：配置 macOS 状态栏助手和防休眠行为。
+
+## Codex Dashboard
+
+Codex 接入只覆盖本地对话日志；Web/飞书远程会话暂不接入 Codex。它通过 Codex command hooks 采集用户消息、助手最终回复、工具调用和生命周期事件；需要排查模型原文时，可以手动开启 Codex 本地 Rollout Trace。两种方式都不代理模型请求，也不修改 ChatGPT 登录状态或 API 地址。
+
+Codex 数据不会写入 Claude 的 `logs.db`，而是单独保存在：
+
+```text
+~/.claude-proxy/codex-logs.db
+```
+
+先启动服务并安装 Codex command hooks：
+
+```bash
+claude-proxy start --ui --port 1998
+claude-proxy codex hook install --port 1998
+```
+
+安装或更新 hooks 后，需要在 Codex CLI 中运行 `/hooks` 检查并信任配置。Codex 桌面 App 当前不提供 `/hooks` 命令；桌面用户可以打开终端，运行 `codex` 进入 CLI，完成一次 `/hooks` 信任后再回到 App，新建任务或重启 App。之后继续按原方式登录和使用 Codex 即可；日志转发是 fail-open 的，Dashboard 未运行时不会阻塞 Codex。
+
+模型请求原文默认关闭，可在 Codex Tab 点击“开启原文日志”，也可使用：
+
+```bash
+claude-proxy codex trace start
+claude-proxy codex trace status
+claude-proxy codex trace stop
+```
+
+开关通过 `CODEX_ROLLOUT_TRACE_ROOT` 控制，所以开启或关闭后都要完全退出并重开 Codex 才会作用到该 Codex 进程。Dashboard 的“结束采集”会立即撤销环境开关；由 Dashboard 开启的采集也会在服务正常退出时自动撤销。Codex 当前没有 SessionEnd hook，不能用一轮回复结束的 `Stop` 事件冒充会话关闭。
+
+原始 bundle 保存在 `~/.claude-proxy/codex-rollout-traces/`，包含请求、响应、工具输入输出和 reasoning。总量上限为 1 GB，Dashboard 每 20 秒检查一次，超限时从最旧的 bundle 开始删除。`codex-logs.db` 只保存 bundle 路径与会话索引，点击事件详情时才读取 Codex 原文件，不复制原文正文。
+
+常用诊断命令：
+
+```bash
+claude-proxy codex status
+claude-proxy codex hook status
+claude-proxy codex hook uninstall
+```
 
 ## 远程对话
 
@@ -83,7 +124,7 @@ claude-proxy channel status
 
 ### 当前执行链路
 
-2.1.2 默认使用 CLI fallback：
+2.2.0 默认使用 CLI fallback：
 
 ```text
 Web / 飞书
@@ -205,6 +246,8 @@ claude --dangerously-load-development-channels server:claude-proxy-remote
 
 ```text
 ~/.claude-proxy/config.json
+~/.claude-proxy/logs.db
+~/.claude-proxy/codex-logs.db
 ```
 
 常见 `remoteBridge` 配置：
@@ -344,7 +387,7 @@ npm run build        # TypeScript + UI + macOS 状态栏（可用时）
 npm run build:statusbar
 ```
 
-2.1.2 发布前常用检查：
+2.2.0 发布前常用检查：
 
 ```bash
 npx tsc --noEmit

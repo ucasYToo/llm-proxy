@@ -132,6 +132,15 @@
   border-radius: 1px;
 }
 
+.codexNavActive {
+  color: #0f766e !important;
+  background: #eaf7f3 !important;
+}
+
+.codexNavActive::before {
+  background: #0f766e;
+}
+
 .collapsed .navItemActive::before {
   top: 4px;
   bottom: 4px;

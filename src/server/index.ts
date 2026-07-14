@@ -4,6 +4,7 @@ import fs from "fs-extra";
 import { setupApiRoutes } from "./routes";
 import { setupRemoteRoutes } from "./remote-routes";
 import { setupProxyRoutes } from "./proxy";
+import { setupCodexRoutes } from "./codex-routes";
 import { onLogChange } from "../storage/logs";
 import { broadcast } from "./sse";
 import { initCostCapture } from "../cost/capture";
@@ -11,6 +12,11 @@ import * as caffeinate from "../system/caffeinate";
 import { setServerPort } from "./state";
 import { onRemoteEvent } from "../remote/service";
 import { startFeishuRemoteBridge, stopFeishuRemoteBridge } from "../remote/feishu";
+import { closeCodexDb } from "../storage/codex";
+import {
+  stopCodexTraceCapture,
+  stopCodexTraceMaintenance,
+} from "../lib/codex-rollout-traces";
 
 let cleanupRegistered = false;
 
@@ -20,6 +26,13 @@ const registerCleanupOnce = (): void => {
   const stopAll = () => {
     caffeinate.stop();
     stopFeishuRemoteBridge();
+    stopCodexTraceMaintenance();
+    try {
+      stopCodexTraceCapture({ onlyIfOwned: true });
+    } catch {
+      // Exit cleanup is best-effort; the Dashboard must still be able to stop.
+    }
+    closeCodexDb();
   };
   process.on("exit", stopAll);
   process.on("SIGINT", () => {
@@ -99,6 +112,7 @@ export const startServer = async (
   // 设置 API 路由
   setupApiRoutes(app);
   setupRemoteRoutes(app);
+  setupCodexRoutes(app);
 
   // 设置代理路由
   setupProxyRoutes(app);

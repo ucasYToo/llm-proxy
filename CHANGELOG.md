@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.2.0 (2026-07-14)
+
+### 新增
+
+- Dashboard 新增独立 Codex Tab，展示 Codex 用户消息、助手最终回复、工具 hooks 和会话索引，不与现有 Claude Dashboard 混合。
+- 新增 `claude-proxy codex hook install/status/uninstall`，以 fail-open command hooks 采集 Codex 生命周期和工具事件。
+- Codex hook relay 同时兼容 `localhost`、IPv4 和 IPv6 loopback，避免 Dashboard 只监听 `::1` 时日志静默丢失。
+- Codex 日志使用独立的 `~/.claude-proxy/codex-logs.db`，支持独立查询、SSE 刷新和清理。
+- Codex Tab 可手动开启本地 Rollout Trace 原文日志，默认关闭；支持请求、响应、工具 payload 和 reasoning 按需查看。
+- Rollout Trace 总量限制为 1 GB，按最旧 bundle 清理；SQLite 只保存 bundle 路径索引，不复制原文正文。
+- 新增 `claude-proxy codex trace start/status/stop`，Dashboard 正常退出时会撤销由其开启的采集环境开关。
+
+### 安全
+
+- Codex 接入不修改 ChatGPT 登录态或模型请求地址；hook 正文仍独立入库，可选 Rollout Trace（含 reasoning）只保留在本机 Codex trace 文件中并按需读取。
+
+### 修复
+
+- 兼容 Codex Rollout Trace 将 payload kind 序列化为 `{ type: ... }` 的格式，模型请求、响应与 reasoning 现在可从 Web 事件详情正常按需读取。
+
+### 范围
+
+- Codex 当前只接入本地 hooks 对话日志；Web/飞书 Remote Bridge 仍只面向 Claude Code。
+
 ## 2.1.2 (2026-07-13)
 
 ### 修复

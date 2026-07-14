@@ -4,6 +4,7 @@ import { configCommand } from "./commands/config";
 import { logsCommand } from "./commands/logs";
 import { hookCommand } from "./commands/hook";
 import { channelCommand } from "./commands/channel";
+import { codexCommand } from "./commands/codex";
 import pkg from "../../package.json";
 
 const program = new Command();
@@ -18,5 +19,6 @@ configCommand(program);
 logsCommand(program);
 hookCommand(program);
 channelCommand(program);
+codexCommand(program);
 
 program.parse();

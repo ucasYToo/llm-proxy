@@ -8,7 +8,7 @@ This file applies to the whole repository.
 
 ## Project
 
-`llm-proxy-view` ships the `claude-proxy` CLI, a local proxy and dashboard for Claude Code. The 2.0 line adds Web/Feishu remote conversation support, Feishu progress cards, and an experimental MCP channel binary.
+`llm-proxy-view` ships the `claude-proxy` CLI, a local proxy and dashboard for Claude Code, plus a physically separate Codex hooks tab with opt-in local Rollout Trace inspection. The 2.0 line adds Web/Feishu remote conversation support, Feishu progress cards, and an experimental MCP channel binary.
 
 ## Commands
 
@@ -35,6 +35,7 @@ npm run dev:ui
 node bin/cli.js start --ui
 node bin/cli.js hook status
 node bin/cli.js channel status
+node bin/cli.js codex status
 ```
 
 `node bin/cli.js start --ui` 默认只输出启动摘要和异常请求；排查端点或请求日志时加 `--verbose`。
@@ -53,16 +54,22 @@ Runtime state:
 
 - `~/.claude-proxy/config.json`
 - `~/.claude-proxy/logs.db`
+- `~/.claude-proxy/codex-logs.db`
+- `~/.claude-proxy/codex-rollout-traces/`
 - `~/.claude/settings.json`
+- `~/.codex/hooks.json`
 
 ## Working Rules
 
 - Do not revert unrelated user changes.
 - Prefer existing helpers in `src/config`, `src/storage`, `src/remote`, and `src/server`.
-- Add SQLite migrations only at the end of `MIGRATIONS` in `src/storage/db.ts`.
+- Add Claude SQLite migrations only at the end of `MIGRATIONS` in `src/storage/db.ts`; append Codex-only migrations to `MIGRATIONS` in `src/storage/codex.ts` and keep the two databases separate.
 - Keep channel/internal remote write APIs protected by `remoteBridge.authToken`; same-origin dashboard exceptions must not expose the token.
 - Keep cwd validation strict through Dashboard-discovered projects, `remoteBridge.allowedCwds`, and each Feishu bot's `defaultCwd`.
 - Do not expose Claude hidden thinking in UI, Feishu cards, logs, or docs.
+- Keep the Codex Dashboard, queries, SSE events, and `codex-logs.db` separate from Claude state. Rollout Trace SQLite rows contain only path/index metadata; payloads remain in Codex-owned files and are read on demand.
+- Codex Rollout Trace capture must remain opt-in and default-off, enforce a 1 GB oldest-first budget, and revoke its environment switch when the user ends capture. It may display local Codex reasoning; never apply that exception to Claude hidden thinking.
+- Codex currently supports hooks plus optional local trace inspection. Do not proxy Codex API traffic or route Codex through Remote Bridge unless a task explicitly expands that scope.
 - Feishu remote replies should not use topic replies; progress is one patched card and final output is normal text.
 - In CLI delivery mode, an explicit `remote_reply` is the final text for that turn; do not also forward the CLI result.
 - Feishu Remote Bridge may run multiple bots; preserve `sourceBotId` on threads/messages/cards so outbound text and card patches use the original bot, and keep each bot's `defaultCwd` independent.

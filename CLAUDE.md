@@ -10,11 +10,12 @@ Guidance for Claude Code when working in this repository.
 - multi-target and multi-channel routing
 - Claude Code settings integration
 - HTTP hook capture for Claude Code sessions
+- a separate Codex hooks surface with optional local Rollout Trace inspection
 - SQLite-backed logs, hook events, cost records, and remote bridge state
 - a React/Vite dashboard
 - Web and Feishu remote conversation support for creating or continuing Claude Code sessions
 
-Release target in this working tree: **2.1.2**.
+Release target in this working tree: **2.2.0**.
 
 ## Common Commands
 
@@ -73,11 +74,27 @@ Important runtime files:
 ```text
 ~/.claude-proxy/config.json
 ~/.claude-proxy/logs.db
+~/.claude-proxy/codex-logs.db
+~/.claude-proxy/codex-rollout-traces/
 ~/.claude/settings.json
+~/.codex/hooks.json
 ```
 
 `config.json` stores targets, channels, notifications, budgets, and `remoteBridge`.
 `logs.db` stores logs, hooks, cost records, projects, remote threads/messages/instances/permissions/cards.
+`codex-logs.db` stores Codex hook events and Rollout Trace bundle path indexes; trace payload bodies remain in Codex-owned files and are read on demand. Do not merge it into the Claude database or Dashboard state.
+
+## Codex Notes
+
+The Codex dashboard is intentionally separate from the Claude dashboard. Codex Remote Bridge delivery is out of scope for now.
+
+- Codex hooks are command handlers in `~/.codex/hooks.json` and relay to `/api/codex/hooks/:event` without blocking Codex when the dashboard is unavailable.
+- Hook trust is currently managed through `/hooks` in the Codex CLI; the desktop App composer does not expose that slash command.
+- Do not change Codex authentication, `openai_base_url`, `chatgpt_base_url`, or its model request path for logging.
+- Build conversation summaries from `UserPromptSubmit` and root `Stop`; tool and lifecycle hooks remain visible in the event stream.
+- Raw Rollout Trace capture is opt-in through `CODEX_ROLLOUT_TRACE_ROOT`, defaults off, and requires a full Codex restart after either toggle.
+- Keep trace bundles under `~/.claude-proxy/codex-rollout-traces/`, enforce the 1 GB oldest-first budget, and store only bundle paths/index metadata in SQLite.
+- Trace detail may render local Codex reasoning when the user explicitly enables capture; this exception does not relax the prohibition on exposing Claude hidden thinking.
 
 ## Remote Bridge Notes
 
@@ -107,7 +124,7 @@ Feishu output behavior:
 
 ## API Surface
 
-Dashboard query endpoints live in `src/server/routes.ts`.
+Dashboard query endpoints live in `src/server/routes.ts`; Codex-only endpoints live in `src/server/codex-routes.ts`.
 Remote bridge internal endpoints live in `src/server/remote-routes.ts`.
 
 Channel/internal Remote endpoints require `remoteBridge.authToken` through one of:
@@ -121,7 +138,7 @@ Feishu file upload uses `/api/remote/feishu/send-file` and requires `remoteBridg
 
 ## Persistence
 
-SQLite migrations are append-only in `src/storage/db.ts`.
+Claude SQLite migrations are append-only in `src/storage/db.ts`. The physically separate Codex database owns its append-only migrations in `src/storage/codex.ts`.
 
 Rules:
 

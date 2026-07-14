@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { CodexLogo } from "../CodexLogo";
 import styles from "./index.module.css";
 
-export type Tab = "config" | "logs" | "dashboard" | "analytics" | "projects";
+export type Tab = "config" | "logs" | "dashboard" | "codex" | "analytics" | "projects";
 
 interface Props {
   tab: Tab;
@@ -45,6 +46,11 @@ const navItems: { id: Tab; label: string; icon: JSX.Element }[] = [
         <rect x="11" y="8" width="7" height="10" rx="1" />
       </svg>
     ),
+  },
+  {
+    id: "codex",
+    label: "Codex",
+    icon: <CodexLogo size={20} />,
   },
   {
     id: "analytics",
@@ -104,7 +110,7 @@ const Sidebar = ({ tab, onTabChange, activeTargetName, onShutdown, isShuttingDow
         {navItems.map((item) => (
           <button
             key={item.id}
-            className={`${styles.navItem}${tab === item.id ? ` ${styles.navItemActive}` : ""}`}
+            className={`${styles.navItem}${tab === item.id ? ` ${styles.navItemActive}` : ""}${tab === "codex" && item.id === "codex" ? ` ${styles.codexNavActive}` : ""}`}
             onClick={() => onTabChange(item.id)}
             title={collapsed ? item.label : undefined}
           >
