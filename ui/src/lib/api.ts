@@ -69,6 +69,7 @@ export interface LogCollection {
 export interface ChannelEvents {
   stop?: boolean;
   subagentStop?: boolean;
+  /** Claude Notification；Codex 独立配置中映射 PermissionRequest */
   notification?: boolean;
 }
 
@@ -189,6 +190,7 @@ export interface Config {
   /** 通道配置列表 */
   channels: Channel[];
   notifications?: NotificationSettings;
+  codexNotifications?: NotificationSettings;
   remoteBridge?: RemoteBridgeConfig;
   budget?: BudgetConfig;
   serverPort?: number;
@@ -686,11 +688,12 @@ export async function fetchCaffeinate(): Promise<CaffeinateState> {
 export async function testDingTalk(
   accessToken?: string,
   secret?: string,
+  source: "claude" | "codex" = "claude",
 ): Promise<void> {
   const res = await fetch("/api/set", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "testDingTalk", accessToken, secret }),
+    body: JSON.stringify({ action: "testDingTalk", accessToken, secret, source }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -701,11 +704,12 @@ export async function testDingTalk(
 export async function testFeishu(
   webhookUrl?: string,
   secret?: string,
+  source: "claude" | "codex" = "claude",
 ): Promise<void> {
   const res = await fetch("/api/set", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "testFeishu", webhookUrl, secret }),
+    body: JSON.stringify({ action: "testFeishu", webhookUrl, secret, source }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -726,11 +730,14 @@ export async function setCaffeinate(active: boolean): Promise<CaffeinateState> {
   return res.json();
 }
 
-export async function updateNotifications(notifications: NotificationSettings): Promise<NotificationSettings> {
+export async function updateNotifications(
+  notifications: NotificationSettings,
+  scope: "claude" | "codex" = "claude",
+): Promise<NotificationSettings> {
   const res = await fetch("/api/set", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "updateNotifications", notifications }),
+    body: JSON.stringify({ action: "updateNotifications", notifications, notificationScope: scope }),
   });
   if (!res.ok) throw new Error("Failed to update notifications");
   const data = await res.json();

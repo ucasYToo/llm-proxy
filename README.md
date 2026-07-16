@@ -4,7 +4,7 @@
 
 它主要解决中文互联网环境里的几个实际问题：多上游模型代理、Claude Code hook 可视化、费用统计、飞书通知，以及从 Web/飞书远程继续或新建本机 Claude Code 对话。
 
-当前版本：**2.2.0**
+当前版本：**2.3.0**
 
 ## 适合谁
 
@@ -20,7 +20,7 @@
 - **Claude Code 代理**：把 Claude Code API 请求转发到你配置的上游服务。
 - **多通道路由**：不同项目目录可以路由到不同目标模型或不同代理通道。
 - **Dashboard**：查看请求日志、SSE 流、hook 事件、会话、项目和费用统计。
-- **Codex Dashboard**：独立 Tab 查看 Codex 用户消息、助手最终回复、工具 hooks，以及手动开启的本地 Rollout Trace 原文；使用独立 SQLite 索引，不与 Claude 会话混合。
+- **Codex Dashboard**：使用与主 Dashboard 一致的项目卡片、Session 导航、实时事件筛选和详情面板，查看 Codex 用户消息、助手最终回复、工具 hooks，以及手动开启的本地 Rollout Trace 原文；保留 Codex 主题色和独立 SQLite，不接入远程对话。
 - **Hook 管理**：一键写入 Claude Code hooks，捕获 SessionStart、工具调用、Stop 等事件。
 - **Web/飞书远程对话**：从 Dashboard 或飞书继续已有 Claude Code 会话，或按项目新建远程任务。
 - **飞书进度卡片**：每条飞书消息对应一张紧凑进度卡片，执行中更新卡片，最终答案用普通聊天文本发回。
@@ -73,13 +73,15 @@ claude-proxy channel status
 - **配置**：管理上游目标、认证 header、模型映射、通道和项目目录路由。
 - **日志**：查看代理请求、响应耗时、token、费用和原始 SSE 输出。
 - **Dashboard**：按项目查看 Claude Code 会话、hook 事件和远程对话入口。
-- **Codex**：查看 Codex 用户消息、助手最终回复和工具事件；数据物理写入独立数据库。
+- **Codex**：按项目和 Session 查看 Codex 用户消息、助手最终回复、工具事件与可选 Rollout Trace；交互与主 Dashboard 对齐，数据物理写入独立数据库。
 - **分析**：查看费用趋势、模型分布、会话排行和健康状态。
 - **状态栏**：配置 macOS 状态栏助手和防休眠行为。
 
 ## Codex Dashboard
 
-Codex 接入只覆盖本地对话日志；Web/飞书远程会话暂不接入 Codex。它通过 Codex command hooks 采集用户消息、助手最终回复、工具调用和生命周期事件；需要排查模型原文时，可以手动开启 Codex 本地 Rollout Trace。两种方式都不代理模型请求，也不修改 ChatGPT 登录状态或 API 地址。
+Codex 接入只覆盖本地对话日志；Web/飞书远程会话暂不接入 Codex。Codex Tab 沿用主 Dashboard 的项目总览、Session 侧栏、事件筛选和详情抽屉，并使用独立的 Codex 主题色。它通过 Codex command hooks 采集用户消息、助手最终回复、工具调用和生命周期事件；需要排查模型原文时，可以手动开启 Codex 本地 Rollout Trace。两种方式都不代理模型请求，也不修改 ChatGPT 登录状态或 API 地址。
+
+Codex Tab 支持独立配置钉钉和飞书自定义机器人 webhook，不会读取或修改 Claude Dashboard 的通知开关与凭证。`Stop`、`SubagentStop` 分别推送任务和子代理完成；配置面板里的 `PermissionRequest` 用于推送 Codex 授权等待事件。
 
 Codex 数据不会写入 Claude 的 `logs.db`，而是单独保存在：
 

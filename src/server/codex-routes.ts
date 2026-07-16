@@ -23,6 +23,7 @@ import {
   stopCodexTraceCapture,
   syncCodexTraceIndex,
 } from "../lib/codex-rollout-traces";
+import { dispatchCodexWebhookNotifications } from "../notify/codex";
 import { broadcast } from "./sse";
 import { getServerPort } from "./state";
 
@@ -75,6 +76,7 @@ export const setupCodexRoutes = (app: Express): void => {
       payload: raw,
     });
     broadcast("codex-hook", entry);
+    dispatchCodexWebhookNotifications(entry);
     res.json({ ok: true });
   });
 

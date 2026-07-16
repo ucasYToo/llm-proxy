@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.3.0 (2026-07-16)
+
+### 新增
+
+- Codex Dashboard 新增独立的钉钉、飞书 webhook 通知配置；凭证和开关保存在 `codexNotifications`，不与 Claude 通知共享。
+- Codex webhook 支持 `Stop`、`SubagentStop` 和 `PermissionRequest` 推送，并为测试消息和正式通知使用 Codex 标识。
+
+### 变更
+
+- Codex Dashboard 对齐主 Dashboard 的项目卡片、Session 分组导航、紧凑工具栏、事件筛选和详情交互，同时保留 Codex 主题色。
+- Codex 原文采集、Hooks 安装和防休眠控制收进与主 Dashboard 一致的紧凑操作区。
+
+### 范围
+
+- Codex 仍只接入本地 hooks 和可选 Rollout Trace，不显示 Web/飞书远程对话入口，也不接入 Remote Bridge。
+
 ## 2.2.0 (2026-07-14)
 
 ### 新增

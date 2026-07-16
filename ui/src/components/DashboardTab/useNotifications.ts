@@ -9,6 +9,7 @@ import {
 interface UseNotificationsParams {
   notifications: NotificationSettings;
   onRefresh: () => void;
+  scope?: "claude" | "codex";
 }
 
 const eventsAnyOn = (e?: {
@@ -17,7 +18,7 @@ const eventsAnyOn = (e?: {
   notification?: boolean;
 }) => !!(e?.stop || e?.subagentStop || e?.notification);
 
-export function useNotifications({ notifications, onRefresh }: UseNotificationsParams) {
+export function useNotifications({ notifications, onRefresh, scope = "claude" }: UseNotificationsParams) {
   const [dingtalkOpen, setDingtalkOpen] = useState(false);
   const [feishuOpen, setFeishuOpen] = useState(false);
   const [macosOpen, setMacosOpen] = useState(false);
@@ -44,7 +45,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
 
   const handleToggleMacos = async (enabled: boolean) => {
     try {
-      await updateNotifications({ macos: { enabled } });
+      await updateNotifications({ macos: { enabled } }, scope);
       onRefresh();
     } catch (e) {
       alert("更新 macOS 通知失败：" + String(e));
@@ -57,7 +58,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
     notification?: boolean;
   }) => {
     try {
-      await updateNotifications({ macos: { events } });
+      await updateNotifications({ macos: { events } }, scope);
       onRefresh();
     } catch (e) {
       alert("更新 macOS 事件失败：" + String(e));
@@ -66,7 +67,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
 
   const handleToggleDingTalk = async (enabled: boolean) => {
     try {
-      await updateNotifications({ dingtalk: { enabled } });
+      await updateNotifications({ dingtalk: { enabled } }, scope);
       onRefresh();
     } catch (e) {
       alert("更新钉钉通知失败：" + String(e));
@@ -79,7 +80,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
     notification?: boolean;
   }) => {
     try {
-      await updateNotifications({ dingtalk: { events } });
+      await updateNotifications({ dingtalk: { events } }, scope);
       onRefresh();
     } catch (e) {
       alert("更新钉钉事件失败：" + String(e));
@@ -89,7 +90,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
   const handleSaveDingTalk = async (accessToken: string, secret: string) => {
     setDingSaving(true);
     try {
-      await updateNotifications({ dingtalk: { accessToken, secret } });
+      await updateNotifications({ dingtalk: { accessToken, secret } }, scope);
       onRefresh();
     } catch (e) {
       alert("保存钉钉配置失败：" + String(e));
@@ -101,7 +102,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
   const handleTestDingTalk = async (accessToken: string, secret: string) => {
     setDingTesting(true);
     try {
-      await testDingTalk(accessToken, secret);
+      await testDingTalk(accessToken, secret, scope);
       alert("已发送测试消息，请到钉钉群确认");
     } catch (e) {
       alert("钉钉测试失败：" + String(e));
@@ -112,7 +113,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
 
   const handleToggleFeishu = async (enabled: boolean) => {
     try {
-      await updateNotifications({ feishu: { enabled } });
+      await updateNotifications({ feishu: { enabled } }, scope);
       onRefresh();
     } catch (e) {
       alert("更新飞书通知失败：" + String(e));
@@ -122,7 +123,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
   const handleSaveFeishu = async (webhookUrl: string, secret: string) => {
     setFeishuSaving(true);
     try {
-      await updateNotifications({ feishu: { webhookUrl, secret } });
+      await updateNotifications({ feishu: { webhookUrl, secret } }, scope);
       onRefresh();
     } finally {
       setFeishuSaving(false);
@@ -132,7 +133,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
   const handleTestFeishu = async (webhookUrl: string, secret: string) => {
     setFeishuTesting(true);
     try {
-      await testFeishu(webhookUrl, secret);
+      await testFeishu(webhookUrl, secret, scope);
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     } finally {
@@ -146,7 +147,7 @@ export function useNotifications({ notifications, onRefresh }: UseNotificationsP
     notification?: boolean;
   }) => {
     try {
-      await updateNotifications({ feishu: { events } });
+      await updateNotifications({ feishu: { events } }, scope);
       onRefresh();
     } catch (e) {
       alert("更新飞书事件失败：" + String(e));

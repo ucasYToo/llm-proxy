@@ -9,9 +9,18 @@ interface Props {
   onSave: (webhookUrl: string, secret: string) => void;
   onTest: (webhookUrl: string, secret: string) => void;
   onChangeEvents: (next: ChannelEvents) => void;
+  notificationLabel?: string;
 }
 
-const FeishuPanel = ({ config, saving, testing, onSave, onTest, onChangeEvents }: Props) => {
+const FeishuPanel = ({
+  config,
+  saving,
+  testing,
+  onSave,
+  onTest,
+  onChangeEvents,
+  notificationLabel = "Notification",
+}: Props) => {
   const [webhookUrl, setWebhookUrl] = useState(config.webhookUrl ?? "");
   const [secret, setSecret] = useState(config.secret ?? "");
   const { stop = false, subagentStop = false, notification = false } = config.events ?? {};
@@ -51,7 +60,7 @@ const FeishuPanel = ({ config, saving, testing, onSave, onTest, onChangeEvents }
             checked={notification}
             onChange={(e) => onChangeEvents({ notification: e.target.checked })}
           />
-          Notification
+          {notificationLabel}
         </label>
       </div>
       <div className={styles.dingPanelRow}>

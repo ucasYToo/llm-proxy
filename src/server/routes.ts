@@ -875,17 +875,20 @@ export const setupApiRoutes = (app: Express) => {
       }
 
       case "testDingTalk": {
-        const { accessToken, secret } = req.body as {
+        const { accessToken, secret, source } = req.body as {
           accessToken?: string;
           secret?: string;
+          source?: "claude" | "codex";
         };
-        const token = accessToken ?? config.notifications?.dingtalk?.accessToken ?? "";
-        const sec = secret ?? config.notifications?.dingtalk?.secret ?? "";
+        const notificationConfig = source === "codex" ? config.codexNotifications : config.notifications;
+        const productName = source === "codex" ? "Codex" : "Claude Code";
+        const token = accessToken ?? notificationConfig?.dingtalk?.accessToken ?? "";
+        const sec = secret ?? notificationConfig?.dingtalk?.secret ?? "";
         const r = await sendDingTalkMarkdown(
           token,
           sec,
-          "Claude Code · 测试",
-          `### Claude Code 钉钉通知测试\n\n配置生效 ✅\n\n- time: ${new Date().toLocaleString()}`,
+          `${productName} · 测试`,
+          `### ${productName} 钉钉通知测试\n\n配置生效 ✅\n\n- time: ${new Date().toLocaleString()}`,
         );
         if (!r.ok) {
           res.status(400).json({ error: r.error ?? "send failed" });
@@ -896,16 +899,19 @@ export const setupApiRoutes = (app: Express) => {
       }
 
       case "testFeishu": {
-        const { webhookUrl, secret } = req.body as {
+        const { webhookUrl, secret, source } = req.body as {
           webhookUrl?: string;
           secret?: string;
+          source?: "claude" | "codex";
         };
-        const url = webhookUrl ?? config.notifications?.feishu?.webhookUrl ?? "";
-        const sec = secret ?? config.notifications?.feishu?.secret ?? "";
+        const notificationConfig = source === "codex" ? config.codexNotifications : config.notifications;
+        const productName = source === "codex" ? "Codex" : "Claude Code";
+        const url = webhookUrl ?? notificationConfig?.feishu?.webhookUrl ?? "";
+        const sec = secret ?? notificationConfig?.feishu?.secret ?? "";
         const r = await sendFeishuText(
           url,
           sec,
-          `Claude Code 飞书通知测试 - 配置生效\n\ntime: ${new Date().toLocaleString()}`,
+          `${productName} 飞书通知测试 - 配置生效\n\ntime: ${new Date().toLocaleString()}`,
         );
         if (!r.ok) {
           res.status(400).json({ error: r.error ?? "send failed" });
@@ -916,8 +922,13 @@ export const setupApiRoutes = (app: Express) => {
       }
 
       case "updateNotifications": {
-        const { notifications } = req.body as { notifications: NotificationSettings };
-        const prev = config.notifications ?? {};
+        const { notifications, notificationScope } = req.body as {
+          notifications: NotificationSettings;
+          notificationScope?: "claude" | "codex";
+        };
+        const prev = notificationScope === "codex"
+          ? config.codexNotifications ?? {}
+          : config.notifications ?? {};
         const next: NotificationSettings = { ...prev, ...notifications };
         if (notifications.macos) {
           next.macos = {
@@ -946,9 +957,10 @@ export const setupApiRoutes = (app: Express) => {
               : prev.feishu?.events,
           };
         }
-        config.notifications = next;
+        if (notificationScope === "codex") config.codexNotifications = next;
+        else config.notifications = next;
         writeConfig(config);
-        res.json({ ok: true, notifications: config.notifications });
+        res.json({ ok: true, notifications: next });
         break;
       }
 

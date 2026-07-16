@@ -93,6 +93,7 @@ The Codex dashboard is intentionally separate from the Claude dashboard. Codex R
 - Do not change Codex authentication, `openai_base_url`, `chatgpt_base_url`, or its model request path for logging.
 - Build conversation summaries from `UserPromptSubmit` and root `Stop`; tool and lifecycle hooks remain visible in the event stream.
 - Raw Rollout Trace capture is opt-in through `CODEX_ROLLOUT_TRACE_ROOT`, defaults off, and requires a full Codex restart after either toggle.
+- Codex webhook settings live under `codexNotifications`; keep them separate from Claude's `notifications`. Codex maps the notification event option to `PermissionRequest`.
 - Keep trace bundles under `~/.claude-proxy/codex-rollout-traces/`, enforce the 1 GB oldest-first budget, and store only bundle paths/index metadata in SQLite.
 - Trace detail may render local Codex reasoning when the user explicitly enables capture; this exception does not relax the prohibition on exposing Claude hidden thinking.
 

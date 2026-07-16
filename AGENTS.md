@@ -68,6 +68,7 @@ Runtime state:
 - Keep cwd validation strict through Dashboard-discovered projects, `remoteBridge.allowedCwds`, and each Feishu bot's `defaultCwd`.
 - Do not expose Claude hidden thinking in UI, Feishu cards, logs, or docs.
 - Keep the Codex Dashboard, queries, SSE events, and `codex-logs.db` separate from Claude state. Rollout Trace SQLite rows contain only path/index metadata; payloads remain in Codex-owned files and are read on demand.
+- Keep Codex DingTalk/Feishu webhook credentials and switches under `codexNotifications`; do not reuse Claude's `notifications` config.
 - Codex Rollout Trace capture must remain opt-in and default-off, enforce a 1 GB oldest-first budget, and revoke its environment switch when the user ends capture. It may display local Codex reasoning; never apply that exception to Claude hidden thinking.
 - Codex currently supports hooks plus optional local trace inspection. Do not proxy Codex API traffic or route Codex through Remote Bridge unless a task explicitly expands that scope.
 - Feishu remote replies should not use topic replies; progress is one patched card and final output is normal text.

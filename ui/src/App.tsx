@@ -88,7 +88,7 @@ const App = () => {
           {tab === "dashboard" && (
             <DashboardTab config={config} onRefresh={fetchConfig} />
           )}
-          {tab === "codex" && <CodexTab />}
+          {tab === "codex" && <CodexTab config={config} onRefresh={fetchConfig} />}
           {tab === "analytics" && <AnalyticsTab />}
           {tab === "projects" && <ProjectsTab />}
         </div>

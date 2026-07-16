@@ -69,6 +69,7 @@ export interface LogCollection {
 export interface ChannelEvents {
   stop?: boolean;
   subagentStop?: boolean;
+  /** Claude 的 Notification；Codex 独立配置中映射 PermissionRequest */
   notification?: boolean;
 }
 
@@ -205,6 +206,8 @@ export interface Config {
   channels: Channel[];
   /** Claude Code hook 事件的通知开关（默认全部 off） */
   notifications?: NotificationSettings;
+  /** Codex hook 事件的独立通知开关和 webhook 凭证 */
+  codexNotifications?: NotificationSettings;
   /** web / 飞书远程继续与新建 Claude Code 对话配置 */
   remoteBridge?: RemoteBridgeConfig;
   /** 预算配置 */
