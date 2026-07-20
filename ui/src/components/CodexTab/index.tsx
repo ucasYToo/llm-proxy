@@ -13,6 +13,7 @@ import {
   clearCodexDataApi,
   fetchCaffeinate,
   fetchCodexGlobalTimeline,
+  fetchCodexHookDetail,
   fetchCodexOverview,
   fetchCodexSessions,
   fetchCodexStatus,
@@ -166,6 +167,10 @@ export default function CodexTab({ config, onRefresh }: Props) {
   const [sse, setSse] = useState<"connecting" | "live" | "offline">("connecting");
   const [caffeinate, setCaffeinateState] = useState({ supported: false, active: false });
   const selectedRef = useRef<string | null>(null);
+  const baseRequestRef = useRef<Promise<void> | null>(null);
+  const baseRefreshPendingRef = useRef(false);
+  const timelineAbortRef = useRef<AbortController | null>(null);
+  const hookDetailRequestRef = useRef<string | null>(null);
   const notify = useNotifications({
     notifications: config.codexNotifications ?? {},
     onRefresh,
@@ -177,21 +182,43 @@ export default function CodexTab({ config, onRefresh }: Props) {
   }, [selectedSession]);
 
   const loadBase = useCallback(async () => {
-    const [nextStatus, nextOverview, nextSessions, nextTimeline] = await Promise.all([
-      fetchCodexStatus(),
-      fetchCodexOverview(),
-      fetchCodexSessions(),
-      fetchCodexGlobalTimeline(),
-    ]);
-    setStatus(nextStatus);
-    setOverview(nextOverview);
-    setSessions(nextSessions.sessions);
-    setGlobalTimeline(nextTimeline.entries);
+    if (baseRequestRef.current) {
+      baseRefreshPendingRef.current = true;
+      await baseRequestRef.current;
+      return;
+    }
+    do {
+      baseRefreshPendingRef.current = false;
+      const request = Promise.all([
+        fetchCodexStatus(),
+        fetchCodexOverview(),
+        fetchCodexSessions(),
+        fetchCodexGlobalTimeline(),
+      ]).then(([nextStatus, nextOverview, nextSessions, nextTimeline]) => {
+        setStatus(nextStatus);
+        setOverview(nextOverview);
+        setSessions(nextSessions.sessions);
+        setGlobalTimeline(nextTimeline.entries);
+      });
+      baseRequestRef.current = request;
+      try {
+        await request;
+      } finally {
+        baseRequestRef.current = null;
+      }
+    } while (baseRefreshPendingRef.current);
   }, []);
 
   const loadTimeline = useCallback(async (sessionId: string) => {
-    const result = await fetchCodexTimeline(sessionId);
-    setSessionTimeline(result.entries);
+    timelineAbortRef.current?.abort();
+    const controller = new AbortController();
+    timelineAbortRef.current = controller;
+    try {
+      const result = await fetchCodexTimeline(sessionId, controller.signal);
+      if (!controller.signal.aborted) setSessionTimeline(result.entries);
+    } finally {
+      if (timelineAbortRef.current === controller) timelineAbortRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -206,30 +233,72 @@ export default function CodexTab({ config, onRefresh }: Props) {
 
   useEffect(() => {
     if (!selectedSession) {
+      timelineAbortRef.current?.abort();
       setSessionTimeline([]);
       return;
     }
-    void loadTimeline(selectedSession).catch((reason) =>
-      setError(reason instanceof Error ? reason.message : String(reason)),
-    );
+    void loadTimeline(selectedSession).catch((reason) => {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      setError(reason instanceof Error ? reason.message : String(reason));
+    });
   }, [loadTimeline, selectedSession]);
 
   useEffect(() => {
     const source = new EventSource("/api/events");
+    let summaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshSummariesAfterBurst = () => {
+      if (summaryRefreshTimer) clearTimeout(summaryRefreshTimer);
+      summaryRefreshTimer = setTimeout(() => {
+        summaryRefreshTimer = null;
+        void Promise.all([fetchCodexOverview(), fetchCodexSessions()])
+          .then(([nextOverview, nextSessions]) => {
+            setOverview(nextOverview);
+            setSessions(nextSessions.sessions);
+          })
+          .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+      }, 1000);
+    };
     source.onopen = () => setSse("live");
     source.addEventListener("ready", () => setSse("live"));
     source.onerror = () => setSse("offline");
     source.onmessage = (message) => {
       try {
-        const event = JSON.parse(message.data) as { type?: string };
+        const event = JSON.parse(message.data) as { type?: string; data?: unknown };
         if (!event.type?.startsWith("codex-")) return;
-        void loadBase();
-        if (selectedRef.current) void loadTimeline(selectedRef.current);
+        if (event.type === "codex-hook" && event.data) {
+          const hook = event.data as HookEntry;
+          const nextEntry: CodexTimelineEntry = { kind: "hook", at: hook.createdAt, hook };
+          setGlobalTimeline((current) => [
+            nextEntry,
+            ...current.filter((entry) => entry.kind !== "hook" || entry.hook.id !== hook.id),
+          ].slice(0, 300));
+          if (selectedRef.current && selectedRef.current === hook.sessionId) {
+            setSessionTimeline((current) => [
+              nextEntry,
+              ...current.filter((entry) => entry.kind !== "hook" || entry.hook.id !== hook.id),
+            ].slice(0, 300));
+          }
+          setOverview((current) => ({
+            ...current,
+            hookCount: current.hookCount + 1,
+            promptCount: current.promptCount + (hook.eventName === "UserPromptSubmit" ? 1 : 0),
+            replyCount: current.replyCount + (hook.eventName === "Stop" ? 1 : 0),
+          }));
+          refreshSummariesAfterBurst();
+          return;
+        }
+        void loadBase().catch((reason) =>
+          setError(reason instanceof Error ? reason.message : String(reason)),
+        );
       } catch {
         // Ignore unrelated or malformed dashboard events.
       }
     };
-    return () => source.close();
+    return () => {
+      source.close();
+      if (summaryRefreshTimer) clearTimeout(summaryRefreshTimer);
+      timelineAbortRef.current?.abort();
+    };
   }, [loadBase, loadTimeline]);
 
   const projectGroups = useMemo<CodexProjectGroup[]>(() => {
@@ -360,8 +429,22 @@ export default function CodexTab({ config, onRefresh }: Props) {
     }
   };
 
+  const openHookDetail = async (hook: HookEntry) => {
+    hookDetailRequestRef.current = hook.id;
+    setHookDetail(hook);
+    setError(null);
+    try {
+      const detail = await fetchCodexHookDetail(hook.id);
+      if (hookDetailRequestRef.current === hook.id) setHookDetail(detail.hook);
+    } catch (reason) {
+      if (hookDetailRequestRef.current === hook.id) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    }
+  };
+
   const openEntry = (entry: CodexTimelineEntry) => {
-    if (entry.kind === "hook") setHookDetail(entry.hook);
+    if (entry.kind === "hook") void openHookDetail(entry.hook);
     else void openTraceDetail(entry);
   };
 
@@ -376,6 +459,7 @@ export default function CodexTab({ config, onRefresh }: Props) {
       await clearCodexDataApi();
       setSelectedSession(null);
       setSessionTimeline([]);
+      hookDetailRequestRef.current = null;
       setHookDetail(null);
       closeTraceDetail();
       setCaptureMessage("采集已关闭；完全退出 Codex 后，当前进程才会停止写入。trace 文件已清空。");
@@ -712,7 +796,13 @@ export default function CodexTab({ config, onRefresh }: Props) {
         </div>
       )}
 
-      <HookDetailPanel entry={hookDetail} onClose={() => setHookDetail(null)} />
+      <HookDetailPanel
+        entry={hookDetail}
+        onClose={() => {
+          hookDetailRequestRef.current = null;
+          setHookDetail(null);
+        }}
+      />
       {traceSelection && (
         <div className={styles.traceBackdrop} onClick={closeTraceDetail}>
           <aside className={styles.traceDetailPanel} onClick={(event) => event.stopPropagation()}>

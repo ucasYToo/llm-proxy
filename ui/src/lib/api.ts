@@ -1046,6 +1046,13 @@ export async function fetchCodexHooks(
   return res.json();
 }
 
+export async function fetchCodexHookDetail(id: string): Promise<{ hook: HookEntry }> {
+  const res = await fetch(`/api/codex/hooks/${encodeURIComponent(id)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Failed to fetch Codex hook");
+  return data;
+}
+
 export async function fetchCodexSessions(): Promise<{
   sessions: CodexSessionSummary[];
 }> {
@@ -1056,9 +1063,11 @@ export async function fetchCodexSessions(): Promise<{
 
 export async function fetchCodexTimeline(
   sessionId: string,
+  signal?: AbortSignal,
 ): Promise<{ entries: CodexTimelineEntry[] }> {
   const res = await fetch(
     `/api/codex/sessions/${encodeURIComponent(sessionId)}/timeline`,
+    { signal },
   );
   if (!res.ok) throw new Error("Failed to fetch Codex timeline");
   return res.json();

@@ -4,6 +4,7 @@ import path from "path";
 import {
   clearCodexData,
   closeCodexDb,
+  getCodexHook,
   getCodexOverview,
   getCodexSessionTimeline,
   insertCodexHook,
@@ -74,5 +75,28 @@ describe("independent Codex storage", () => {
       replyCount: 0,
       traceBundleCount: 0,
     });
+  });
+
+  it("keeps large tool responses out of timeline summaries and loads them on demand", () => {
+    const entry = insertCodexHook({
+      eventName: "PostToolUse",
+      sessionId: "session-codex-large",
+      toolName: "view_image",
+      cwd: "/tmp/project",
+      payload: {
+        tool_input: { path: "/tmp/image.png" },
+        tool_response: "x".repeat(128 * 1024),
+      },
+    });
+
+    const timeline = getCodexSessionTimeline("session-codex-large");
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0].hook.payload).toBeNull();
+    expect(getCodexHook(entry.id)?.payload).toMatchObject({
+      tool_input: { path: "/tmp/image.png" },
+    });
+    expect(
+      ((getCodexHook(entry.id)?.payload as { tool_response: string }).tool_response).length,
+    ).toBe(128 * 1024);
   });
 });

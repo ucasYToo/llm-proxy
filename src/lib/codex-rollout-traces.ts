@@ -10,7 +10,7 @@ import {
 
 export const CODEX_ROLLOUT_TRACE_ROOT_ENV = "CODEX_ROLLOUT_TRACE_ROOT";
 export const CODEX_TRACE_MAX_BYTES = 1024 * 1024 * 1024;
-const TRACE_EVENT_READ_BYTES = 32 * 1024 * 1024;
+const TRACE_EVENT_READ_BYTES = 8 * 1024 * 1024;
 const TRACE_DETAIL_READ_BYTES = 64 * 1024 * 1024;
 const TRACE_MAINTENANCE_INTERVAL_MS = 20_000;
 
@@ -447,11 +447,16 @@ const readBundleEvents = (
 const readTraceEvents = (
   bundles: CodexTraceBundleIndex[],
   limit: number,
-): CodexTraceEventSummary[] =>
-  bundles
-    .flatMap(readBundleEvents)
-    .sort((left, right) => (left.at < right.at ? 1 : -1))
-    .slice(0, Math.max(1, limit));
+): CodexTraceEventSummary[] => {
+  const boundedLimit = Math.max(1, limit);
+  const newest: CodexTraceEventSummary[] = [];
+  for (const bundle of bundles) {
+    newest.push(...readBundleEvents(bundle));
+    newest.sort((left, right) => (left.at < right.at ? 1 : -1));
+    if (newest.length > boundedLimit) newest.length = boundedLimit;
+  }
+  return newest;
+};
 
 export const getCodexTraceEvents = (limit = 300): CodexTraceEventSummary[] =>
   readTraceEvents(queryCodexTraceBundles(), limit);

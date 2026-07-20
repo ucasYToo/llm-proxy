@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import {
   clearCodexData,
+  compactCodexHook,
+  getCodexHook,
   getCodexDbPath,
   getCodexOverview,
   getCodexSessionTimeline,
@@ -75,7 +77,7 @@ export const setupCodexRoutes = (app: Express): void => {
       cwd: stringField(raw, "cwd"),
       payload: raw,
     });
-    broadcast("codex-hook", entry);
+    broadcast("codex-hook", compactCodexHook(entry));
     dispatchCodexWebhookNotifications(entry);
     res.json({ ok: true });
   });
@@ -87,8 +89,18 @@ export const setupCodexRoutes = (app: Express): void => {
         offset: queryInteger(req.query.offset, 0, 100_000),
         sessionId: (req.query.sessionId as string) || undefined,
         eventName: (req.query.eventName as string) || undefined,
+        payloadMode: "compact",
       }),
     );
+  });
+
+  app.get("/api/codex/hooks/:id", (req: Request, res: Response) => {
+    const hook = getCodexHook(req.params.id);
+    if (!hook) {
+      res.status(404).json({ error: "Codex hook not found" });
+      return;
+    }
+    res.json({ hook });
   });
 
   app.get("/api/codex/sessions", (req: Request, res: Response) => {
@@ -115,7 +127,7 @@ export const setupCodexRoutes = (app: Express): void => {
   app.get("/api/codex/timeline", (req: Request, res: Response) => {
     syncCodexTraceIndex();
     const limit = queryInteger(req.query.limit, 300, 1000);
-    const hooks = queryCodexHooks({ limit }).entries.map((hook) => ({
+    const hooks = queryCodexHooks({ limit, payloadMode: "compact" }).entries.map((hook) => ({
       kind: "hook" as const,
       at: hook.createdAt,
       hook,

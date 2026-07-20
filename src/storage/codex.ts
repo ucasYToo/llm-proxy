@@ -6,6 +6,8 @@ import type { HookEntry } from "./hooks";
 
 const CODEX_HOOK_TRIM_THRESHOLD = 2500;
 const CODEX_HOOK_KEEP_AFTER_TRIM = 2000;
+const CODEX_HOOK_MAX_BYTES = 128 * 1024 * 1024;
+const CODEX_TIMELINE_PAYLOAD_MAX_BYTES = 16 * 1024;
 
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS hooks (
@@ -27,6 +29,10 @@ const MIGRATIONS = [
     indexedAt TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_codex_trace_bundles_session ON trace_bundles(sessionId, startedAt DESC)`,
+  `ALTER TABLE hooks ADD COLUMN payloadBytes INTEGER NOT NULL DEFAULT 0;
+   UPDATE hooks
+   SET payloadBytes = length(CAST(COALESCE(payload, '') AS BLOB))
+   WHERE payloadBytes = 0`,
 ];
 
 let dbInstance: Database.Database | null = null;
@@ -97,31 +103,73 @@ export const insertCodexHook = (input: InsertCodexHookInput): HookEntry => {
     createdAt: new Date().toISOString(),
   };
   const db = getCodexDb();
+  const serializedPayload = JSON.stringify(entry.payload ?? null);
   db.prepare(
-    `INSERT INTO hooks (id, sessionId, eventName, toolName, cwd, payload, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO hooks (id, sessionId, eventName, toolName, cwd, payload, payloadBytes, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     entry.id,
     entry.sessionId,
     entry.eventName,
     entry.toolName,
     entry.cwd,
-    JSON.stringify(entry.payload ?? null),
+    serializedPayload,
+    Buffer.byteLength(serializedPayload),
     entry.createdAt,
   );
 
-  const { count } = db.prepare(`SELECT COUNT(*) AS count FROM hooks`).get() as {
+  const { count, payloadBytes } = db
+    .prepare(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(payloadBytes), 0) AS payloadBytes FROM hooks`,
+    )
+    .get() as {
     count: number;
+    payloadBytes: number;
   };
-  if (count > CODEX_HOOK_TRIM_THRESHOLD) {
+
+  if (count > CODEX_HOOK_TRIM_THRESHOLD || payloadBytes > CODEX_HOOK_MAX_BYTES) {
+    const rows = db
+      .prepare(
+        `SELECT payloadBytes
+         FROM hooks
+         ORDER BY createdAt DESC, rowid DESC
+         LIMIT ?`,
+      )
+      .all(CODEX_HOOK_KEEP_AFTER_TRIM) as Array<{ payloadBytes: number }>;
+    let retainedBytes = 0;
+    let retainedRows = 0;
+    for (const row of rows) {
+      const nextBytes = retainedBytes + row.payloadBytes;
+      if (retainedRows > 0 && nextBytes > CODEX_HOOK_MAX_BYTES) break;
+      retainedBytes = nextBytes;
+      retainedRows += 1;
+    }
     db.prepare(
-      `DELETE FROM hooks WHERE rowid NOT IN (
-        SELECT rowid FROM hooks ORDER BY createdAt DESC LIMIT ?
-      )`,
-    ).run(CODEX_HOOK_KEEP_AFTER_TRIM);
+      `DELETE FROM hooks WHERE rowid IN (
+         SELECT rowid
+         FROM hooks
+         ORDER BY createdAt DESC, rowid DESC
+         LIMIT -1 OFFSET ?
+       )`,
+    ).run(Math.max(retainedRows, 1));
   }
   return entry;
 };
+
+export const compactCodexHook = (entry: HookEntry): HookEntry => ({
+  ...entry,
+  payload: (() => {
+    if (entry.eventName === "PostToolUse") return null;
+    try {
+      return Buffer.byteLength(JSON.stringify(entry.payload ?? null)) <=
+        CODEX_TIMELINE_PAYLOAD_MAX_BYTES
+        ? entry.payload
+        : null;
+    } catch {
+      return null;
+    }
+  })(),
+});
 
 export const queryCodexHooks = (
   options: {
@@ -129,9 +177,16 @@ export const queryCodexHooks = (
     offset?: number;
     sessionId?: string;
     eventName?: string;
+    payloadMode?: "full" | "compact";
   } = {},
 ): { entries: HookEntry[]; total: number } => {
-  const { limit = 100, offset = 0, sessionId, eventName } = options;
+  const {
+    limit = 100,
+    offset = 0,
+    sessionId,
+    eventName,
+    payloadMode = "full",
+  } = options;
   const filters: string[] = [];
   const args: unknown[] = [];
   if (sessionId) {
@@ -149,10 +204,32 @@ export const queryCodexHooks = (
     .get(...args) as { count: number };
   const rows = db
     .prepare(
-      `SELECT * FROM hooks ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+      `SELECT id, sessionId, eventName, toolName, cwd,
+              ${payloadMode === "compact"
+                ? `CASE
+                     WHEN eventName = 'PostToolUse' OR payloadBytes > ${CODEX_TIMELINE_PAYLOAD_MAX_BYTES}
+                     THEN NULL
+                     ELSE payload
+                   END`
+                : "payload"} AS payload,
+              createdAt
+       FROM hooks ${where}
+       ORDER BY createdAt DESC
+       LIMIT ? OFFSET ?`,
     )
     .all(...args, limit, offset) as Record<string, unknown>[];
   return { entries: rows.map(rowToHook), total: total.count };
+};
+
+export const getCodexHook = (id: string): HookEntry | null => {
+  const row = getCodexDb()
+    .prepare(
+      `SELECT id, sessionId, eventName, toolName, cwd, payload, createdAt
+       FROM hooks
+       WHERE id = ?`,
+    )
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? rowToHook(row) : null;
 };
 
 export interface CodexSessionSummary {
@@ -169,53 +246,81 @@ export interface CodexSessionSummary {
   traceBundleCount: number;
 }
 
-const stringField = (value: unknown, key: string): string | null => {
-  if (!value || typeof value !== "object") return null;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" && field.trim() ? field : null;
-};
-
 export const queryCodexSessions = (limit = 200): CodexSessionSummary[] => {
-  const hooks = queryCodexHooks({ limit: 5000 }).entries.slice().reverse();
+  const boundedLimit = Math.min(Math.max(limit, 1), 500);
+  const db = getCodexDb();
+  const rows = db
+    .prepare(
+      `SELECT sessionId,
+              MAX(createdAt) AS lastEventAt,
+              COUNT(*) AS eventCount,
+              SUM(CASE WHEN eventName = 'UserPromptSubmit' THEN 1 ELSE 0 END) AS promptCount,
+              SUM(CASE WHEN eventName = 'Stop' THEN 1 ELSE 0 END) AS replyCount
+       FROM hooks
+       WHERE sessionId IS NOT NULL
+       GROUP BY sessionId
+       ORDER BY lastEventAt DESC
+       LIMIT ?`,
+    )
+    .all(boundedLimit) as Array<{
+      sessionId: string;
+      lastEventAt: string;
+      eventCount: number;
+      promptCount: number;
+      replyCount: number;
+    }>;
+  const metadata = db.prepare(
+    `SELECT
+       (SELECT eventName FROM hooks WHERE sessionId = ? ORDER BY createdAt DESC LIMIT 1) AS lastEventName,
+       (SELECT cwd FROM hooks WHERE sessionId = ? AND cwd IS NOT NULL ORDER BY createdAt ASC LIMIT 1) AS cwd,
+       (SELECT substr(json_extract(payload, '$.model'), 1, 200)
+          FROM hooks
+         WHERE sessionId = ?
+           AND eventName IN ('SessionStart', 'UserPromptSubmit', 'Stop')
+           AND payloadBytes <= 1048576
+           AND json_valid(payload)
+           AND json_extract(payload, '$.model') IS NOT NULL
+         ORDER BY createdAt ASC LIMIT 1) AS model,
+       (SELECT substr(json_extract(payload, '$.prompt'), 1, 4096)
+          FROM hooks
+         WHERE sessionId = ?
+           AND eventName = 'UserPromptSubmit'
+           AND payloadBytes <= 1048576
+           AND json_valid(payload)
+         ORDER BY createdAt ASC LIMIT 1) AS title,
+       (SELECT substr(json_extract(payload, '$.last_assistant_message'), 1, 8192)
+          FROM hooks
+         WHERE sessionId = ?
+           AND eventName = 'Stop'
+           AND payloadBytes <= 1048576
+           AND json_valid(payload)
+         ORDER BY createdAt DESC LIMIT 1) AS lastAssistantMessage`,
+  );
   const sessions = new Map<string, CodexSessionSummary>();
 
-  for (const hook of hooks) {
-    if (!hook.sessionId) continue;
-    let session = sessions.get(hook.sessionId);
-    if (!session) {
-      session = {
-        sessionId: hook.sessionId,
-        lastEventAt: hook.createdAt,
-        lastEventName: hook.eventName,
-        eventCount: 0,
-        promptCount: 0,
-        replyCount: 0,
-        cwd: null,
-        model: null,
-        title: null,
-        lastAssistantMessage: null,
-        traceBundleCount: 0,
-      };
-      sessions.set(hook.sessionId, session);
-    }
-
-    session.eventCount += 1;
-    if (hook.createdAt >= session.lastEventAt) {
-      session.lastEventAt = hook.createdAt;
-      session.lastEventName = hook.eventName;
-    }
-    session.cwd ??= hook.cwd;
-    session.model ??= stringField(hook.payload, "model");
-    if (hook.eventName === "UserPromptSubmit") {
-      session.promptCount += 1;
-      session.title ??= stringField(hook.payload, "prompt");
-    }
-    if (hook.eventName === "Stop") {
-      session.replyCount += 1;
-      session.lastAssistantMessage =
-        stringField(hook.payload, "last_assistant_message") ??
-        session.lastAssistantMessage;
-    }
+  for (const row of rows) {
+    const detail = metadata.get(
+      row.sessionId,
+      row.sessionId,
+      row.sessionId,
+      row.sessionId,
+      row.sessionId,
+    ) as {
+      lastEventName: string;
+      cwd: string | null;
+      model: string | null;
+      title: string | null;
+      lastAssistantMessage: string | null;
+    };
+    sessions.set(row.sessionId, {
+      ...row,
+      lastEventName: detail.lastEventName,
+      cwd: detail.cwd,
+      model: detail.model,
+      title: detail.title,
+      lastAssistantMessage: detail.lastAssistantMessage,
+      traceBundleCount: 0,
+    });
   }
 
   for (const bundle of queryCodexTraceBundles()) {
@@ -245,14 +350,14 @@ export const queryCodexSessions = (limit = 200): CodexSessionSummary[] => {
 
   return [...sessions.values()]
     .sort((left, right) => (left.lastEventAt < right.lastEventAt ? 1 : -1))
-    .slice(0, Math.min(Math.max(limit, 1), 500));
+    .slice(0, boundedLimit);
 };
 
 export const getCodexSessionTimeline = (
   sessionId: string,
   limit = 300,
 ): Array<{ kind: "hook"; at: string; hook: HookEntry }> =>
-  queryCodexHooks({ sessionId, limit }).entries.map((hook) => ({
+  queryCodexHooks({ sessionId, limit, payloadMode: "compact" }).entries.map((hook) => ({
     kind: "hook" as const,
     at: hook.createdAt,
     hook,
