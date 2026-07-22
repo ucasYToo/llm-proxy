@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.0 (2026-07-23)
+
+### 新增
+
+- Dashboard 和 CLI 新增配置导出/导入；导入前校验必填结构、字段类型、重复 ID 和 target/channel 引用，Dashboard 导入后自动刷新飞书 Remote Bridge。
+- Claude Dashboard 新增 Hooks 完整状态提示和一键安装入口，无需先到终端执行安装命令。
+
+### 安全
+
+- 配置导出会清空目标认证、敏感 Header、通知 webhook 凭证、Remote Bridge token，以及飞书机器人的 app secret、encrypt key 和 verification token；回导到原机器时只为 ID 与端点身份都一致的 target/bot 恢复本机已有凭证。
+
+### 修复
+
+- Hooks 状态现在要求全部受管事件均已安装且指向当前代理端口，避免残缺配置或旧端口被误报为已连接。
+- 配置页导入/导出操作和 Hooks 引导面板适配窄屏布局。
+
 ## 2.3.1 (2026-07-21)
 
 ### 修复

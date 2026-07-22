@@ -4,7 +4,7 @@
 
 它主要解决中文互联网环境里的几个实际问题：多上游模型代理、Claude Code hook 可视化、费用统计、飞书通知，以及从 Web/飞书远程继续或新建本机 Claude Code 对话。
 
-当前版本：**2.3.1**
+当前版本：**2.4.0**
 
 ## 适合谁
 
@@ -22,6 +22,7 @@
 - **Dashboard**：查看请求日志、SSE 流、hook 事件、会话、项目和费用统计。
 - **Codex Dashboard**：使用与主 Dashboard 一致的项目卡片、Session 导航、实时事件筛选和详情面板，查看 Codex 用户消息、助手最终回复、工具 hooks，以及手动开启的本地 Rollout Trace 原文；保留 Codex 主题色和独立 SQLite，不接入远程对话。
 - **Hook 管理**：一键写入 Claude Code hooks，捕获 SessionStart、工具调用、Stop 等事件。
+- **配置备份**：从 Dashboard 或 CLI 导出脱敏配置，并安全回导目标、通道、通知和 Remote Bridge 设置。
 - **Web/飞书远程对话**：从 Dashboard 或飞书继续已有 Claude Code 会话，或按项目新建远程任务。
 - **飞书进度卡片**：每条飞书消息对应一张紧凑进度卡片，执行中更新卡片，最终答案用普通聊天文本发回。
 - **通知**：支持 macOS、钉钉、飞书自定义机器人通知指定 hook 事件。
@@ -72,7 +73,7 @@ claude-proxy channel status
 
 - **配置**：管理上游目标、认证 header、模型映射、通道和项目目录路由。
 - **日志**：查看代理请求、响应耗时、token、费用和原始 SSE 输出。
-- **Dashboard**：按项目查看 Claude Code 会话、hook 事件和远程对话入口。
+- **Dashboard**：按项目查看 Claude Code 会话、hook 事件和远程对话入口；Hooks 未完整安装或端口已变化时可直接一键修复。
 - **Codex**：按项目和 Session 查看 Codex 用户消息、助手最终回复、工具事件与可选 Rollout Trace；交互与主 Dashboard 对齐，数据物理写入独立数据库。
 - **分析**：查看费用趋势、模型分布、会话排行和健康状态。
 - **状态栏**：配置 macOS 状态栏助手和防休眠行为。
@@ -311,9 +312,25 @@ claude-proxy hook uninstall
 当前管理的 hook 事件：
 
 ```text
-SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Notification /
-SubagentStart / SubagentStop / Stop / SessionEnd
+SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / PostToolUseFailure /
+StopFailure / PermissionDenied / Notification / SubagentStart / SubagentStop /
+Stop / SessionEnd
 ```
+
+Dashboard 会检查全部受管事件是否指向当前服务端口；未安装、安装不完整或端口变化时，可以直接点击“安装 Hooks”。
+
+## 配置备份与恢复
+
+配置页右上角可以直接导出或导入 JSON，也可以使用 CLI：
+
+```bash
+claude-proxy config export --output ./llm-proxy-config.json
+claude-proxy config import --file ./llm-proxy-config.json
+```
+
+导出文件不会包含目标认证值、敏感 Header、通知 webhook 凭证、Remote Bridge token 或飞书机器人密钥。回导到同一台机器时，只会在 target ID 与 URL、bot ID 与 appId 都一致时保留本机已有凭证；复制到其他机器后，需要重新填写这些凭证。导入会拒绝字段类型错误、重复 ID 或引用不存在 target/channel 的配置。
+
+从 Dashboard 导入会立即重启飞书 Remote Bridge；服务运行期间若改用 CLI 导入，请重启 `claude-proxy` 以应用飞书长连接配置。
 
 ## 上游目标和通道路由
 
@@ -323,8 +340,8 @@ claude-proxy config add --name "OpenAI" \
   --url "https://api.openai.com/v1" \
   --headers '{"Authorization":"Bearer sk-xxx"}' \
   --anthropic-model "claude-opus-4-7"
-claude-proxy config set-active <target-id>
-claude-proxy config delete <target-id>
+claude-proxy config set-active --name "OpenAI"
+claude-proxy config delete --name "OpenAI"
 
 claude-proxy config channel list
 claude-proxy config channel add --name "default"
@@ -343,6 +360,7 @@ claude-proxy config channel remove-cwd-route --channel <channelId> --cwd <path>
 | GET | `/api/query?type=config` | 当前配置 |
 | GET | `/api/query?type=logs` | 代理请求日志 |
 | GET | `/api/query?type=hooks` | Claude Code hook 事件 |
+| GET | `/api/query?type=hook-status` | Claude Code Hooks 完整状态 |
 | GET | `/api/query?type=sessions` | 最近会话 |
 | GET | `/api/query?type=remote-threads` | 远程对话 thread |
 | GET | `/api/query?type=remote-messages` | 远程消息 |
@@ -350,6 +368,8 @@ claude-proxy config channel remove-cwd-route --channel <channelId> --cwd <path>
 | GET | `/api/events` | Dashboard SSE |
 | POST | `/api/hooks/:event` | Claude Code hook 回调 |
 | POST | `/api/set` | 修改配置 |
+| GET | `/api/config/export` | 导出脱敏配置 |
+| POST | `/api/config/import` | 校验并导入配置 |
 | POST | `/api/remote/send` | Web 远程发送 |
 | POST | `/api/remote/permission` | Web/飞书权限审批 |
 | ALL | `/:channelId?/proxy/*` | 上游代理请求 |
@@ -389,7 +409,7 @@ npm run build        # TypeScript + UI + macOS 状态栏（可用时）
 npm run build:statusbar
 ```
 
-2.2.0 发布前常用检查：
+2.4.0 发布前常用检查：
 
 ```bash
 npx tsc --noEmit

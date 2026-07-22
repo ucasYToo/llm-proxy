@@ -183,3 +183,25 @@ export const listManagedHooks = (): Array<{ event: string; url: string }> => {
 
   return result;
 };
+
+export const areManagedHooksCurrent = (
+  events: Array<{ event: string; url: string }>,
+  port: number,
+): boolean =>
+  events.length === MANAGED_HOOK_EVENTS.length &&
+  MANAGED_HOOK_EVENTS.every((event) => {
+    const expectedUrl = `http://localhost:${port}/api/hooks/${event}`;
+    return events.some((item) => item.event === event && item.url === expectedUrl);
+  });
+
+/**
+ * A complete installation must contain every managed event and point at the
+ * currently running proxy port. Partial or stale installations need repair.
+ */
+export const getManagedHookStatus = (
+  port: number,
+): { installed: boolean; count: number; events: Array<{ event: string; url: string }> } => {
+  const events = listManagedHooks();
+  const installed = areManagedHooksCurrent(events, port);
+  return { installed, count: events.length, events };
+};

@@ -65,6 +65,7 @@ Runtime state:
 - Prefer existing helpers in `src/config`, `src/storage`, `src/remote`, and `src/server`.
 - Add Claude SQLite migrations only at the end of `MIGRATIONS` in `src/storage/db.ts`; append Codex-only migrations to `MIGRATIONS` in `src/storage/codex.ts` and keep the two databases separate.
 - Keep channel/internal remote write APIs protected by `remoteBridge.authToken`; same-origin dashboard exceptions must not expose the token.
+- Keep config exports credential-free and config imports structurally validated; round-trip imports may restore current local credentials only when target ID/URL or bot ID/appId both match.
 - Keep cwd validation strict through Dashboard-discovered projects, `remoteBridge.allowedCwds`, and each Feishu bot's `defaultCwd`.
 - Do not expose Claude hidden thinking in UI, Feishu cards, logs, or docs.
 - Keep the Codex Dashboard, queries, SSE events, and `codex-logs.db` separate from Claude state. Rollout Trace SQLite rows contain only path/index metadata; payloads remain in Codex-owned files and are read on demand.

@@ -15,7 +15,7 @@ Guidance for Claude Code when working in this repository.
 - a React/Vite dashboard
 - Web and Feishu remote conversation support for creating or continuing Claude Code sessions
 
-Release target in this working tree: **2.2.0**.
+Release target in this working tree: **2.4.0**.
 
 ## Common Commands
 
@@ -134,6 +134,8 @@ Channel/internal Remote endpoints require `remoteBridge.authToken` through one o
 - `Authorization: Bearer <token>`
 
 Same-origin dashboard calls may use the local server origin check for Web send/permission actions, but the token must not be returned in the public config payload. Do not add cross-origin remote write paths.
+
+Config export/import is intentionally credential-safe: exports clear target auth values, credential-like headers, notification webhook credentials, `remoteBridge.authToken`, and Feishu bot secrets. Imports must pass structural/reference validation and preserve current local credentials only when both target ID/URL or bot ID/appId match. Keep the CLI and Dashboard on the same helpers in `src/config/store.ts`.
 
 Feishu file upload uses `/api/remote/feishu/send-file` and requires `remoteBridge.authToken`. The CLI fallback child process receives the remote context in environment variables so the installed skill helper can call this API without exposing the token in argv or dashboard config.
 

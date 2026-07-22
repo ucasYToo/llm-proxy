@@ -438,6 +438,13 @@ export interface HookEntry {
   createdAt: string;
 }
 
+export interface HookStatus {
+  installed: boolean;
+  count: number;
+  events: Array<{ event: string; url: string }>;
+  settingsPath: string;
+}
+
 export type TimelineEntry =
   | { kind: "hook"; at: string; hook: HookEntry }
   | { kind: "log"; at: string; log: LogEntry };
@@ -1122,4 +1129,44 @@ export async function fetchCodexOverview(): Promise<CodexOverview> {
 export async function clearCodexDataApi(): Promise<void> {
   const res = await fetch("/api/codex/data", { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to clear Codex data");
+}
+
+/* ── Hook Status ── */
+
+export async function fetchHookStatus(): Promise<HookStatus> {
+  const res = await fetch("/api/query?type=hook-status");
+  if (!res.ok) throw new Error("Failed to fetch hook status");
+  return res.json();
+}
+
+export async function installHooksApi(
+  port?: number,
+): Promise<{ ok: boolean; count: number }> {
+  const res = await fetch("/api/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "installHooks", port }),
+  });
+  if (!res.ok) throw new Error("Failed to install hooks");
+  return res.json();
+}
+
+/* ── Config Export / Import ── */
+
+export async function exportConfigApi(): Promise<Config> {
+  const res = await fetch("/api/config/export");
+  if (!res.ok) throw new Error("Failed to export config");
+  return res.json();
+}
+
+export async function importConfigApi(config: Config): Promise<void> {
+  const res = await fetch("/api/config/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "Failed to import config");
+  }
 }

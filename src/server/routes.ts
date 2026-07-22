@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
 import path from "path";
-import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTarget, getChannels } from "../config/store";
+import { readConfig, writeConfig, addChannel, deleteChannel, setChannelActiveTarget, getChannels, sanitizeConfigForExport, validateConfigImport, mergeConfig } from "../config/store";
 import { queryLogs, getLogDetail, clearLogs } from "../storage/logs";
 import { insertHook, queryHooks, recentSessions, clearHooks, aggregateToolUsage, getSubagentRelations, getActivityStatus } from "../storage/hooks";
 import {
@@ -28,7 +28,7 @@ import { parseHookPayload } from "../interfaces";
 import type { Target, LogCollection, Channel, NotificationSettings, Config, BudgetConfig } from "../interfaces";
 import { getKnownProjects, updateProjectRemark } from "../core/session";
 import { v4 as uuidv4 } from "uuid";
-import { readClaudeSettings, writeClaudeSettings } from "../lib/claude-settings";
+import { readClaudeSettings, writeClaudeSettings, installHooks, getManagedHookStatus, CLAUDE_SETTINGS_PATH } from "../lib/claude-settings";
 import { readAiTitle } from "../lib/transcript";
 import { addClient, broadcast } from "./sse";
 import { notify } from "../notify/macos";
@@ -426,6 +426,15 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
+    if (type === "hook-status") {
+      const managed = getManagedHookStatus(getServerPort());
+      res.json({
+        ...managed,
+        settingsPath: CLAUDE_SETTINGS_PATH,
+      });
+      return;
+    }
+
     if (type === "pricing") {
       const model = (req.query.model as string) ?? "";
       const { pricing, source, matchedKey } = resolvePricingDetailed(
@@ -435,7 +444,7 @@ export const setupApiRoutes = (app: Express) => {
       return;
     }
 
-    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | remote-threads | remote-messages | remote-instances | remote-permissions | remote-feishu-skill-status | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | pricing" });
+    res.status(400).json({ error: "type must be one of config | logs | hooks | sessions | session-timeline | activity-status | remote-threads | remote-messages | remote-instances | remote-permissions | remote-feishu-skill-status | caffeinate | projects | cost-summary | cost-trend | cost-session | session-analytics | hook-status | pricing" });
   });
 
   // SSE：实时事件流
@@ -671,6 +680,18 @@ export const setupApiRoutes = (app: Express) => {
         };
         writeConfig(config);
         res.json({ ok: true });
+        break;
+      }
+
+      case "installHooks": {
+        const rawPort = req.body.port as number | undefined;
+        const port = rawPort === undefined ? getServerPort() : rawPort;
+        if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+          res.status(400).json({ error: "port must be an integer between 1 and 65535" });
+          return;
+        }
+        const result = installHooks(port);
+        res.json({ ok: true, count: result.installed.length, events: result.installed });
         break;
       }
 
@@ -1096,6 +1117,33 @@ export const setupApiRoutes = (app: Express) => {
       default:
         res.status(400).json({ error: "Unknown action" });
     }
+  });
+
+  // Config export（敏感字段已脱敏）
+  app.get("/api/config/export", (_req: Request, res: Response) => {
+    const config = readConfig();
+    res.json(sanitizeConfigForExport(config));
+  });
+
+  // Config import（智能合并，保留当前敏感值）
+  app.post("/api/config/import", (req: Request, res: Response) => {
+    const validationError = validateConfigImport(req.body);
+    if (validationError) {
+      res.status(400).json({ error: validationError });
+      return;
+    }
+
+    const importConfig = req.body as Config;
+    const currentConfig = readConfig();
+    const merged = mergeConfig(importConfig, currentConfig);
+    writeConfig(merged);
+    restartFeishuRemoteBridge();
+
+    res.json({
+      ok: true,
+      targetCount: merged.targets.length,
+      channelCount: merged.channels.length,
+    });
   });
 
   // 清空日志或 hooks

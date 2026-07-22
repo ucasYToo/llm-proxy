@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Config, Target, LogCollection, Channel, Project } from "../../lib/api";
-import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget, getProjects } from "../../lib/api";
+import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget, getProjects, exportConfigApi, importConfigApi } from "../../lib/api";
 import TargetForm from "../TargetForm/index";
 import styles from "./index.module.css";
 
@@ -23,6 +23,8 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
   const [addingRouteCh, setAddingRouteCh] = useState<string | undefined>();
   const [newRouteCwd, setNewRouteCwd] = useState("");
   const [newRouteTarget, setNewRouteTarget] = useState("");
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadProjects = useCallback(async () => {
     try { setProjects(await getProjects()); } catch { /* ignore */ }
@@ -242,21 +244,87 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
     setEditChannelName("");
   };
 
+  const handleExportConfig = async () => {
+    try {
+      const exported = await exportConfigApi();
+      const blob = new Blob([JSON.stringify(exported, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `llm-proxy-config-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (e) {
+      alert("导出失败: " + String(e));
+    }
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (
+        !confirm(
+          "确认导入配置？这将覆盖当前的目标、通道等设置。\n文件中的 authToken 和通知凭证将被智能合并。",
+        )
+      )
+        return;
+      await importConfigApi(parsed);
+      onRefresh();
+    } catch (err) {
+      alert("导入失败: " + String(err));
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <div>
+      <input
+        type="file"
+        accept=".json"
+        ref={fileInputRef}
+        style={{ display: "none" }}
+        onChange={handleFileSelected}
+      />
       {/* 转发目标 */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <span className={styles.sectionTitle}>转发目标</span>
-          <button
-            className="btnPrimary btnSm"
-            onClick={() => {
-              setEditTarget(undefined);
-              setShowForm(true);
-            }}
-          >
-            + 添加目标
-          </button>
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className="btnGhost btnSm"
+              onClick={() => void handleExportConfig()}
+            >
+              导出配置
+            </button>
+            <button
+              type="button"
+              className="btnGhost btnSm"
+              disabled={importing}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {importing ? "导入中…" : "导入配置"}
+            </button>
+            <button
+              className="btnPrimary btnSm"
+              onClick={() => {
+                setEditTarget(undefined);
+                setShowForm(true);
+              }}
+            >
+              + 添加目标
+            </button>
+          </div>
         </div>
 
         {config.targets.length === 0 ? (

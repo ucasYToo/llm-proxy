@@ -915,6 +915,63 @@
   font-style: italic;
 }
 
+/* ── Setup Panel ── */
+
+.setupPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-shrink: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  font-size: 12px;
+}
+
+.setupPanel > div {
+  min-width: 0;
+}
+
+.setupPanel strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.setupPanel p {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 4px 0 0;
+}
+
+.setupPanel code {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.primaryButton {
+  border-radius: 4px;
+  font-size: 12px;
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.primaryButton:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  color: #fff;
+  background: var(--accent-hover);
+}
+
+@media (max-width: 720px) {
+  .setupPanel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 /* ── Event Stream ── */
 
 .eventStream {

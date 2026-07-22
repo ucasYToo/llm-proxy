@@ -1,7 +1,8 @@
+import fs from "fs";
 import { Command } from "commander";
 import path from "path";
 import chalk from "chalk";
-import { readConfig, writeConfig, getActiveTarget, getChannels, addChannel, deleteChannel, setChannelActiveTarget } from "../../config/store";
+import { readConfig, writeConfig, getActiveTarget, getChannels, addChannel, deleteChannel, setChannelActiveTarget, sanitizeConfigForExport, validateConfigImport, mergeConfig } from "../../config/store";
 import { normalizeCwd } from "../../core/session";
 import type { Target, Channel } from "../../interfaces";
 import { v4 as uuidv4 } from "uuid";
@@ -133,6 +134,42 @@ export const configCommand = (program: Command) => {
       console.log(
         `  采集原始流式事件: ${cfg.logCollection.captureRawStreamEvents ? chalk.green("是") : chalk.red("否")}`,
       );
+    });
+
+  config
+    .command("export")
+    .description("导出配置为 JSON（敏感字段已脱敏）")
+    .option("-o, --output <file>", "输出到文件（默认 stdout）")
+    .action((options: { output?: string }) => {
+      const cfg = readConfig();
+      const exported = sanitizeConfigForExport(cfg);
+      const json = JSON.stringify(exported, null, 2);
+      if (options.output) {
+        fs.writeFileSync(options.output, json, "utf-8");
+        console.log(chalk.green(`配置已导出到 ${options.output}`));
+      } else {
+        console.log(json);
+      }
+    });
+
+  config
+    .command("import")
+    .description("从 JSON 文件导入配置")
+    .requiredOption("-f, --file <path>", "配置文件路径")
+    .action((options: { file: string }) => {
+      const raw = fs.readFileSync(path.resolve(options.file), "utf-8");
+      const imported = JSON.parse(raw);
+      const validationError = validateConfigImport(imported);
+      if (validationError) {
+        console.error(chalk.red(`无效的配置格式：${validationError}`));
+        process.exit(1);
+      }
+      const current = readConfig();
+      const merged = mergeConfig(imported, current);
+      writeConfig(merged);
+      console.log(chalk.green(`配置已从 ${options.file} 导入`));
+      console.log(`  目标: ${merged.targets.length} 个`);
+      console.log(`  通道: ${merged.channels.length} 个`);
     });
 
   // 通道管理子命令

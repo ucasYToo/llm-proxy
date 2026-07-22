@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
-import type { Config, RemoteBridgeConfig, RemoteThread, TimelineEntry } from '../../lib/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Config, HookStatus, RemoteBridgeConfig, RemoteThread, TimelineEntry } from '../../lib/api';
 import {
   sendRemoteMessageApi,
   testFeishuApp,
   updateRemoteBridge,
   updateProjectRemarkApi,
+  fetchHookStatus,
+  installHooksApi,
 } from '../../lib/api';
 import { LogDetailPanel } from '../LogDetailPanel';
 import { HookDetailPanel } from '../HookDetailPanel';
@@ -35,6 +37,8 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
   const [remoteConfigOpen, setRemoteConfigOpen] = useState(false);
   const [remoteSaving, setRemoteSaving] = useState(false);
   const [remoteTesting, setRemoteTesting] = useState(false);
+  const [hookStatus, setHookStatus] = useState<HookStatus | null>(null);
+  const [hookInstalling, setHookInstalling] = useState(false);
   const notify = useNotifications({
     notifications: config.notifications ?? {},
     onRefresh,
@@ -106,6 +110,24 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
   const remoteUsesChannel = remoteDeliveryMode !== 'cli';
   const hasRemoteInstance = data.remoteInstances.length > 0;
   const hasRemoteRuntime = remoteEnabled && (!remoteUsesChannel || hasRemoteInstance);
+
+  useEffect(() => {
+    fetchHookStatus()
+      .then(setHookStatus)
+      .catch(() => setHookStatus(null));
+  }, []);
+
+  const handleInstallHooks = async () => {
+    setHookInstalling(true);
+    try {
+      await installHooksApi();
+      setHookStatus(await fetchHookStatus());
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setHookInstalling(false);
+    }
+  };
 
   const handleSaveRemoteBridge = async (next: RemoteBridgeConfig) => {
     setRemoteSaving(true);
@@ -185,6 +207,28 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
                 : '连接中…'}
           </span>
         </div>
+
+        {hookStatus !== null && (
+          <div className={styles.toggleGroup}>
+            <span className={styles.toggleGroupLabel}>Hooks：</span>
+            <span
+              className={`${styles.statusDot}${hookStatus.installed ? ` ${styles.statusDotOpen}` : ` ${styles.statusDotClosed}`}`}
+            />
+            <span className={styles.statusLabel}>
+              {hookStatus.installed ? '已连接' : '未安装'}
+            </span>
+            {!hookStatus.installed && (
+              <button
+                type="button"
+                className="btnGhost btnSm"
+                disabled={hookInstalling}
+                onClick={() => void handleInstallHooks()}
+              >
+                {hookInstalling ? '安装中…' : '安装 Hooks'}
+              </button>
+            )}
+          </div>
+        )}
 
         <div className={styles.toggleGroup}>
           <span className={styles.toggleGroupLabel}>通知：</span>
@@ -375,12 +419,30 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         </div>
       )}
 
+      {hookStatus !== null && !hookStatus.installed && (
+        <div className={styles.setupPanel}>
+          <div>
+            <strong>连接 Hooks</strong>
+            <p>安装后 Claude Code 会自动向本代理发送事件，方便你查看实时日志和转录。</p>
+          </div>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            disabled={hookInstalling}
+            onClick={() => void handleInstallHooks()}
+          >
+            {hookInstalling ? '安装中…' : '安装 Hooks'}
+          </button>
+        </div>
+      )}
+
       {!data.selectedSession ? (
         <div className={styles.projectGrid}>
           {data.sessionGroups.length === 0 && orphanEvents.length === 0 ? (
             <div className={styles.emptyHint}>
-              暂无活跃项目。在终端运行{' '}
-              <code>claude-llm-proxy hook install</code> 把 hook 注册到 Claude Code。
+              {hookStatus?.installed
+                ? '暂无活跃项目。等待 Claude Code 生成新会话时，这里会出现项目卡片。'
+                : '安装 Hooks 并启动 Claude Code 后，实时日志和项目卡片会自动出现。'}
             </div>
           ) : (
             <>

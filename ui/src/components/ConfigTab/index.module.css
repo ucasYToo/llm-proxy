@@ -492,6 +492,17 @@
     padding: 20px 16px;
   }
 
+  .sectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .headerActions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
   .targetList {
     grid-template-columns: 1fr;
     gap: 0;
