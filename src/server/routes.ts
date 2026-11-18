@@ -28,7 +28,7 @@ import { parseHookPayload } from "../interfaces";
 import type { Target, LogCollection, Channel, NotificationSettings, Config, BudgetConfig } from "../interfaces";
 import { getKnownProjects, updateProjectRemark } from "../core/session";
 import { v4 as uuidv4 } from "uuid";
-import { readClaudeSettings, writeClaudeSettings, installHooks, getManagedHookStatus, CLAUDE_SETTINGS_PATH } from "../lib/claude-settings";
+import { readClaudeSettings, changeClaudeSettings, installHooks, getManagedHookStatus, CLAUDE_SETTINGS_PATH } from "../lib/claude-settings";
 import { readAiTitle } from "../lib/transcript";
 import { addClient, broadcast } from "./sse";
 import { notify } from "../notify/macos";
@@ -37,7 +37,10 @@ import { sendFeishuText } from "../notify/feishu";
 import { quoteMarkdown } from "../notify/transcript";
 import * as caffeinate from "../system/caffeinate";
 import { getServerPort } from "./state";
-import { restartFeishuRemoteBridge, testFeishuApp } from "../remote/feishu";
+import { localDashboard, loopback } from './local-admin';
+import { preferences } from '../lib/local-settings';
+import { validateRemoteBridge } from '../config/store';
+import { cancelNotificationPairing, sendAppHookNotice, handleLocalClaudeStop, startFeishuRemoteBridge, restartFeishuRemoteBridge, testFeishuApp } from "../remote/feishu";
 import { installRemoteMcpConfig } from "../remote/mcp-config";
 import {
   getFeishuRemoteSkillStatus,
@@ -157,10 +160,7 @@ const autoLinkIfConnected = (
     return; // target 不存在
   }
 
-  const settings = readClaudeSettings();
-  const baseEnv = (settings.env ?? {}) as Record<string, string>;
-  settings.env = buildProxyEnv(baseEnv, target, channelId, getServerPort());
-  writeClaudeSettings(settings);
+  changeClaudeSettings(settings => { settings.env = buildProxyEnv(settings.env ?? {}, target, channelId, getServerPort()); });
 };
 
 const projectBasename = (p: string | null | undefined): string => {
@@ -175,6 +175,10 @@ const publicConfig = (config: Config): Config => ({
     ? {
         ...config.remoteBridge,
         authToken: undefined,
+        feishu: config.remoteBridge.feishu && {
+          ...config.remoteBridge.feishu,
+          bots: config.remoteBridge.feishu.bots?.filter(bot => !bot.notificationOnly),
+        },
       }
     : config.remoteBridge,
 });
@@ -215,7 +219,7 @@ export const setupApiRoutes = (app: Express) => {
       const sessionId = (req.query.sessionId as string) ?? undefined;
       const agentId = (req.query.agentId as string) || undefined;
       const summary = req.query.summary !== "false";
-      const result = queryLogs({ limit, offset, targetId, sessionId, agentId, summary });
+      const result = queryLogs({ limit, offset, targetId, sessionId, agentId, summary, source: req.query.source as string | undefined });
       res.json(result);
       return;
     }
@@ -480,6 +484,12 @@ export const setupApiRoutes = (app: Express) => {
     });
 
     broadcast("hook", entry);
+    const managedLocalHook = rawBody.hook_event_name === event && loopback(req.socket.remoteAddress) &&
+        typeof req.headers["x-claude-proxy-hook"] === "string" && req.headers["x-claude-proxy-hook"] === preferences().hookKey &&
+        !req.headers["x-claude-proxy-remote-turn"];
+    if (managedLocalHook && (event === "Stop" || event === "StopFailure")) {
+      void handleLocalClaudeStop(rawBody).catch(()=>console.warn("飞书本地会话通知发送失败"));
+    }
 
     if (toolName && toolName.includes("remote_reply") && sessionId) {
       const toolInput = (rawBody.tool_input ?? null) as Record<string, unknown> | null;
@@ -585,7 +595,7 @@ export const setupApiRoutes = (app: Express) => {
         });
       }
 
-      if (feishuOn && feishu?.webhookUrl) {
+      if (feishuOn && (feishu?.delivery==="app" || feishu?.webhookUrl)) {
         const lastAssistant =
           hookPayload.hook_event_name === "Stop" || hookPayload.hook_event_name === "SubagentStop"
             ? hookPayload.last_assistant_message
@@ -598,7 +608,10 @@ export const setupApiRoutes = (app: Express) => {
           `time: ${new Date().toLocaleString()}`,
           lastAssistant ? `\n最后回复:\n${lastAssistant}` : null,
         ].filter(Boolean);
-        void sendFeishuText(
+        if(feishu.delivery==="app") {
+          // Managed Stop hooks already send the resumable completion message.
+          if(loopback(req.socket.remoteAddress) && event === hookPayload.hook_event_name && evtKey!=="stop") void sendAppHookNotice(entry.cwd,lines.join("\n")).catch(()=>console.warn("飞书应用通知发送失败"));
+        } else if(feishu.webhookUrl) void sendFeishuText(
           feishu.webhookUrl,
           feishu.secret ?? "",
           lines.join("\n"),
@@ -615,6 +628,7 @@ export const setupApiRoutes = (app: Express) => {
 
   // 修改配置
   app.post("/api/set", async (req: Request, res: Response) => {
+    try {
     const { action } = req.body;
     const config = readConfig();
 
@@ -690,6 +704,7 @@ export const setupApiRoutes = (app: Express) => {
           res.status(400).json({ error: "port must be an integer between 1 and 65535" });
           return;
         }
+        if(!localDashboard(req)){res.status(403).json({error:'请通过本机 Dashboard 安装 hooks'});return;}
         const result = installHooks(port);
         res.json({ ok: true, count: result.installed.length, events: result.installed });
         break;
@@ -718,9 +733,6 @@ export const setupApiRoutes = (app: Express) => {
         const { proxyPort, channelId } = req.body as { proxyPort?: number; channelId?: string };
         const port = proxyPort ?? getServerPort();
         const targetChannelId = channelId ?? "default";
-        const settings = readClaudeSettings();
-        const baseEnv = (settings.env ?? {}) as Record<string, string>;
-
         config.claudeCodeChannelId = targetChannelId;
         writeConfig(config);
 
@@ -730,7 +742,8 @@ export const setupApiRoutes = (app: Express) => {
           : undefined;
 
         const proxyPath = targetChannelId === "default" ? "proxy" : `${targetChannelId}/proxy`;
-        const newEnv: Record<string, string> = { ...baseEnv };
+        changeClaudeSettings(settings => {
+        const newEnv: Record<string, string> = { ...settings.env };
 
         // 1. BASE_URL: 代理地址
         newEnv.ANTHROPIC_BASE_URL = `http://localhost:${port}/${proxyPath}`;
@@ -765,7 +778,7 @@ export const setupApiRoutes = (app: Express) => {
         newEnv.hasCompletedOnboarding = "true";
 
         settings.env = newEnv;
-        writeClaudeSettings(settings);
+        });
         res.json({ ok: true, channelId: targetChannelId });
         break;
       }
@@ -810,10 +823,7 @@ export const setupApiRoutes = (app: Express) => {
           return;
         }
 
-        const settings = readClaudeSettings();
-        const baseEnv = (settings.env ?? {}) as Record<string, string>;
-        settings.env = buildDirectEnv(baseEnv, target);
-        writeClaudeSettings(settings);
+        changeClaudeSettings(settings => { settings.env = buildDirectEnv(settings.env ?? {}, target); });
 
         delete config.claudeCodeChannelId;
         writeConfig(config);
@@ -950,6 +960,11 @@ export const setupApiRoutes = (app: Express) => {
         const prev = notificationScope === "codex"
           ? config.codexNotifications ?? {}
           : config.notifications ?? {};
+        if(notifications.feishu && (notifications.feishu.delivery!==undefined || prev.feishu?.delivery==="app")){
+          if(!localDashboard(req)){res.status(403).json({error:"请在本机配置飞书通知"});return;}
+          if(notifications.feishu.delivery!==undefined && (notificationScope==="codex" || notifications.feishu.delivery!=="webhook")){res.status(400).json({error:"请通过私聊绑定启用可回复通知"});return;}
+        }
+        if(notificationScope!=="codex" && (notifications.feishu?.delivery==="webhook" || notifications.feishu?.enabled===false)) cancelNotificationPairing();
         const next: NotificationSettings = { ...prev, ...notifications };
         if (notifications.macos) {
           next.macos = {
@@ -981,6 +996,9 @@ export const setupApiRoutes = (app: Express) => {
         if (notificationScope === "codex") config.codexNotifications = next;
         else config.notifications = next;
         writeConfig(config);
+        if (notificationScope !== "codex" && next.feishu?.delivery === "app" && next.feishu.enabled && !prev.feishu?.enabled) {
+          startFeishuRemoteBridge();
+        }
         res.json({ ok: true, notifications: next });
         break;
       }
@@ -999,7 +1017,17 @@ export const setupApiRoutes = (app: Express) => {
           feishu: {
             ...(prev.feishu ?? {}),
             ...(remoteBridge?.feishu ?? {}),
-            bots: remoteBridge?.feishu?.bots ?? prev.feishu?.bots ?? [],
+            bots: remoteBridge?.feishu?.bots
+              ? [
+                  ...remoteBridge.feishu.bots
+                    .filter(bot => !prev.feishu?.bots?.some(b => b.notificationOnly && b.id === bot.id))
+                    .map(bot => {
+                      const previous = prev.feishu?.bots?.find(b => b.id === bot.id && b.appId === bot.appId);
+                      return { ...bot, localResume: previous?.localResume };
+                    }),
+                  ...(prev.feishu?.bots ?? []).filter(bot => bot.notificationOnly),
+                ]
+              : prev.feishu?.bots ?? [],
             progressCard: {
               ...(prev.feishu?.progressCard ?? {}),
               ...(remoteBridge?.feishu?.progressCard ?? {}),
@@ -1007,6 +1035,9 @@ export const setupApiRoutes = (app: Express) => {
           },
           allowedCwds: remoteBridge?.allowedCwds ?? prev.allowedCwds ?? [],
         };
+        if (!localDashboard(req)) {res.status(403).json({error:"请通过本机 Dashboard 配置远程桥"});return;}
+        const error=validateRemoteBridge(next);
+        if(error) {res.status(400).json({error});return;}
         config.remoteBridge = next;
         writeConfig(config);
         restartFeishuRemoteBridge();
@@ -1117,6 +1148,7 @@ export const setupApiRoutes = (app: Express) => {
       default:
         res.status(400).json({ error: "Unknown action" });
     }
+    } catch(error) {if (!res.headersSent) res.status(400).json({error:(error as Error).message});}
   });
 
   // Config export（敏感字段已脱敏）
@@ -1127,6 +1159,7 @@ export const setupApiRoutes = (app: Express) => {
 
   // Config import（智能合并，保留当前敏感值）
   app.post("/api/config/import", (req: Request, res: Response) => {
+    if (!localDashboard(req)) {res.status(403).json({error:"请在本机导入配置"});return;}
     const validationError = validateConfigImport(req.body);
     if (validationError) {
       res.status(400).json({ error: validationError });
@@ -1174,6 +1207,6 @@ export const setupApiRoutes = (app: Express) => {
   // 关闭服务
   app.post("/api/shutdown", (_req: Request, res: Response) => {
     res.json({ ok: true });
-    setTimeout(() => process.exit(0), 200);
+    setTimeout(() => process.kill(process.pid,"SIGTERM"), 200);
   });
 };

@@ -1,4 +1,5 @@
 import { Express, Request, Response } from "express";
+import { mountSuperAgent } from "../remote/superagent";
 import { readConfig } from "../config/store";
 import { addRemoteChannelClient } from "../remote/channel-hub";
 import { sendFeishuFileToThread } from "../remote/feishu";
@@ -77,6 +78,15 @@ const asyncRoute =
   };
 
 export const setupRemoteRoutes = (app: Express) => {
+  mountSuperAgent(app, (req, res, next) => {
+    const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(req.hostname);
+    const localPeer = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    if (localHost && localPeer && req.headers["sec-fetch-site"] !== "cross-site") {
+      next();
+    } else if (requireRemoteBridge(req, res)) {
+      next();
+    }
+  });
   app.post(
     "/api/remote/send",
     asyncRoute((req, res) => {

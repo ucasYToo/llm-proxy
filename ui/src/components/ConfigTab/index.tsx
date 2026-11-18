@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Config, Target, LogCollection, Channel, Project } from "../../lib/api";
 import { applyClaudeCodeProxy, restoreClaudeCodeProxy, refreshClaudeCodeStatus, addChannel, updateChannel, deleteChannel, setChannelActiveTarget, updateBudget, getProjects, exportConfigApi, importConfigApi } from "../../lib/api";
 import TargetForm from "../TargetForm/index";
+import { ServiceSettingsPanel } from "./ServiceSettings";
 import styles from "./index.module.css";
 
 interface Props {
@@ -295,6 +296,7 @@ const ConfigTab = ({ config, onRefresh }: Props) => {
         style={{ display: "none" }}
         onChange={handleFileSelected}
       />
+      <ServiceSettingsPanel />
       {/* 转发目标 */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>

@@ -145,6 +145,12 @@ export function useDashboardData() {
           void refreshSessions();
           return;
         }
+        if (parsed.type === "log-merged" && parsed.data) {
+          const {removed} = parsed.data as {removed:string};
+          setGlobalLogs(prev=>prev.filter(log=>log.id!==removed));
+          setSessionTimeline(prev=>prev.filter(item=>item.kind!=="log" || item.log.id!==removed));
+          return;
+        }
         if (parsed.type === "log" && parsed.data) {
           const { kind, entry } = parsed.data as { kind: "create" | "update"; entry: LogEntry };
           if (selectedSessionRef.current && entry.sessionId === selectedSessionRef.current) {
@@ -273,7 +279,8 @@ export function useDashboardData() {
       const existing = map.get(key);
       if (existing) {
         existing.sessions.push(s);
-        if (s.lastEventAt > existing.lastEventAt) existing.lastEventAt = s.lastEventAt;
+        if (s.lastEventAt > existing.lastEventAt)
+          existing.lastEventAt = s.lastEventAt;
       } else {
         map.set(key, {
           key,
@@ -285,10 +292,30 @@ export function useDashboardData() {
         });
       }
     }
+    const perSession = new Map<string, string>();
+    for (const log of globalLogs)
+      if (log.sessionId && log.timestamp > (perSession.get(log.sessionId) ?? ""))
+        perSession.set(log.sessionId, log.timestamp);
+    const lastAt = (s: SessionGroup["sessions"][number]) => {
+      const at = perSession.get(s.sessionId);
+      return at && at > s.lastEventAt ? at : s.lastEventAt;
+    };
+    for (const group of map.values()) {
+      group.sessions.sort(
+        (a, b) =>
+          lastAt(b).localeCompare(lastAt(a)) ||
+          a.sessionId.localeCompare(b.sessionId),
+      );
+      group.lastEventAt = lastAt(group.sessions[0]);
+    }
     return Array.from(map.values()).sort((a, b) =>
-      a.lastEventAt < b.lastEventAt ? 1 : a.lastEventAt > b.lastEventAt ? -1 : 0,
+      a.lastEventAt < b.lastEventAt
+        ? 1
+        : a.lastEventAt > b.lastEventAt
+          ? -1
+          : a.key.localeCompare(b.key),
     );
-  }, [sessions]);
+  }, [sessions, globalLogs]);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => {

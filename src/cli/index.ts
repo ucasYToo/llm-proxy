@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { rawBodiesCommand } from "./commands/raw-bodies";
 import { startCommand } from "./commands/start";
 import { configCommand } from "./commands/config";
 import { logsCommand } from "./commands/logs";
@@ -14,6 +15,7 @@ program
   .description("LLM Proxy CLI - 代理转发和日志管理工具")
   .version(pkg.version, "-v, --version");
 
+rawBodiesCommand(program);
 startCommand(program);
 configCommand(program);
 logsCommand(program);

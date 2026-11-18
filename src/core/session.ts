@@ -2,11 +2,8 @@ import fs from "fs";
 import path from "path";
 import { getDb } from "../storage/db";
 
-const CLAUDE_SESSIONS_DIR = path.join(
-  process.env.HOME || "~",
-  ".claude",
-  "sessions",
-);
+import { claudeConfigDir } from "../lib/local-settings";
+const CLAUDE_SESSIONS_DIR = path.join(claudeConfigDir,"sessions");
 
 const MAX_CACHE_SIZE = 1000;
 const cwdCache = new Map<string, string>();

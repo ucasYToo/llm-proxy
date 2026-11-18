@@ -20,6 +20,7 @@ jest.mock("../../core/session", () => ({
 }));
 
 jest.mock("../../server/state", () => ({
+  ...jest.requireActual("../../server/state"),
   getServerPort: jest.fn(() => 1998),
 }));
 

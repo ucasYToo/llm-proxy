@@ -58,7 +58,7 @@ export const formatTTFT = (ms?: number): string => {
 /** 每秒生成 token 数（TPS）— 仅计算 decode 阶段 */
 export const formatTPS = (
   outputTokens?: number,
-  durationMs?: number,
+  durationMs?: number | null,
   firstChunkMs?: number,
 ): string => {
   if (

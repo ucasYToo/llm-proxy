@@ -86,6 +86,7 @@ export interface DingTalkConfig {
 }
 
 export interface FeishuConfig {
+  delivery?: "webhook" | "app";
   enabled?: boolean;
   webhookUrl?: string;
   secret?: string;
@@ -148,6 +149,9 @@ export interface RemoteBridgeConfig {
 }
 
 export interface RemoteBridgeFeishuBotConfig {
+  handler?: "bridge" | "superagent";
+  notificationOnly?: boolean;
+  localResume?: { enabled: boolean; recipientOpenId: string; defaultBot?: boolean; projects?: string[] };
   id?: string;
   name?: string;
   enabled?: boolean;
@@ -206,6 +210,11 @@ export interface DiffEntry {
 }
 
 export interface LogEntry {
+  source?: "proxy" | "file";
+  querySource?: string | null;
+  upstreamRequestId?: string | null;
+  responseMessageId?: string | null;
+  captureModel?: string | null;
   id: string;
   timestamp: string;
   targetId: string;
@@ -214,7 +223,7 @@ export interface LogEntry {
   path: string;
   responseStatus: number;
   status?: LogStatus;
-  durationMs: number;
+  durationMs: number | null;
   /** 首包响应时间（从请求开始到首个流式 chunk 到达的毫秒数） */
   firstChunkMs?: number;
   tokenUsage?: {
@@ -247,11 +256,19 @@ export interface LogQueryResult {
 }
 
 export interface LogQueryParams {
+  source?: string;
   limit?: number;
   offset?: number;
   targetId?: string;
   agentId?: string;
   summary?: boolean;
+}
+
+export async function serviceAction(action: string, input: Record<string,unknown> = {}) {
+  const response = await fetch("/api/set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...input})});
+  const result=await response.json();
+  if(!response.ok) throw new Error(result.error || "操作失败");
+  return result;
 }
 
 export async function fetchConfig(): Promise<Config> {
@@ -279,6 +296,7 @@ export async function queryLogs(
     limit: String(params.limit ?? 50),
     offset: String(params.offset ?? 0),
   });
+  if (params.source) searchParams.set("source",params.source);
   if (params.targetId) searchParams.set("targetId", params.targetId);
   if (params.agentId) searchParams.set("agentId", params.agentId);
   if (params.summary === false) searchParams.set("summary", "false");

@@ -1,3 +1,4 @@
+import { NotificationControls } from "./NotificationControls";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Config, HookStatus, RemoteBridgeConfig, RemoteThread, TimelineEntry } from '../../lib/api';
 import {
@@ -23,6 +24,7 @@ import MacosNotifyPanel from './MacosNotifyPanel';
 import RemoteBridgePanel from './RemoteBridgePanel';
 import ProjectCard from './ProjectCard';
 import styles from './index.module.css';
+import { ProjectOverviewList, PROJECT_CARD_LIMIT, type ProjectOverviewRow } from '../ProjectOverviewList';
 import { isShowFeishu } from '../../constant';
 
 interface Props {
@@ -63,7 +65,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         const bySession = entry.log.sessionId
           ? sessionKeyMap.get(entry.log.sessionId)
           : undefined;
-        key = bySession ?? UNKNOWN_GROUP_KEY;
+        key = bySession ?? entry.log.cwd ?? UNKNOWN_GROUP_KEY;
       }
       const list = map.get(key);
       if (list) list.push(entry);
@@ -80,6 +82,51 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
     }
     return result.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   }, [eventsByProject, data.sessionGroups]);
+
+  const overflowRows: ProjectOverviewRow[] = data.sessionGroups
+    .slice(PROJECT_CARD_LIMIT)
+    .map((group) => {
+      const latest = group.sessions[0];
+      const events = eventsByProject.get(group.key) ?? [];
+      return {
+        key: group.key,
+        name: group.folder,
+        cwd: group.cwd,
+        title: latest?.title,
+        event:
+          events[0]?.kind === "log"
+            ? events[0].log.path
+            : (events[0]?.hook.eventName ?? latest?.lastEventName),
+        lastEventAt: group.lastEventAt,
+        sessions: group.sessions.length,
+        events: events.length,
+        open: () => data.setSelectedSession(latest.sessionId),
+        startRemote:
+          config.remoteBridge?.enabled &&
+          config.remoteBridge.web?.enabled &&
+          group.cwd
+            ? () => void handleNewRemoteThread(group.cwd)
+            : undefined,
+      };
+    });
+  if (orphanEvents.length && data.sessionGroups.length >= PROJECT_CARD_LIMIT) {
+    const first = orphanEvents[0];
+    overflowRows.push({
+      key: "__orphan__",
+      name: "其他事件",
+      cwd: null,
+      sessions: 0,
+      events: orphanEvents.length,
+      lastEventAt: first.at,
+      event: first.kind === "hook" ? first.hook.eventName : first.log.path,
+      open: () =>
+        data.setSelectedDetail(
+          first.kind === "hook"
+            ? { kind: "hook", entry: first.hook }
+            : { kind: "log", entry: first.log },
+        ),
+    });
+  }
 
   const selectedSessionSummary = useMemo(
     () => data.sessions.find((s) => s.sessionId === data.selectedSession) ?? null,
@@ -135,7 +182,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
       await updateRemoteBridge(next);
       await onRefresh();
       await data.refreshRemote();
-      alert('飞书远程配置已保存');
+      alert('远程对话配置已保存');
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     } finally {
@@ -230,77 +277,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
           </div>
         )}
 
-        <div className={styles.toggleGroup}>
-          <span className={styles.toggleGroupLabel}>通知：</span>
-          <label
-            className={styles.toggleChip}
-            title={
-              !!notify.macos.enabled && !notify.macosArmed
-                ? '已启用但未勾选任何事件，点配置进去选'
-                : 'macOS 系统通知（含声音）'
-            }
-          >
-            <input
-              type="checkbox"
-              checked={!!notify.macos.enabled}
-              onChange={(e) => void notify.handleToggleMacos(e.target.checked)}
-            />
-            macOS
-            {!!notify.macos.enabled && !notify.macosArmed && (
-              <span className={styles.warnDot} title="未勾选事件">!</span>
-            )}
-          </label>
-          <button type="button" className="btnGhost btnSm" onClick={() => notify.setMacosOpen((v) => !v)}>
-            {notify.macosOpen ? '收起' : '配置'}
-          </button>
-
-          <label
-            className={styles.toggleChip}
-            title={
-              !!notify.dingtalk.enabled && !notify.dingtalkArmed
-                ? '已启用但缺少事件勾选 / token / secret，点配置补全'
-                : '钉钉群机器人'
-            }
-          >
-            <input
-              type="checkbox"
-              checked={!!notify.dingtalk.enabled}
-              onChange={(e) => void notify.handleToggleDingTalk(e.target.checked)}
-            />
-            钉钉
-            {!!notify.dingtalk.enabled && !notify.dingtalkArmed && (
-              <span className={styles.warnDot} title="未完成配置">!</span>
-            )}
-          </label>
-          <button type="button" className="btnGhost btnSm" onClick={() => notify.setDingtalkOpen((v) => !v)}>
-            {notify.dingtalkOpen ? '收起' : '配置'}
-          </button>
-          {isShowFeishu && (
-            <>
-              <label
-                className={styles.toggleChip}
-                title={
-                  !!notify.feishu.enabled && !notify.feishuArmed
-                    ? '已启用但缺少事件勾选 / webhook URL / secret，点配置补全'
-                    : '飞书群机器人'
-                }
-              >
-                <input
-                  type="checkbox"
-                  checked={!!notify.feishu.enabled}
-                  onChange={(e) => void notify.handleToggleFeishu(e.target.checked)}
-                />
-                飞书
-                {!!notify.feishu.enabled && !notify.feishuArmed && (
-                  <span className={styles.warnDot} title="未完成配置">!</span>
-                )}
-              </label>
-              <button type="button" className="btnGhost btnSm" onClick={() => notify.setFeishuOpen((v) => !v)}>
-                {notify.feishuOpen ? '收起' : '配置'}
-              </button>
-            </>
-          )}
-        </div>
+        <NotificationControls notify={notify} showFeishu={isShowFeishu} />
 
         {data.caffeinate.supported && (
           <div className={styles.toggleGroup}>
@@ -339,7 +316,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
             className="btnGhost btnSm"
             onClick={() => setRemoteConfigOpen((v) => !v)}
           >
-            {remoteConfigOpen ? '收起配置' : '飞书远程配置'}
+            {remoteConfigOpen ? '收起配置' : '远程对话配置'}
           </button>
         </div>
 
@@ -392,7 +369,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
 
       {isShowFeishu && notify.feishuOpen && (
         <FeishuPanel
-          config={notify.feishu}
+          onReplyChange={onRefresh} config={notify.feishu}
           saving={notify.feishuSaving}
           testing={notify.feishuTesting}
           onSave={notify.handleSaveFeishu}
@@ -411,11 +388,9 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
         />
       )}
 
-      {(!remoteEnabled || (remoteUsesChannel && !hasRemoteInstance)) && (
+      {remoteEnabled && remoteUsesChannel && !hasRemoteInstance && (
         <div className={styles.remoteWarning}>
-          {!remoteEnabled
-            ? '远程对话尚未启用。可以打开「飞书远程配置」启用 Web/飞书入口，并使用 CLI fallback 执行。'
-            : '当前执行方式需要 Claude Code channel，但 dashboard 暂时隐藏了 MCP 安装入口；如不使用 channel，请在「飞书远程配置」将执行方式切到 CLI fallback。'}
+          等待 Claude Code channel 连接。可在「远程对话配置」中切换到 CLI 执行。
         </div>
       )}
 
@@ -446,7 +421,7 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
             </div>
           ) : (
             <>
-              {data.sessionGroups.map((group) => (
+              {data.sessionGroups.slice(0, PROJECT_CARD_LIMIT).map((group) => (
                 <ProjectCard
                   key={group.key}
                   folder={group.folder}
@@ -466,7 +441,8 @@ const DashboardTab = ({ config, onRefresh }: Props) => {
                   }
                 />
               ))}
-              {orphanEvents.length > 0 && (
+              <ProjectOverviewList rows={overflowRows} />
+              {orphanEvents.length > 0 && data.sessionGroups.length < PROJECT_CARD_LIMIT && (
                 <ProjectCard
                   key="__orphan__"
                   folder="其他事件"

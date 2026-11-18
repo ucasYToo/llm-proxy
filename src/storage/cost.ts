@@ -162,7 +162,8 @@ export const insertCostRecord = (record: CostRecord): void => {
 export const createCostRecord = (
   input: Omit<CostRecord, "id">,
 ): CostRecord => {
-  const record: CostRecord = { id: uuidv4(), ...input };
+  const previous = input.logId ? getDb().prepare("SELECT id FROM cost_records WHERE logId=?").get(input.logId) as {id:string}|undefined : undefined;
+  const record: CostRecord = { id: previous?.id ?? uuidv4(), ...input };
   insertCostRecord(record);
   return record;
 };
@@ -230,7 +231,7 @@ export const aggregateCostBySession = (
         SUM(cacheReadTokens) AS totalCacheReadTokens,
         SUM(cacheCreationTokens) AS totalCacheCreationTokens,
         COUNT(*) AS requestCount,
-        AVG(durationMs) AS avgDurationMs,
+        AVG(CASE WHEN durationMs >= 0 THEN durationMs END) AS avgDurationMs,
         AVG(firstChunkMs) AS avgFirstChunkMs,
         SUM(CASE WHEN firstChunkMs IS NOT NULL AND durationMs > firstChunkMs
                  THEN outputTokens ELSE 0 END) AS decodeOutputTokens,

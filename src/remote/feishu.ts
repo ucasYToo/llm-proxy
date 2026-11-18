@@ -1,7 +1,11 @@
 import fs from "fs";
+import { acceptSuperAgentMessage, bindSuperAgentClients } from "./superagent";
+import { getDb } from "../storage/db";
+import { botForCwd, localStop, retryNotices, runningNotice, matchesRecipient, bindPrivateChat, authorizedNotice, boundChat, lookupNotice, claimNotice, finalNotice, type Notice } from "./feishu/local-resume";
 import path from "path";
 import * as lark from "@larksuiteoapi/node-sdk";
-import { readConfig } from "../config/store";
+import { readConfig, writeConfig } from "../config/store";
+import { randomBytes } from "node:crypto";
 import type {
   RemoteBridgeFeishuBotConfig,
   RemoteBridgeFeishuProgressCardConfig,
@@ -10,6 +14,7 @@ import { getKnownProjects, type KnownProject } from "../core/session";
 import { recentSessions, type SessionSummary } from "../storage/hooks";
 import {
   attachRemoteSession,
+  assertAllowedCwd,
   getRemoteProgressSnapshot,
   onRemoteEvent,
   registerRemoteOutboundSender,
@@ -146,8 +151,10 @@ const defaultCwdForBot = (botId?: string | null): string | null => {
   return bot?.defaultCwd?.trim() || cfg?.defaultCwd || null;
 };
 
-const textWithoutBotMention = (text: string): string =>
-  text.replace(/@\S+\s*/g, "").trim();
+const textWithoutBotMention = (text: string, mentions: {key?:string}[] = []): string => {
+  for (const mention of mentions) if (mention.key) text = text.split(mention.key).join("");
+  return text.trim();
+};
 
 const pickSenderId = (event: Record<string, any>): string | null => {
   const senderId = event.sender?.sender_id ?? {};
@@ -1112,18 +1119,22 @@ const sendFeishuText = async (
   botId: string | null | undefined,
   chatId: string,
   text: string,
-): Promise<void> => {
+  uuid?: string,
+): Promise<string | null> => {
   const runtime = runtimeForBot(botId);
-  if (!runtime) return;
+  if (!runtime) return null;
   const content = JSON.stringify({ text });
-  await runtime.client.im.message.create({
+  const result = await runtime.client.im.message.create({
     params: { receive_id_type: "chat_id" },
     data: {
       receive_id: chatId,
       msg_type: "text",
+      uuid,
       content,
     },
   });
+  assertFeishuOk(result,"发送文本");
+  return result.data?.message_id ?? null;
 };
 
 export const sendFeishuFileToThread = async (input: {
@@ -1430,16 +1441,18 @@ const sendFinalReplyText = async (
   chatId: string,
   thread: RemoteThread,
   text: string,
-): Promise<void> => {
+): Promise<string[]> => {
+  const refs: string[] = [];
   const chunks = splitFeishuText(text);
-  if (chunks.length === 0) return;
   for (let i = 0; i < chunks.length; i += 1) {
     const body =
       chunks.length > 1
         ? `#${thread.shortId} 回复 ${i + 1}/${chunks.length}\n${chunks[i]}`
         : chunks[i];
-    await sendFeishuText(botId, chatId, body);
+    const ref = await sendFeishuText(botId, chatId, body);
+    if (ref) refs.push(ref);
   }
+  return refs;
 };
 
 const createProgressCardForInbound = async (input: {
@@ -1517,8 +1530,336 @@ const handleRemoteProgress = async (
   const card = getRemoteMessageCardByInbound(snapshot.inboundMessageId);
   if (!card) return;
   if (!progressCardConfig(card.sourceBotId).enabled) return;
+  const origin = getDb()
+    .prepare(
+      `SELECT n.* FROM feishu_resume_notices n JOIN remote_messages m
+    ON m.sourceBotId=n.bot AND m.sourceMessageId=n.inboundId WHERE m.id=? LIMIT 1`,
+    )
+    .get(snapshot.inboundMessageId) as Notice | undefined;
+  if (origin) {
+    const bot = runtimes.get(origin.bot)?.bot;
+    if (!appNotificationsOn() || !bot || !authorizedNotice(origin, bot, origin.sender, origin.chat))
+      return;
+  }
   await patchStoredProgressCard(card, snapshot);
 };
+
+let resumeTimer: NodeJS.Timeout | undefined;
+const appNotificationsOn = () => {
+  const feishu = readConfig().notifications?.feishu;
+  return feishu?.enabled && feishu.delivery === "app";
+};
+const resumeBots = () =>
+  (appNotificationsOn()
+    ? Array.from(runtimes.values(), (r) => r.bot)
+    : []
+  ).filter((b) => b.handler !== "superagent" && b.localResume?.enabled);
+const deliverLocalNotice = (notice: Notice, text: string) =>
+  sendFeishuText(notice.bot, notice.chat, text, notice.id);
+export async function handleLocalClaudeStop(payload: Record<string, any>) {
+  if (readConfig().notifications?.feishu?.events?.stop)
+    await localStop(resumeBots(), payload, deliverLocalNotice);
+}
+export async function sendAppHookNotice(
+  cwd: string | undefined | null,
+  text: string,
+) {
+  if (!cwd) return;
+  const directory = fs.realpathSync(cwd);
+  assertAllowedCwd(directory);
+  const bot = botForCwd(resumeBots(), directory);
+  if (!bot || !matchesRecipient(bot, bot.localResume!.recipientOpenId)) return;
+  const chat = boundChat(bot);
+  if (chat) await sendFeishuText(bot.id, chat, text);
+}
+export async function testResumeBinding(id: string) {
+  const bot = runtimes.get(id)?.bot;
+  const chat = bot && boundChat(bot);
+  if (
+    !bot ||
+    !chat ||
+    !matchesRecipient(bot, bot.localResume?.recipientOpenId ?? "")
+  )
+    throw new Error("请先绑定飞书私聊");
+  await sendFeishuText(id, chat, "飞书通知测试成功。收到任务完成通知后，在那条消息上点「回复」即可继续原会话。");
+}
+interface Pairing {
+  botId: string;
+  appId: string;
+  command: string;
+  expiresAt: number;
+}
+let pairing: Pairing | undefined;
+export function cancelNotificationPairing() {
+  pairing = undefined;
+}
+function pendingPair() {
+  if (pairing && Date.now() >= pairing.expiresAt) pairing = undefined;
+  return pairing;
+}
+export function notificationBotsStatus() {
+  const bots = activeFeishuBots()
+    .filter((bot) => bot.handler !== "superagent")
+    .map((bot) => ({
+      id: bot.id,
+      name: bot.name,
+      notificationOnly: !!bot.notificationOnly,
+      bound: !!bot.localResume?.enabled && !!boundChat(bot),
+      selected: !!bot.localResume?.enabled,
+    }));
+  return {
+    bots,
+    pairingBot: pendingPair()?.botId,
+    delivery: readConfig().notifications?.feishu?.delivery ?? "webhook",
+  };
+}
+export function beginNotificationPairing(input: {
+  botId?: string;
+  appId?: string;
+  appSecret?: string;
+  reuseBinding?: boolean;
+}) {
+  let bot = activeFeishuBots().find(
+    (b) => b.id === input.botId && b.handler !== "superagent",
+  );
+  if (!input.botId || input.appId) {
+    if (input.botId && !bot?.notificationOnly)
+      throw new Error("请在远程对话配置中修改该机器人的应用凭据");
+    const appId = input.appId?.trim(),
+      appSecret = input.appSecret?.trim();
+    if (!appId || !/^cli_[A-Za-z0-9]+$/.test(appId) || !appSecret)
+      throw new Error("请填写飞书应用的 App ID 和 App Secret");
+    if (
+      configuredFeishuBots().some(
+        (b) => b.appId === appId && b.id !== input.botId,
+      )
+    )
+      throw new Error("该应用已配置，请选用已有机器人；若已停用，请先启用它");
+    const cfg = readConfig();
+    const feishu = cfg.remoteBridge!.feishu!;
+    const id = bot?.id ?? "notify-" + randomBytes(6).toString("hex");
+    if (bot) {
+      if (bot.localResume?.enabled)
+        throw new Error("已绑定的机器人无法在绑定过程中更换凭据");
+      const existing = feishu.bots!.find((item) => item.id === id)!;
+      existing.appId = appId;
+      existing.appSecret = appSecret;
+      runtimes.get(id)?.wsClient?.close();
+      runtimes.delete(id);
+    } else {
+      feishu.bots = [
+        ...(feishu.bots ?? []),
+        {
+          id,
+          name: "飞书通知机器人",
+          appId,
+          appSecret,
+          enabled: true,
+          notificationOnly: true,
+        },
+      ];
+    }
+    writeConfig(cfg);
+    bot = activeFeishuBots().find((b) => b.id === id);
+  }
+  if (!bot) throw new Error("请选择已启用的飞书应用机器人");
+  if (input.reuseBinding && input.botId && bot.localResume?.enabled) {
+    const chat = boundChat(bot),
+      sender = bot.localResume.recipientOpenId;
+    if (
+      !chat ||
+      !matchesRecipient(bot, sender) ||
+      !activateNotificationRecipient(bot, sender, chat)
+    )
+      throw new Error("私聊绑定已变更");
+    startFeishuRemoteBridge();
+    return { botId: bot.id };
+  }
+  const command = "/bind " + randomBytes(12).toString("hex");
+  pairing = {
+    botId: bot.id,
+    appId: bot.appId,
+    command,
+    expiresAt: Date.now() + 600000,
+  };
+  startFeishuRemoteBridge();
+  return { ...pairing };
+}
+function confirmNotificationPairing(
+  bot: ActiveFeishuBot,
+  sender: string,
+  chat: string,
+  text: string,
+) {
+  const request = pendingPair();
+  if (
+    !request ||
+    request.command !== text ||
+    request.botId !== bot.id ||
+    request.appId !== bot.appId ||
+    !/^ou_[\w-]+$/.test(sender)
+  )
+    return false;
+  return activateNotificationRecipient(bot, sender, chat);
+}
+function activateNotificationRecipient(
+  bot: ActiveFeishuBot,
+  sender: string,
+  chat: string,
+) {
+  const cfg = readConfig();
+  const bots = cfg.remoteBridge?.feishu?.bots ?? [];
+  const selected = bots.find(
+    (b) =>
+      b.id === bot.id &&
+      b.appId === bot.appId &&
+      b.enabled !== false &&
+      b.handler !== "superagent",
+  );
+  if (
+    !selected ||
+    (selected.allowedUserIds?.length &&
+      !selected.allowedUserIds.includes(sender))
+  )
+    return false;
+  const localResume = {
+    enabled: true,
+    recipientOpenId: sender,
+    defaultBot: true,
+  };
+  bindPrivateChat({ ...bot, localResume }, sender, chat);
+  for (const item of bots) {
+    if (item === selected) item.localResume = localResume;
+    else if (item.localResume)
+      item.localResume = { ...item.localResume, enabled: false };
+  }
+  const prev = cfg.notifications?.feishu;
+  cfg.notifications = {
+    ...cfg.notifications,
+    feishu: {
+      ...prev,
+      delivery: "app",
+      enabled: true,
+      events: { stop: true, ...prev?.events },
+    },
+  };
+  writeConfig(cfg);
+  for (const runtime of runtimes.values())
+    runtime.bot.localResume = bots.find(
+      (b) => b.id === runtime.bot.id && b.appId === runtime.bot.appId,
+    )?.localResume;
+  pairing = undefined;
+  return true;
+}
+
+async function dispatchResume(n: Notice) {
+  const runtime = runtimes.get(n.bot);
+  const db = getDb();
+  if (
+    !appNotificationsOn() || !runtime ||
+    !authorizedNotice(n, runtime.bot, n.sender, n.chat) ||
+    !n.prompt ||
+    !n.inboundId
+  ) {
+    db.prepare(
+      "UPDATE feishu_resume_notices SET status='interrupted',prompt=NULL WHERE id=? AND status='queued'",
+    ).run(n.id);
+    return;
+  }
+  const claimed = db
+    .prepare(
+      "UPDATE feishu_resume_notices SET status='running',ownerPid=? WHERE id=? AND status='queued'",
+    )
+    .run(process.pid, n.id);
+  if (!claimed.changes) return;
+  try {
+    const source = {
+      source: "feishu" as const,
+      sourceBotId: n.bot,
+      sourceChatId: n.chat,
+      sourceUserId: n.sender,
+      sourceThreadId: n.chat,
+    };
+    const thread = attachRemoteSession({
+      ...source,
+      claudeSessionId: n.session,
+      cwd: n.cwd,
+    });
+    db.prepare("UPDATE feishu_resume_notices SET threadId=? WHERE id=?").run(
+      thread.id,
+      n.id,
+    );
+    const result = sendRemoteMessage({
+      ...source,
+      mode: "continue",
+      threadId: thread.id,
+      claudeSessionId: n.session,
+      cwd: n.cwd,
+      text: n.prompt,
+      sourceMessageId: n.inboundId,
+    });
+    if (progressCardConfig(n.bot).enabled)
+      await createProgressCardForInbound({
+        thread: result.thread,
+        message: result.message,
+        botId: n.bot,
+        chatId: n.chat,
+      });
+    else await sendFeishuText(n.bot, n.chat, "已收到，正在续接原会话");
+  } catch {
+    // A transport error after dispatch must not release a still-running session.
+    if (
+      !getDb()
+        .prepare(
+          "SELECT 1 FROM remote_messages WHERE sourceBotId=? AND sourceMessageId=? AND direction='inbound'",
+        )
+        .get(n.bot, n.inboundId)
+    )
+      db.prepare(
+        "UPDATE feishu_resume_notices SET status='interrupted',prompt=NULL WHERE id=?",
+      ).run(n.id);
+    await sendFeishuText(
+      n.bot,
+      n.chat,
+      "续接状态异常，请在 Dashboard 核对会话。",
+    );
+  }
+}
+function recoverResume() {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      "SELECT * FROM feishu_resume_notices WHERE status IN ('running','queued')",
+    )
+    .all() as (Notice & { ownerPid: number })[];
+  for (const n of rows) {
+    if (n.status === "queued") {
+      void dispatchResume(n).catch(() => console.warn("飞书续接恢复失败"));
+      continue;
+    }
+    if (
+      n.threadId &&
+      db
+        .prepare(
+          "SELECT 1 FROM remote_threads WHERE id=? AND status IN ('done','failed','completed')",
+        )
+        .get(n.threadId)
+    ) {
+      db.prepare(
+        "UPDATE feishu_resume_notices SET status='interrupted',prompt=NULL WHERE id=? AND status='running'",
+      ).run(n.id);
+      continue;
+    }
+    try {
+      process.kill(n.ownerPid, 0);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ESRCH")
+        db.prepare(
+          "UPDATE feishu_resume_notices SET status='interrupted',prompt=NULL WHERE id=?",
+        ).run(n.id);
+    }
+  }
+}
 
 const handleFeishuText = async (
   event: Record<string, any>,
@@ -1536,11 +1877,24 @@ const handleFeishuText = async (
   const chatId = message.chat_id as string | undefined;
   if (!chatId) return;
 
-  let text = textWithoutBotMention(parseFeishuTextContent(message.content));
+  const runtime = runtimes.get(botId);
+  const openId = event.sender?.sender_id?.open_id;
+  const privateSender = message.chat_type === "p2p" && event.sender?.sender_type === "user" && typeof openId === "string";
+  let text = textWithoutBotMention(parseFeishuTextContent(message.content), message.mentions);
   if (!text) return;
+  if (/^\/bind(?:\s|$)/i.test(text)) {
+    if(privateSender && runtime && message.message_type==="text" && confirmNotificationPairing(runtime.bot,openId,chatId,text))
+      await sendFeishuText(botId,chatId,"通知已绑定。任务完成后，引用通知即可继续。");
+    return;
+  }
+  const bridgeConfig=readConfig().remoteBridge;
+  const generalBridge=!!bridgeConfig?.enabled && !!bridgeConfig.feishu?.enabled && !runtime?.bot.notificationOnly;
+  if (runtime && privateSender && appNotificationsOn() && matchesRecipient(runtime.bot, openId) && !boundChat(runtime.bot)) {
+    bindPrivateChat(runtime.bot, openId, chatId);
+  }
 
   const permission = parsePermissionReply(text);
-  if (permission) {
+  if (permission && generalBridge) {
     try {
       submitPermissionVerdict({
         requestId: permission.requestId,
@@ -1584,6 +1938,20 @@ const handleFeishuText = async (
   };
 
   const command = parseFeishuRemoteCommand(text);
+  if (!command) {
+    const reply = lookupNotice(botId,message.parent_id,text);
+    if (reply.recognized) {
+      const n=reply.notice;
+      if (!appNotificationsOn() || !runtime || !privateSender || !n || !authorizedNotice(n,runtime.bot,openId,chatId)) return;
+      if (!reply.prompt || message.message_type !== "text") { await sendFeishuText(botId,chatId,"请引用通知并输入文字指令"); return; }
+      if (typeof message.message_id !== "string") return;
+      const state=claimNotice(n,message.message_id,reply.prompt);
+      if(state==="queued") await dispatchResume({...n,inboundId:message.message_id,prompt:reply.prompt});
+      else if(state!=="duplicate") await sendFeishuText(botId,chatId,state==="busy"?"该会话正在执行":"此通知已失效，请引用最新回复");
+      return;
+    }
+  }
+  if (!generalBridge) return;
   if (command) {
     if (command.kind === "projects") {
       await sendProjectsCard(botId, chatId);
@@ -1677,19 +2045,44 @@ const sendOutboundToFeishu = async (
   thread: RemoteThread,
   message: RemoteMessage,
   kind: RemoteOutboundKind,
+  sourceMessageId?: string | null,
 ): Promise<void> => {
   if (thread.source !== "feishu" || !thread.sourceChatId) return;
   if (kind === "partial") return;
+  const origin = runningNotice(thread.id, sourceMessageId);
+  const bot = thread.sourceBotId && runtimes.get(thread.sourceBotId)?.bot;
+  if (
+    origin &&
+    (!appNotificationsOn() || !bot || !authorizedNotice(origin, bot, origin.sender, origin.chat))
+  ) {
+    getDb()
+      .prepare(
+        "UPDATE feishu_resume_notices SET status='interrupted',prompt=NULL WHERE id=?",
+      )
+      .run(origin.id);
+    return;
+  }
   let finalTextSent = false;
   const sendFinalTextOnce = async (): Promise<void> => {
     if (finalTextSent) return;
     finalTextSent = true;
-    await sendFinalReplyText(
-      thread.sourceBotId,
-      thread.sourceChatId ?? "",
-      thread,
-      message.text,
-    );
+    try {
+      const refs = await sendFinalReplyText(
+        thread.sourceBotId,
+        thread.sourceChatId ?? "",
+        thread,
+        message.text,
+      );
+      if (bot && origin) finalNotice(origin, message.id, refs, bot);
+    } catch (error) {
+      if (origin)
+        getDb()
+          .prepare(
+            "UPDATE feishu_resume_notices SET status='interrupted',prompt=NULL WHERE id=? AND status='running'",
+          )
+          .run(origin.id);
+      throw error;
+    }
   };
 
   if (progressCardConfig(thread.sourceBotId).enabled) {
@@ -1724,12 +2117,9 @@ const sendOutboundToFeishu = async (
 export const startFeishuRemoteBridge = (): void => {
   const config = readConfig().remoteBridge;
   const feishu = config?.feishu;
-  if (!config?.enabled || !feishu?.enabled) {
-    return;
-  }
-  if (runtimes.size > 0) return;
-
-  const bots = activeFeishuBots();
+  const bots = activeFeishuBots().filter(bot=>!runtimes.has(bot.id) && (
+    (config?.enabled && feishu?.enabled && !bot.notificationOnly) ||
+    (bot.handler!=="superagent" && ((appNotificationsOn() && bot.localResume?.enabled) || pendingPair()?.botId===bot.id))));
   if (bots.length === 0) return;
 
   for (const bot of bots) {
@@ -1747,6 +2137,11 @@ export const startFeishuRemoteBridge = (): void => {
       loggerLevel: lark.LoggerLevel.warn,
     }).register({
       "im.message.receive_v1": async (data: unknown) => {
+        if (runtimes.get(bot.id)?.client !== client) return;
+        if (bot.handler === "superagent") {
+          await acceptSuperAgentMessage(bot, client, data);
+          return;
+        }
         await handleFeishuText(data as Record<string, any>, bot.id);
       },
     });
@@ -1761,6 +2156,13 @@ export const startFeishuRemoteBridge = (): void => {
     runtimes.set(bot.id, { bot, client, wsClient });
   }
 
+  if(unregisterSender) return;
+  recoverResume();
+  const retry=()=>void retryNotices(resumeBots(),deliverLocalNotice).catch(()=>console.warn("飞书通知恢复失败"));
+  retry();
+  resumeTimer=setInterval(retry,60000);
+  resumeTimer.unref();
+  bindSuperAgentClients(id => runtimes.get(id));
   unregisterSender = registerRemoteOutboundSender(sendOutboundToFeishu);
   unregisterProgress = onRemoteEvent((kind, data) => {
     if (kind !== "progress") return;
@@ -1772,9 +2174,11 @@ export const startFeishuRemoteBridge = (): void => {
 };
 
 export const stopFeishuRemoteBridge = (): void => {
+  clearInterval(resumeTimer);
+  resumeTimer=undefined;
   for (const runtime of runtimes.values()) {
     try {
-      runtime.wsClient?.stop?.();
+      runtime.wsClient?.close();
     } catch {
       // ignore
     }

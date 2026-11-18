@@ -149,7 +149,7 @@ const hookSummary = (entry: HookEntry): string => {
 const logSummary = (entry: LogEntry): string => {
   const parts = [
     entry.status && entry.status !== "completed" ? entry.status : null,
-    entry.durationMs > 0 ? `${entry.durationMs}ms` : null,
+    (entry.durationMs ?? 0) > 0 ? `${entry.durationMs}ms` : null,
     `TTFT ${formatTTFT(entry.firstChunkMs)}`,
     `TPS ${formatTPS(entry.tokenUsage?.outputTokens, entry.durationMs, entry.firstChunkMs)}`,
     entry.tokenUsage?.totalTokens ? `${entry.tokenUsage.totalTokens} tok` : null,
@@ -239,7 +239,7 @@ export const LogRow = ({
         </span>
       )}
       <span className={styles.logMeta}>
-        {entry.durationMs > 0 && <span>{entry.durationMs}ms</span>}
+        {(entry.durationMs ?? 0) > 0 && <span>{entry.durationMs}ms</span>}
         <span title="首包延迟">{formatTTFT(entry.firstChunkMs)}</span>
         <span title="tokens/sec (decode)">
           {formatTPS(entry.tokenUsage?.outputTokens, entry.durationMs, entry.firstChunkMs)}

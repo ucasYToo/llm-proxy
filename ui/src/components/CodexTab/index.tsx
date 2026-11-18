@@ -1,3 +1,4 @@
+import { NotificationControls } from "../DashboardTab/NotificationControls";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CodexOverview,
@@ -31,6 +32,7 @@ import { useNotifications } from "../DashboardTab/useNotifications";
 import { HookDetailPanel } from "../HookDetailPanel";
 import { JsonViewer } from "../JsonViewer";
 import styles from "./index.module.css";
+import { PROJECT_CARD_LIMIT, ProjectOverviewList } from "../ProjectOverviewList";
 
 type KindFilter = "all" | "conversation" | "model" | "tool";
 
@@ -345,10 +347,12 @@ export default function CodexTab({ config, onRefresh }: Props) {
     }
 
     return [...map.values()].sort((left, right) =>
-      left.lastEventAt < right.lastEventAt ? 1 : left.lastEventAt > right.lastEventAt ? -1 : 0,
+      left.lastEventAt < right.lastEventAt ? 1 : left.lastEventAt > right.lastEventAt ? -1 : left.key.localeCompare(right.key),
     );
   }, [globalTimeline, sessions]);
 
+  const overviewGroups = [...projectGroups.filter(g => g.key !== UNKNOWN_PROJECT || g.sessions.length),
+    ...projectGroups.filter(g => g.key === UNKNOWN_PROJECT && !g.sessions.length)];
   const rawTimeline = selectedSession ? sessionTimeline : globalTimeline;
   const visibleTimeline = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -524,52 +528,7 @@ export default function CodexTab({ config, onRefresh }: Props) {
           )}
         </div>
 
-        <div className={styles.toggleGroup}>
-          <span className={styles.toggleGroupLabel}>通知：</span>
-          <label
-            className={styles.toggleChip}
-            title={
-              !!notify.dingtalk.enabled && !notify.dingtalkArmed
-                ? "已启用但缺少事件勾选 / token / secret，点配置补全"
-                : "Codex 钉钉群机器人通知"
-            }
-          >
-            <input
-              type="checkbox"
-              checked={!!notify.dingtalk.enabled}
-              onChange={(event) => void notify.handleToggleDingTalk(event.target.checked)}
-            />
-            钉钉
-            {!!notify.dingtalk.enabled && !notify.dingtalkArmed && (
-              <span className={styles.warnDot} title="未完成配置">!</span>
-            )}
-          </label>
-          <button type="button" className="btnGhost btnSm" onClick={() => notify.setDingtalkOpen((open) => !open)}>
-            {notify.dingtalkOpen ? "收起" : "配置"}
-          </button>
-
-          <label
-            className={styles.toggleChip}
-            title={
-              !!notify.feishu.enabled && !notify.feishuArmed
-                ? "已启用但缺少事件勾选 / webhook URL / secret，点配置补全"
-                : "Codex 飞书群机器人通知"
-            }
-          >
-            <input
-              type="checkbox"
-              checked={!!notify.feishu.enabled}
-              onChange={(event) => void notify.handleToggleFeishu(event.target.checked)}
-            />
-            飞书
-            {!!notify.feishu.enabled && !notify.feishuArmed && (
-              <span className={styles.warnDot} title="未完成配置">!</span>
-            )}
-          </label>
-          <button type="button" className="btnGhost btnSm" onClick={() => notify.setFeishuOpen((open) => !open)}>
-            {notify.feishuOpen ? "收起" : "配置"}
-          </button>
-        </div>
+        <NotificationControls notify={notify} showMacos={false} />
 
         {status && (
           <div className={styles.toggleGroup}>
@@ -684,7 +643,7 @@ export default function CodexTab({ config, onRefresh }: Props) {
               暂无活跃项目。在终端运行 <code>claude-proxy codex hook install</code> 安装 Codex Hooks。
             </div>
           ) : (
-            projectGroups.map((group) => (
+            overviewGroups.slice(0, PROJECT_CARD_LIMIT).map((group) => (
               <section className={styles.eventStream} key={group.key}>
                 <div className={styles.eventStreamHeader}>
                   <button
@@ -710,6 +669,12 @@ export default function CodexTab({ config, onRefresh }: Props) {
               </section>
             ))
           )}
+          <ProjectOverviewList rows={overviewGroups.slice(PROJECT_CARD_LIMIT).map(g => ({
+            key: g.key, name: g.folder, cwd: g.cwd, title: g.sessions[0]?.title,
+            event: g.events[0] ? entryName(g.events[0]) : g.sessions[0]?.lastEventName,
+            lastEventAt: g.lastEventAt, sessions: g.sessions.length, events: g.events.length,
+            open: () => g.sessions.length ? setSelectedSession(g.sessions[0].sessionId) : g.events[0] && openEntry(g.events[0]),
+          }))} />
         </div>
       ) : (
         <div className={styles.layout}>

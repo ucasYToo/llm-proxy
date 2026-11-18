@@ -91,6 +91,7 @@ export interface DingTalkConfig {
 }
 
 export interface FeishuConfig {
+  delivery?: "webhook" | "app";
   enabled?: boolean;
   webhookUrl?: string;
   secret?: string;
@@ -135,6 +136,9 @@ export interface RemoteBridgeFeishuProgressCardConfig {
 }
 
 export interface RemoteBridgeFeishuBotConfig {
+  handler?: "bridge" | "superagent";
+  notificationOnly?: boolean;
+  localResume?: { enabled: boolean; recipientOpenId: string; defaultBot?: boolean; projects?: string[] };
   id?: string;
   name?: string;
   enabled?: boolean;

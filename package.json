@@ -1,6 +1,6 @@
 {
   "name": "llm-proxy-view",
-  "version": "2.4.0",
+  "version": "3.0.0",
   "description": "LLM Proxy CLI - 代理转发和日志管理工具",
   "bin": {
     "claude-proxy": "bin/cli.js",
@@ -14,7 +14,7 @@
       "default": "./dist/index.js"
     },
     "./types": {
-      "types": "./dist/config/types.d.ts"
+      "types": "./dist/interfaces/index.d.ts"
     }
   },
   "files": [
@@ -45,11 +45,12 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@larksuiteoapi/node-sdk": "^1.67.0",
     "@modelcontextprotocol/sdk": "^1.24.0",
+    "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.10.0",
     "chalk": "^4.1.2",
+    "claude-super-agent": "file:vendor/claude-super-agent-0.1.2.tgz",
     "commander": "^11.1.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
@@ -79,5 +80,8 @@
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
-  }
+  },
+  "bundleDependencies": [
+    "claude-super-agent"
+  ]
 }

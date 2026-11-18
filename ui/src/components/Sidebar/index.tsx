@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { UpdateControl } from "./UpdateControl";
 import { CodexLogo } from "../CodexLogo";
 import styles from "./index.module.css";
 
@@ -75,10 +76,12 @@ const navItems: { id: Tab; label: string; icon: JSX.Element }[] = [
 ];
 
 const Sidebar = ({ tab, onTabChange, activeTargetName, onShutdown, isShuttingDown }: Props) => {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("claude-proxy.sidebarCollapsed") === "true"; } catch { return false; }
+  });
 
   return (
-    <aside className={`${styles.sidebar}${collapsed ? ` ${styles.collapsed}` : ""}`}>
+    <aside data-collapsed={collapsed} className={`${styles.sidebar}${collapsed ? ` ${styles.collapsed}` : ""}`}>
       {/* Brand */}
       <div className={styles.brand}>
         <div className={styles.brandMark}>
@@ -122,6 +125,7 @@ const Sidebar = ({ tab, onTabChange, activeTargetName, onShutdown, isShuttingDow
 
       {/* Footer */}
       <div className={styles.footer}>
+        {!collapsed && <UpdateControl />}
         {!collapsed && (
           <button className={styles.shutdownBtn} onClick={onShutdown} disabled={isShuttingDown}>
             {isShuttingDown ? "关闭中…" : "关闭服务"}
@@ -129,7 +133,10 @@ const Sidebar = ({ tab, onTabChange, activeTargetName, onShutdown, isShuttingDow
         )}
         <button
           className={styles.collapseBtn}
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={() => {
+            try { localStorage.setItem("claude-proxy.sidebarCollapsed", String(!collapsed)); } catch {}
+            setCollapsed(!collapsed);
+          }}
           title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
         >
           <svg

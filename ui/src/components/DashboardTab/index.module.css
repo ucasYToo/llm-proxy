@@ -273,6 +273,15 @@
   background: var(--bg-subtle);
 }
 
+.deliveryModes { display:inline-flex; align-self:flex-start; padding:2px; border:1px solid var(--border); background:var(--bg-subtle); border-radius:6px; }
+.deliveryModes button { background:transparent; border:0; padding:5px 10px; border-radius:4px; color:var(--text-muted); cursor:pointer; font:inherit; font-size:12px; }
+.deliveryModes button[aria-pressed=true] { background:var(--bg-card); box-shadow:0 1px 3px #0002; color:var(--text); font-weight:600; }
+.replySettings { display:grid; gap:10px; min-width:0; }
+.replySettings p { margin:0; }
+.replySettings .dingPanelActions { padding-left:0; align-items:center; flex-wrap:wrap; }
+.replyBot,.pairCommand { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; }
+.pairCommand label { display:grid; gap:4px; max-width:100%; }
+.pairCommand input { min-width:0; width:100%; font-family:var(--font-mono); font-size:12px; padding:6px; }
 .dingPanelHint {
   font-size: 11px;
   color: var(--text-muted);

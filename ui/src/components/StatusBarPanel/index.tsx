@@ -1,3 +1,4 @@
+import { NotificationControls } from "../DashboardTab/NotificationControls";
 import { useCallback, useEffect, useState } from "react";
 import { fetchConfig as apiFetchConfig, updateProjectRemarkApi } from "../../lib/api";
 import type { Config } from "../../lib/api";
@@ -66,42 +67,7 @@ const StatusBarPanel = () => {
 
       {/* Controls strip */}
       <div className={styles.controls}>
-        <label className={`${styles.controlChip}${notify.macos.enabled ? ` ${styles.controlChipActive}` : ""}`}>
-          <input type="checkbox" checked={!!notify.macos.enabled} onChange={(e) => void notify.handleToggleMacos(e.target.checked)} />
-          macOS
-          {!!notify.macos.enabled && !notify.macosArmed && <span className={styles.warnBadge}>!</span>}
-        </label>
-        <button type="button" className={styles.iconBtn} onClick={() => notify.setMacosOpen((v) => !v)} title="macOS 通知配置">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="6" cy="6" r="2" /><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.3 2.3l.7.7M9 9l.7.7M2.3 9.7l.7-.7M9 3l.7-.7" />
-          </svg>
-        </button>
-
-        <label className={`${styles.controlChip}${notify.dingtalk.enabled ? ` ${styles.controlChipActive}` : ""}`}>
-          <input type="checkbox" checked={!!notify.dingtalk.enabled} onChange={(e) => void notify.handleToggleDingTalk(e.target.checked)} />
-          钉钉
-          {!!notify.dingtalk.enabled && !notify.dingtalkArmed && <span className={styles.warnBadge}>!</span>}
-        </label>
-        <button type="button" className={styles.iconBtn} onClick={() => notify.setDingtalkOpen((v) => !v)} title="钉钉通知配置">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="6" cy="6" r="2" /><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.3 2.3l.7.7M9 9l.7.7M2.3 9.7l.7-.7M9 3l.7-.7" />
-          </svg>
-        </button>
-
-        {isShowFeishu && (
-          <>
-            <label className={`${styles.controlChip}${notify.feishu.enabled ? ` ${styles.controlChipActive}` : ""}`}>
-              <input type="checkbox" checked={!!notify.feishu.enabled} onChange={(e) => void notify.handleToggleFeishu(e.target.checked)} />
-              飞书
-              {!!notify.feishu.enabled && !notify.feishuArmed && <span className={styles.warnBadge}>!</span>}
-            </label>
-            <button type="button" className={styles.iconBtn} onClick={() => notify.setFeishuOpen((v) => !v)} title="飞书通知配置">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="6" r="2" /><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.3 2.3l.7.7M9 9l.7.7M2.3 9.7l.7-.7M9 3l.7-.7" />
-              </svg>
-            </button>
-          </>
-        )}
+        <NotificationControls notify={notify} showFeishu={isShowFeishu} />
 
         {data.caffeinate.supported && (
           <label className={`${styles.controlChip}${data.caffeinate.active ? ` ${styles.controlChipActive}` : ""}`}>
@@ -156,7 +122,7 @@ const StatusBarPanel = () => {
       {isShowFeishu && notify.feishuOpen && (
         <div className={styles.configSection}>
           <FeishuPanel
-            config={notify.feishu} saving={notify.feishuSaving} testing={notify.feishuTesting}
+            onReplyChange={refreshConfig} config={notify.feishu} saving={notify.feishuSaving} testing={notify.feishuTesting}
             onSave={notify.handleSaveFeishu}
             onTest={notify.handleTestFeishu}
             onChangeEvents={(next) => void notify.handleChangeFeishuEvents(next)}

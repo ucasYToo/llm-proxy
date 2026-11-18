@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { LogEntry, DiffEntry } from "../../lib/api";
 import { fetchLogDetail } from "../../lib/api";
 import { statusClass, formatValue, formatTTFT, formatTPS } from "../../lib/format";
+import { LogIdButton } from "./LogIdButton";
 import { JsonViewer } from "../JsonViewer";
 import styles from "./index.module.css";
 
@@ -90,7 +91,7 @@ export function LogDetailPanel({
     };
   }, [isDragging]);
 
-  if (!log) return null;
+  if (!log || !logOrNull) return null;
 
   const panelStyle = isFullscreen
     ? {}
@@ -153,11 +154,12 @@ export function LogDetailPanel({
             >
               {log.path}
             </span>
+            <LogIdButton key={logOrNull!.id} id={logOrNull!.id} />
             <span className={statusClass(log.responseStatus)} style={{ fontSize: 13, flexShrink: 0 }}>
               {log.responseStatus || (log.error ? "ERR" : "-")}
             </span>
             <span style={{ color: "#6b7280", fontSize: 12, flexShrink: 0 }}>
-              {log.durationMs}ms
+              {log.durationMs != null && log.durationMs >= 0 ? log.durationMs + "ms" : "—"}
             </span>
           </div>
           <button
@@ -181,7 +183,7 @@ export function LogDetailPanel({
         <div className={styles.logMeta}>
           <span>
             <strong>目标：</strong>
-            {log.targetName}
+            {log.targetName}{log.querySource && ' · ' + log.querySource}
           </span>
           <span>
             <strong>时间：</strong>

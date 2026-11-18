@@ -1,6 +1,9 @@
 import type { LogEntry, TokenUsage } from "../interfaces";
 import { readConfig } from "../config/store";
 import { jsonDiff } from "../core/diff";
+import { persistLogCost } from "../cost/capture";
+import { visibleContent } from "../lib/visible-content";
+import { resolveSessionCwd } from "../core/session";
 import { getDb } from "./db";
 
 const DEFAULT_MAX_ENTRIES = 500;
@@ -31,7 +34,7 @@ const SCALAR_COLUMNS = [
   "sessionId",
   "agentId",
   "agentType",
-  "cwd",
+  "cwd", "source", "querySource", "upstreamRequestId", "responseMessageId", "captureModel",
 ] as const;
 
 const TOKEN_COLUMNS = [
@@ -53,9 +56,14 @@ const applyLogCollectionFilter = (
   preserveDiff = false,
 ): LogEntry => {
   const { logCollection } = readConfig();
+  entry = {...entry,originalRequestBody:visibleContent(entry.originalRequestBody),modifiedRequestBody:visibleContent(entry.modifiedRequestBody)};
   const filtered: LogEntry = { ...entry };
 
-  if (!logCollection.captureOriginalBody) {
+  if (!logCollection.captureOriginalBody && entry.source === "file") {
+    filtered.originalRequestBody = filtered.modifiedRequestBody = null;
+    filtered.originalRequestHeaders = {};
+    delete filtered.precomputedDiff;
+  } else if (!logCollection.captureOriginalBody) {
     if (!preserveDiff || !filtered.precomputedDiff) {
       filtered.precomputedDiff = {
         headers: jsonDiff(
@@ -97,6 +105,9 @@ const trimLogs = (): void => {
       SELECT rowid FROM logs ORDER BY timestamp DESC LIMIT ?
     )`,
   ).run(max);
+  db.prepare(`DELETE FROM raw_seen WHERE substr(id,1,1)='[' AND logId!='ambiguous'
+      AND NOT EXISTS (SELECT 1 FROM logs WHERE logs.id=raw_seen.logId)
+      AND NOT EXISTS (SELECT 1 FROM cost_records WHERE cost_records.logId=raw_seen.logId)`).run();
 };
 
 const entryToColumns = (
@@ -126,7 +137,7 @@ const entryToColumns = (
   for (const col of JSON_COLUMNS) {
     if (col in entry) {
       const val = (entry as Record<string, unknown>)[col];
-      out[col] = val === undefined ? null : JSON.stringify(val);
+      out[col] = val === undefined ? null : (JSON.stringify(visibleContent(val)) ?? null);
     }
   }
 
@@ -150,6 +161,7 @@ const rowToEntry = (row: Record<string, unknown>): LogEntry => {
     }
   }
   if (hasTokens) entry.tokenUsage = tokenUsage;
+  if (entry.source==="file" && entry.durationMs===-1) entry.durationMs=null;
 
   for (const col of JSON_COLUMNS) {
     const raw = row[col];
@@ -180,6 +192,26 @@ export const onLogChange = (fn: LogChangeListener): void => {
   logListeners.push(fn);
 };
 
+let pendingEffects: Array<() => void> | undefined;
+export function writeLogTransaction<T>(write: () => T): T {
+  if (pendingEffects) return write();
+  const effects: Array<() => void> = [];
+  pendingEffects = effects;
+  let result: T;
+  try {
+    result = getDb().transaction(write).immediate();
+  } finally {
+    pendingEffects = undefined;
+  }
+  for (const effect of effects) effect();
+  return result;
+}
+function finishWrite(entry: LogEntry, kind: LogChangeKind) {
+  const report = persistLogCost(entry);
+  if (report) pendingEffects!.push(report);
+  pendingEffects!.push(() => notifyLogChange(entry, kind));
+}
+
 const notifyLogChange = (entry: LogEntry, kind: LogChangeKind): void => {
   for (const fn of logListeners) {
     try {
@@ -197,7 +229,9 @@ const resolveLogMeta = (entry: LogEntry): void => {
     const row = db
       .prepare(`SELECT cwd FROM session_cwds WHERE sessionId = ? LIMIT 1`)
       .get(entry.sessionId) as { cwd: string } | undefined;
-    if (row) entry.cwd = row.cwd;
+    entry.cwd = row?.cwd ?? resolveSessionCwd(entry.sessionId) ?? (db.prepare(
+      "SELECT cwd FROM hooks WHERE sessionId=? AND cwd IS NOT NULL ORDER BY createdAt LIMIT 1"
+    ).get(entry.sessionId) as {cwd:string} | undefined)?.cwd ?? null;
   }
   if (entry.agentId && !entry.agentType) {
     const row = db
@@ -211,7 +245,7 @@ const resolveLogMeta = (entry: LogEntry): void => {
   }
 };
 
-export const createLog = (entry: LogEntry): void => {
+export const createLog = (entry: LogEntry): void => writeLogTransaction(() => {
   resolveLogMeta(entry);
   const filtered = applyLogCollectionFilter(entry);
   const cols = entryToColumns(filtered);
@@ -229,8 +263,8 @@ export const createLog = (entry: LogEntry): void => {
   const summaryRow = db
     .prepare(`SELECT ${SUMMARY_COLUMNS.join(", ")} FROM logs WHERE id = ?`)
     .get(entry.id) as Record<string, unknown> | undefined;
-  if (summaryRow) notifyLogChange(rowToSummary(summaryRow), "create");
-};
+  if (summaryRow) finishWrite(rowToSummary(summaryRow), "create");
+});
 
 const SUMMARY_COLUMNS = [
   ...SCALAR_COLUMNS,
@@ -251,12 +285,13 @@ const rowToSummary = (row: Record<string, unknown>): LogEntry => {
     }
   }
   if (hasTokens) entry.tokenUsage = tokenUsage;
+  if (entry.source==="file" && entry.durationMs===-1) entry.durationMs=null;
   entry.originalRequestHeaders = {};
   entry.modifiedRequestHeaders = {};
   return entry as unknown as LogEntry;
 };
 
-export const updateLog = (id: string, updates: Partial<LogEntry>): void => {
+export const updateLog = (id: string, updates: Partial<LogEntry>): void => writeLogTransaction(() => {
   const cols = entryToColumns(updates);
   const updateCols = Object.keys(cols).filter((c) => c !== "id");
   if (updateCols.length === 0) return;
@@ -290,8 +325,8 @@ export const updateLog = (id: string, updates: Partial<LogEntry>): void => {
   const summaryRow = db
     .prepare(`SELECT ${SUMMARY_COLUMNS.join(", ")} FROM logs WHERE id = ?`)
     .get(id) as Record<string, unknown> | undefined;
-  if (summaryRow) notifyLogChange(rowToSummary(summaryRow), "update");
-};
+  if (summaryRow) finishWrite(rowToSummary(summaryRow), "update");
+});
 
 export const upsertLog = (entry: LogEntry): void => {
   const db = getDb();
@@ -315,6 +350,7 @@ export interface QueryLogsOptions {
   targetId?: string;
   sessionId?: string;
   agentId?: string;
+  source?: string;
   summary?: boolean;
 }
 
@@ -327,6 +363,7 @@ export const queryLogs = (
   const { limit = 50, offset = 0, targetId, sessionId, agentId } = opts;
   const filters: string[] = [];
   const args: unknown[] = [];
+  if (opts.source) { filters.push("source = ?"); args.push(opts.source); }
   if (targetId) {
     filters.push("targetId = ?");
     args.push(targetId);
@@ -365,7 +402,9 @@ export const getLogDetail = (id: string): LogEntry | null => {
   const row = getDb()
     .prepare(`SELECT * FROM logs WHERE id = ?`)
     .get(id) as Record<string, unknown> | undefined;
-  return row ? rowToEntry(row) : null;
+  if(row) return rowToEntry(row);
+  const alias=getDb().prepare("SELECT logs.* FROM raw_seen JOIN logs ON logs.id=raw_seen.logId WHERE raw_seen.id=?").get(id) as Record<string,unknown>|undefined;
+  return alias ? rowToEntry(alias) : null;
 };
 
 export const clearLogs = (): void => {

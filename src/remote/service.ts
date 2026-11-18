@@ -29,7 +29,7 @@ import {
 } from "../storage/remote";
 import { pushRemoteChannelEvent } from "./channel-hub";
 import { launchClaudeSession } from "./session";
-import { getServerPort } from "../server/state";
+import { maintenance, getServerPort } from "../server/state";
 import { installRemoteMcpConfig } from "./mcp-config";
 import { runClaudePrint } from "./cli-runner";
 import {
@@ -54,6 +54,7 @@ type RemoteOutboundSender = (
   thread: RemoteThread,
   message: RemoteMessage,
   kind: RemoteOutboundKind,
+  sourceMessageId?:string|null,
 ) => Promise<void> | void;
 
 const remoteEventListeners = new Set<RemoteEventListener>();
@@ -65,7 +66,7 @@ const progressSnapshots = new Map<string, RemoteProgressSnapshot>();
 // Track that reply for the active turn so its final text is not sent twice.
 const activeCliReplyStates = new Map<
   string,
-  { explicitFinalText: string | null }
+  { explicitFinalText: string | null; sourceMessageId?:string|null }
 >();
 
 export const onRemoteEvent = (fn: RemoteEventListener): (() => void) => {
@@ -294,7 +295,7 @@ const emitOutboundToSource = async (
 ): Promise<void> => {
   for (const sender of outboundSenders) {
     try {
-      await sender(thread, message, kind);
+      await sender(thread, message, kind,activeCliReplyStates.get(thread.id)?.sourceMessageId);
     } catch (err) {
       console.warn("[remote] outbound sender failed:", err);
     }
@@ -365,6 +366,7 @@ const dispatchToCli = (
     const latestThread = getRemoteThread(thread.id) ?? thread;
     const cliReplyState = {
       explicitFinalText: null as string | null,
+      sourceMessageId: message.sourceMessageId,
     };
     activeCliReplyStates.set(thread.id, cliReplyState);
     let finalReplySent = false;
@@ -715,6 +717,7 @@ export const attachRemoteSession = (
 export const sendRemoteMessage = (
   input: SendRemoteMessageInput,
 ): { thread: RemoteThread; message: RemoteMessage; dispatched: boolean } => {
+  if (maintenance()) throw new Error("服务正在更新，请稍后重试");
   const text = input.text.trim();
   if (!text) throw new Error("text is required");
 

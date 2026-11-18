@@ -15,7 +15,7 @@ Guidance for Claude Code when working in this repository.
 - a React/Vite dashboard
 - Web and Feishu remote conversation support for creating or continuing Claude Code sessions
 
-Release target in this working tree: **2.4.0**.
+Release target in this working tree: **3.0.0**.
 
 ## Common Commands
 
@@ -47,7 +47,15 @@ claude-proxy hook install --port 1998
 claude-proxy channel install --scope project --port 1998
 ```
 
-`claude-proxy start` 默认只输出启动摘要和异常请求；需要端点列表或每请求访问日志时加 `--verbose`。
+`claude-proxy start` 默认在后台启动，就绪后输出地址并返回。服务日志位于 `~/.claude-proxy/server.log`。在终端排查请求时使用 `--foreground --verbose`。
+
+## Local service and capture
+
+- Use `start` to exercise the default background mode and `start --foreground` for supervised processes. A matching `/health` instance identifies a successful start or upgrade.
+- Use `hook install` to repair managed hooks. SessionStart, Stop and StopFailure use the local forwarder. Keep its credential in local service settings. Run hook, capture and upgrade tests with an isolated home, Claude settings and npm prefix.
+- `raw-bodies install` enables Claude file capture. Use `--timing` separately for local OTLP. Preserve byte cursors, idempotent billing, and Claude content filtering on both ingestion paths.
+- The Feishu notification panel selects the group webhook or a plain-text private notification. Users continue with Feishu’s native Reply action. New notification-only bots accept a single-use binding command and replies to their notifications.
+- Feishu local resume uses the bot, app, recipient, private chat, session and cwd recorded with the notification. Quote routing runs before the ordinary thread fallback. A received final text can be quoted once for the next turn.
 
 ## Architecture
 
@@ -98,6 +106,10 @@ The Codex dashboard is intentionally separate from the Claude dashboard. Codex R
 - Trace detail may render local Codex reasoning when the user explicitly enables capture; this exception does not relax the prohibition on exposing Claude hidden thinking.
 
 ## Remote Bridge Notes
+
+A private message from an unlisted SuperAgent user receives their own app-scoped open ID and setup guidance. The operator grants access in the bot settings. The assistant package owns the per-message Typing reaction lifecycle.
+
+The optional `superagent` bot handler uses the bundled `claude-super-agent` npm package. Its adapter in `src/remote/superagent.ts` mounts `/superagent/` and resolves the bot, authorized scope and existing SDK client for each delivery. Test the vendored archive from both a standalone consumer and the compiled host when refreshing it.
 
 Remote bridge has two delivery paths:
 

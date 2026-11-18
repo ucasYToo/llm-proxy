@@ -19,9 +19,7 @@ const eventsAnyOn = (e?: {
 }) => !!(e?.stop || e?.subagentStop || e?.notification);
 
 export function useNotifications({ notifications, onRefresh, scope = "claude" }: UseNotificationsParams) {
-  const [dingtalkOpen, setDingtalkOpen] = useState(false);
-  const [feishuOpen, setFeishuOpen] = useState(false);
-  const [macosOpen, setMacosOpen] = useState(false);
+  const [open,setOpen]=useState<"dingtalk"|"feishu"|"macos"|null>(null);
   const [dingSaving, setDingSaving] = useState(false);
   const [dingTesting, setDingTesting] = useState(false);
   const [feishuSaving, setFeishuSaving] = useState(false);
@@ -40,8 +38,7 @@ export function useNotifications({ notifications, onRefresh, scope = "claude" }:
   const feishuArmed =
     !!feishu.enabled &&
     eventsAnyOn(feishu.events) &&
-    !!feishu.webhookUrl &&
-    !!feishu.secret;
+    (feishu.delivery==="app" || !!feishu.webhookUrl);
 
   const handleToggleMacos = async (enabled: boolean) => {
     try {
@@ -123,8 +120,10 @@ export function useNotifications({ notifications, onRefresh, scope = "claude" }:
   const handleSaveFeishu = async (webhookUrl: string, secret: string) => {
     setFeishuSaving(true);
     try {
-      await updateNotifications({ feishu: { webhookUrl, secret } }, scope);
+      await updateNotifications({ feishu: { webhookUrl, secret, ...(scope==="claude"?{delivery:"webhook" as const}:{}) } }, scope);
       onRefresh();
+    } catch (e) {
+      alert("保存飞书通知配置失败：" + String(e));
     } finally {
       setFeishuSaving(false);
     }
@@ -161,12 +160,7 @@ export function useNotifications({ notifications, onRefresh, scope = "claude" }:
     macosArmed,
     dingtalkArmed,
     feishuArmed,
-    macosOpen,
-    setMacosOpen,
-    dingtalkOpen,
-    setDingtalkOpen,
-    feishuOpen,
-    setFeishuOpen,
+    open,setOpen,macosOpen:open==="macos",dingtalkOpen:open==="dingtalk",feishuOpen:open==="feishu",
     dingSaving,
     dingTesting,
     feishuSaving,

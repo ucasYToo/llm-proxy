@@ -55,7 +55,7 @@ export const logsCommand = (program: Command) => {
             ),
           );
           console.log(`  状态: ${status}`);
-          console.log(`  耗时: ${log.durationMs}ms`);
+          console.log(`  耗时: ${log.durationMs != null && log.durationMs >= 0 ? log.durationMs + 'ms' : '—'}`);
 
           if (log.tokenUsage) {
             console.log(

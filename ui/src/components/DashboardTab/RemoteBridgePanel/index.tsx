@@ -22,6 +22,7 @@ interface Props {
 }
 
 interface FeishuBotDraft {
+  handler: "bridge" | "superagent";
   id: string;
   name: string;
   enabled: boolean;
@@ -69,6 +70,7 @@ const normalizeBotId = (id: string | undefined, index: number): string => {
 
 const emptyBot = (index: number): FeishuBotDraft => ({
   id: createBotId(),
+  handler: "bridge",
   name: index === 0 ? "默认机器人" : `机器人 ${index + 1}`,
   enabled: true,
   defaultCwd: "",
@@ -91,6 +93,7 @@ const botFromConfig = (
   fallbackProgressCard: FeishuProgressCardDraft = {},
 ): FeishuBotDraft => ({
   id: normalizeBotId(bot.id, index),
+  handler: bot.handler ?? "bridge",
   name: bot.name?.trim() || (index === 0 ? "默认机器人" : `机器人 ${index + 1}`),
   enabled: bot.enabled ?? true,
   defaultCwd: bot.defaultCwd ?? fallbackDefaultCwd,
@@ -295,6 +298,7 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
         id: normalizeBotId(bot.id, index),
         name: bot.name.trim() || (index === 0 ? "默认机器人" : `机器人 ${index + 1}`),
         enabled: bot.enabled,
+        handler: bot.handler,
         defaultCwd: bot.defaultCwd.trim(),
         appId: bot.appId.trim(),
         appSecret: bot.appSecret.trim(),
@@ -425,6 +429,15 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
               </div>
 
               <div className={styles.feishuBotMainGrid}>
+                <label className={styles.remotePanelField}>
+                  会话处理器
+                  <select className={styles.dingPanelInput} value={bot.handler}
+                    onChange={(event) => updateBot(bot.id, { handler: event.target.value as FeishuBotDraft["handler"] })}>
+                    <option value="bridge">Remote Bridge</option>
+                    <option value="superagent">SuperAgent</option>
+                  </select>
+                </label>
+                {bot.handler === "superagent" && <a href="/superagent/" target="_blank" rel="noreferrer">打开助手工作台</a>}
                 <div className={styles.remotePanelField}>
                   <label className={styles.dingPanelLabel}>默认路径</label>
                   <input
@@ -575,7 +588,7 @@ const RemoteBridgePanel = ({ config, saving, testing, onSave, onTest }: Props) =
                     className={styles.remoteTextarea}
                     value={bot.allowedUserIds}
                     onChange={(e) => updateBot(bot.id, { allowedUserIds: e.target.value })}
-                    placeholder="每行一个 open_id/user_id；留空表示不限制"
+                    placeholder={bot.handler === "superagent" ? "可先留空保存，私聊机器人获取 open_id，再填入此处" : "每行一个 open_id/user_id；留空表示不限制"}
                     spellCheck={false}
                   />
                 </label>

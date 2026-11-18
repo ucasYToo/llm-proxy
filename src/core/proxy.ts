@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getActiveTarget, readConfig } from "../config/store";
+import { finishProxyLog } from "../storage/request-correlation";
 import { createLog, updateLog } from "../storage/logs";
 import {
   extractTokenUsage,
@@ -280,7 +281,7 @@ export const proxyRequest = async (
     const tokenUsage = extractTokenUsage(assembledBody);
     const durationMs = Date.now() - startMs;
 
-    updateLog(logId, {
+    finishProxyLog(logId, sessionId, upstreamRes.headers, assembledBody, {
       responseStatus: upstreamRes.status,
       responseBody,
       assembledResponseBody: assembledBody,
@@ -311,7 +312,7 @@ export const proxyRequest = async (
   const tokenUsage = extractTokenUsage(resBodyLog);
 
   // 更新最终状态
-  updateLog(logId, {
+  finishProxyLog(logId, sessionId, upstreamRes.headers, resBodyLog, {
     responseStatus: upstreamRes.status,
     responseBody: resBodyLog,
     durationMs,

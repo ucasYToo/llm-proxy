@@ -184,6 +184,37 @@ const MIGRATIONS: string[] = [
    ALTER TABLE remote_message_cards ADD COLUMN sourceBotId TEXT;
    CREATE INDEX IF NOT EXISTS idx_remote_threads_source_bot ON remote_threads(source, sourceBotId, sourceChatId, updatedAt DESC);
    CREATE INDEX IF NOT EXISTS idx_remote_messages_source_bot ON remote_messages(source, sourceBotId, sourceMessageId)`,
+  `ALTER TABLE logs ADD COLUMN source TEXT NOT NULL DEFAULT 'proxy';
+   ALTER TABLE logs ADD COLUMN querySource TEXT;
+   ALTER TABLE logs ADD COLUMN upstreamRequestId TEXT;
+   ALTER TABLE logs ADD COLUMN responseMessageId TEXT;
+   ALTER TABLE logs ADD COLUMN captureModel TEXT;
+   CREATE INDEX logs_request_lookup ON logs(sessionId,upstreamRequestId);
+   CREATE INDEX logs_message_lookup ON logs(sessionId,responseMessageId);
+   UPDATE logs SET cwd=(SELECT cwd FROM hooks WHERE hooks.sessionId=logs.sessionId AND cwd IS NOT NULL ORDER BY createdAt LIMIT 1)
+     WHERE cwd IS NULL AND sessionId IS NOT NULL;
+   DELETE FROM cost_records WHERE logId IS NOT NULL AND rowid NOT IN
+     (SELECT MAX(rowid) FROM cost_records WHERE logId IS NOT NULL GROUP BY logId);
+   CREATE UNIQUE INDEX cost_log_unique ON cost_records(logId) WHERE logId IS NOT NULL;
+   CREATE TABLE raw_cursors (file TEXT PRIMARY KEY, identity TEXT NOT NULL, offset INTEGER NOT NULL);
+   CREATE TABLE raw_pending (id TEXT PRIMARY KEY, item TEXT NOT NULL, directory TEXT NOT NULL, firstSeen INTEGER NOT NULL, retryAt INTEGER NOT NULL DEFAULT 0, error TEXT);
+   CREATE TABLE raw_cleanup (directory TEXT NOT NULL, filename TEXT NOT NULL, PRIMARY KEY(directory,filename));
+   CREATE TABLE raw_seen (id TEXT PRIMARY KEY, logId TEXT NOT NULL);
+   CREATE INDEX raw_seen_log ON raw_seen(logId);
+   CREATE TABLE feishu_resume_notices (
+     id TEXT PRIMARY KEY, bot TEXT NOT NULL, app TEXT NOT NULL, chat TEXT NOT NULL, sender TEXT NOT NULL,
+     session TEXT NOT NULL, cwd TEXT NOT NULL, turn TEXT NOT NULL, status TEXT NOT NULL,
+     threadId TEXT, inboundId TEXT, prompt TEXT, ownerPid INTEGER, created INTEGER NOT NULL,
+     UNIQUE(bot,app,chat,sender,session,turn)
+   );
+   CREATE UNIQUE INDEX resume_inbound ON feishu_resume_notices(bot,inboundId) WHERE inboundId IS NOT NULL;
+   CREATE UNIQUE INDEX resume_active ON feishu_resume_notices(session) WHERE status IN ('queued','running');
+   CREATE TABLE feishu_resume_refs (bot TEXT NOT NULL, message TEXT NOT NULL, notice TEXT NOT NULL, PRIMARY KEY(bot,message));
+   CREATE TABLE feishu_private_chats (bot TEXT NOT NULL, app TEXT NOT NULL, sender TEXT NOT NULL, chat TEXT NOT NULL,
+     PRIMARY KEY(bot,app,sender));`,
+  `ALTER TABLE raw_cursors ADD COLUMN skipping INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE feishu_resume_notices ADD COLUMN card TEXT;
+   ALTER TABLE feishu_resume_notices ADD COLUMN retryAt INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 let dbInstance: Database.Database | null = null;
@@ -196,13 +227,13 @@ const ensureDataDir = (): void => {
 };
 
 const runMigrations = (db: Database.Database): void => {
-  const current = db.pragma("user_version", { simple: true }) as number;
-  for (let i = current; i < MIGRATIONS.length; i++) {
-    db.exec(MIGRATIONS[i]);
-  }
-  if (current < MIGRATIONS.length) {
-    db.pragma(`user_version = ${MIGRATIONS.length}`);
-  }
+  db.transaction(() => {
+    const current = db.pragma("user_version", { simple: true }) as number;
+    for (let i = current; i < MIGRATIONS.length; i++) {
+      db.exec(MIGRATIONS[i]);
+      db.pragma("user_version = " + (i + 1));
+    }
+  }).immediate();
 };
 
 const warnLegacyOnce = (): void => {

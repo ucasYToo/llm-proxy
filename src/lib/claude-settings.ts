@@ -1,36 +1,18 @@
 import fs from "fs";
-import path from "path";
+import {
+  mutateJson,
+  preferences,
+  readObject,
+  settingsPath,
+} from "./local-settings";
+import { cliPath } from "./service-process";
+import { shellQuote } from "../remote/session";
 
-export const CLAUDE_SETTINGS_PATH = path.join(
-  process.env.HOME || "~",
-  ".claude",
-  "settings.json",
-);
-
-export const readClaudeSettings = (): Record<string, unknown> => {
-  try {
-    const raw = fs.readFileSync(CLAUDE_SETTINGS_PATH, "utf-8");
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-};
-
-export const writeClaudeSettings = (
-  settings: Record<string, unknown>,
-): void => {
-  const dir = path.dirname(CLAUDE_SETTINGS_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  fs.writeFileSync(
-    CLAUDE_SETTINGS_PATH,
-    JSON.stringify(settings, null, 2),
-    "utf-8",
-  );
-};
-
-/** 由本工具自动写入的 hook 标记字段名 */
+export const CLAUDE_SETTINGS_PATH = settingsPath;
+export const readClaudeSettings = () => readObject(settingsPath);
+export const changeClaudeSettings = (
+  edit: (settings: Record<string, any>) => void,
+) => mutateJson(settingsPath, edit);
 export const HOOK_MANAGED_BY = "claude-llm-proxy";
 
 /** 我们默认接管的 Claude Code 钩子事件列表 */
@@ -51,157 +33,151 @@ export const MANAGED_HOOK_EVENTS = [
 
 export type ManagedHookEvent = (typeof MANAGED_HOOK_EVENTS)[number];
 
-interface HookEntry {
-  type?: string;
-  url?: string;
-  command?: string;
-  _managedBy?: string;
-  [key: string]: unknown;
-}
+type Hook = Record<string, any>;
+type ListedHook = { event: string; url: string; command?: string };
+const forwardedEvents = new Set(["SessionStart", "Stop", "StopFailure"]);
 
-interface HookGroup {
-  matcher?: string;
-  hooks: HookEntry[];
-  _managedBy?: string;
-  [key: string]: unknown;
+function commandFor(event: string, port: number, autoStart: boolean) {
+  return [
+    shellQuote(process.execPath),
+    shellQuote(cliPath),
+    "hook forward",
+    event,
+    "--port",
+    String(port),
+    ...(event === "SessionStart" && autoStart ? ["--auto-start"] : []),
+  ].join(" ");
 }
-
-const isHookGroup = (val: unknown): val is HookGroup => {
+function portFor(hook: Hook, event: string): number | null {
+  if (!hook || typeof hook !== "object") return null;
+  if (hook.type === "http" && typeof hook.url === "string") {
+    const match =
+      /^http:\/\/(?:localhost|127\.0\.0\.1):(\d+)\/api\/hooks\/([A-Za-z]+)$/.exec(
+        hook.url,
+      );
+    return match?.[2] === event ? Number(match[1]) : null;
+  }
+  if (hook.type === "command" && typeof hook.command === "string") {
+    const match =
+      / hook forward ([A-Za-z]+) --port (\d+)(?: --auto-start)?$/.exec(
+        hook.command,
+      );
+    return match?.[1] === event ? Number(match[2]) : null;
+  }
+  return null;
+}
+function owned(hook: Hook, event: string, group: Hook) {
+  if (hook?._managedBy === HOOK_MANAGED_BY) return true;
+  if (
+    !MANAGED_HOOK_EVENTS.includes(event as ManagedHookEvent) ||
+    group.matcher ||
+    !portFor(hook, event)
+  )
+    return false;
+  if (hook.type === "http")
+    return Object.keys(hook).every((k) => k === "type" || k === "url");
+  const port = portFor(hook, event)!;
   return (
-    typeof val === "object" &&
-    val !== null &&
-    Array.isArray((val as { hooks?: unknown }).hooks)
+    [true, false].some(
+      (auto) => hook.command === commandFor(event, port, auto),
+    ) &&
+    Object.keys(hook).every((k) => ["type", "command", "timeout"].includes(k))
   );
-};
-
-/**
- * 为指定端口安装一组 managed 的 http hook 到 ~/.claude/settings.json。
- * 幂等：每次调用都会先清掉自己管理的旧记录再重写。
- */
-export const installHooks = (
+}
+function strip(groups: Hook[], event: string) {
+  return groups.flatMap((group) => {
+    if (!Array.isArray(group?.hooks)) return [group];
+    const keep = group.hooks.filter((h: Hook) => !owned(h, event, group));
+    if (keep.length === group.hooks.length) return [group];
+    if (!keep.length) return [];
+    const { _managedBy, ...rest } = group;
+    return [{ ...rest, hooks: keep }];
+  });
+}
+export function installHooks(
   port: number,
   events: readonly ManagedHookEvent[] = MANAGED_HOOK_EVENTS,
-): { installed: ManagedHookEvent[] } => {
-  const settings = readClaudeSettings();
-  const hooksRoot = (settings.hooks ?? {}) as Record<string, unknown>;
-
-  for (const event of events) {
-    const existing = (hooksRoot[event] ?? []) as unknown[];
-    const cleaned = existing.filter((g) => {
-      if (!isHookGroup(g)) return true;
-      if (g._managedBy === HOOK_MANAGED_BY) return false;
-      const inner = g.hooks ?? [];
-      const hasManagedInner = inner.some(
-        (h) => h && (h as HookEntry)._managedBy === HOOK_MANAGED_BY,
-      );
-      return !hasManagedInner;
-    });
-
-    const newGroup: HookGroup = {
-      _managedBy: HOOK_MANAGED_BY,
-      hooks: [
-        {
-          type: "http",
-          url: `http://localhost:${port}/api/hooks/${event}`,
-          _managedBy: HOOK_MANAGED_BY,
-        },
-      ],
-    };
-
-    hooksRoot[event] = [...cleaned, newGroup];
-  }
-
-  settings.hooks = hooksRoot;
-  writeClaudeSettings(settings);
-
-  return { installed: [...events] };
-};
-
-/**
- * 移除所有由本工具管理的 hook 记录。
- * 不触碰用户自己的 hook 配置。
- */
-export const uninstallHooks = (): { removed: string[] } => {
-  const settings = readClaudeSettings();
-  const hooksRoot = (settings.hooks ?? {}) as Record<string, unknown>;
-  const removed: string[] = [];
-
-  for (const event of Object.keys(hooksRoot)) {
-    const existing = (hooksRoot[event] ?? []) as unknown[];
-    const cleaned = existing.filter((g) => {
-      if (!isHookGroup(g)) return true;
-      if (g._managedBy === HOOK_MANAGED_BY) {
-        removed.push(event);
-        return false;
-      }
-      const inner = g.hooks ?? [];
-      const hasManagedInner = inner.some(
-        (h) => h && (h as HookEntry)._managedBy === HOOK_MANAGED_BY,
-      );
-      if (hasManagedInner) removed.push(event);
-      return !hasManagedInner;
-    });
-
-    if (cleaned.length === 0) {
-      delete hooksRoot[event];
-    } else {
-      hooksRoot[event] = cleaned;
+) {
+  const auto = preferences().autoStart !== false;
+  changeClaudeSettings((settings) => {
+    const root = (settings.hooks ??= {});
+    for (const event of events) {
+      const hook = forwardedEvents.has(event)
+        ? {
+            type: "command",
+            command: commandFor(event, port, auto),
+            timeout: 30,
+          }
+        : {
+            type: "http",
+            url: "http://localhost:" + port + "/api/hooks/" + event,
+          };
+      root[event] = [
+        ...strip(root[event] ?? [], event),
+        { hooks: [{ ...hook, _managedBy: HOOK_MANAGED_BY }] },
+      ];
     }
-  }
-
-  if (Object.keys(hooksRoot).length === 0) {
-    delete settings.hooks;
-  } else {
-    settings.hooks = hooksRoot;
-  }
-  writeClaudeSettings(settings);
-
-  return { removed };
-};
-
-/**
- * 列出当前 settings.json 中由本工具管理的 hook。
- */
-export const listManagedHooks = (): Array<{ event: string; url: string }> => {
-  const settings = readClaudeSettings();
-  const hooksRoot = (settings.hooks ?? {}) as Record<string, unknown>;
-  const result: Array<{ event: string; url: string }> = [];
-
-  for (const event of Object.keys(hooksRoot)) {
-    const groups = (hooksRoot[event] ?? []) as unknown[];
-    for (const g of groups) {
-      if (!isHookGroup(g)) continue;
-      const inner = g.hooks ?? [];
-      for (const h of inner) {
-        const entry = h as HookEntry;
-        if (entry._managedBy === HOOK_MANAGED_BY && entry.url) {
-          result.push({ event, url: entry.url });
-        }
-      }
-    }
-  }
-
-  return result;
-};
-
-export const areManagedHooksCurrent = (
-  events: Array<{ event: string; url: string }>,
-  port: number,
-): boolean =>
-  events.length === MANAGED_HOOK_EVENTS.length &&
-  MANAGED_HOOK_EVENTS.every((event) => {
-    const expectedUrl = `http://localhost:${port}/api/hooks/${event}`;
-    return events.some((item) => item.event === event && item.url === expectedUrl);
   });
-
-/**
- * A complete installation must contain every managed event and point at the
- * currently running proxy port. Partial or stale installations need repair.
- */
-export const getManagedHookStatus = (
-  port: number,
-): { installed: boolean; count: number; events: Array<{ event: string; url: string }> } => {
+  return { installed: [...events] };
+}
+export function uninstallHooks() {
+  const removed: string[] = [];
+  changeClaudeSettings((settings) => {
+    for (const [event, groups] of Object.entries(settings.hooks ?? {})) {
+      if (!Array.isArray(groups)) continue;
+      const kept = strip(groups, event);
+      if (JSON.stringify(kept) === JSON.stringify(groups)) continue;
+      removed.push(event);
+      if (kept.length) settings.hooks[event] = kept;
+      else delete settings.hooks[event];
+    }
+    if (settings.hooks && !Object.keys(settings.hooks).length)
+      delete settings.hooks;
+  });
+  return { removed };
+}
+export function listManagedHooks(): ListedHook[] {
+  const result: ListedHook[] = [];
+  for (const [event, groups] of Object.entries(
+    readClaudeSettings().hooks ?? {},
+  )) {
+    if (!Array.isArray(groups)) continue;
+    for (const group of groups)
+      for (const hook of Array.isArray(group?.hooks) ? group.hooks : []) {
+        if (!owned(hook, event, group)) continue;
+        result.push({
+          event,
+          url:
+            hook.url ??
+            "http://localhost:" + portFor(hook, event) + "/api/hooks/" + event,
+          command: hook.command,
+        });
+      }
+  }
+  return result;
+}
+export function areManagedHooksCurrent(events: ListedHook[], port: number) {
+  return (
+    events.length === MANAGED_HOOK_EVENTS.length &&
+    MANAGED_HOOK_EVENTS.every((event) =>
+      events.some(
+        (h) =>
+          h.event === event &&
+          h.url === "http://localhost:" + port + "/api/hooks/" + event,
+      ),
+    )
+  );
+}
+export function getManagedHookStatus(port: number) {
   const events = listManagedHooks();
-  const installed = areManagedHooksCurrent(events, port);
-  return { installed, count: events.length, events };
-};
+  const autoStart = preferences().autoStart !== false;
+  const installed =
+    areManagedHooksCurrent(events, port) &&
+    fs.existsSync(cliPath) &&
+    events.every((h) =>
+      forwardedEvents.has(h.event)
+        ? h.command === commandFor(h.event, port, autoStart)
+        : !h.command,
+    );
+  return { installed, autoStart, count: events.length, events };
+}

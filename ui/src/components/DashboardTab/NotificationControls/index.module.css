@@ -1,0 +1,59 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+}
+.caption {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.pair {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.pair[data-open="true"] {
+  border-color: var(--text-muted);
+}
+.pair label,
+.pair button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+}
+.pair label {
+  font-size: 12px;
+  gap: 5px;
+  padding: 0 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pair input {
+  margin: 0;
+}
+.pair button {
+  cursor: pointer;
+  padding: 0 8px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  background: var(--bg-subtle);
+}
+.pair button:hover,
+.pair[data-open="true"] button {
+  color: var(--text);
+  background: var(--border);
+}
+.pair button:focus-visible {
+  outline-offset: -3px;
+}
+.warning {
+  color: var(--warning);
+}

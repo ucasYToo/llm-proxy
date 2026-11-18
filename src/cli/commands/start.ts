@@ -4,19 +4,25 @@ import ora from "ora";
 import { spawn, execSync } from "child_process";
 import path from "path";
 import fs from "fs";
+import { ensureBackground } from "../../lib/service-process";
 import { startServer } from "../../server";
 
 export const startCommand = (program: Command) => {
   program
     .command("start")
-    .description("启动代理服务器")
+    .description("启动代理服务器，默认在后台运行")
     .option("-p, --port <number>", "监听端口", "1998")
     .option("--host <address>", "绑定地址", "localhost")
+    .option("--background", "在后台运行，服务就绪后返回（默认）")
+    .option("--foreground", "在前台运行，在当前终端查看日志")
+    .option("--check", "静默确保后台服务正在运行")
     .option("--ui", "启用 Web UI (服务静态构建文件)")
     .option("--no-statusbar", "禁用 macOS 状态栏应用")
     .option("--verbose", "输出详细端点信息和请求访问日志")
-    .action(async (options: { port: string; host: string; ui: boolean; statusbar: boolean; verbose?: boolean }) => {
-      const port = parseInt(options.port, 10);
+    .action(async (options: { port: string; host: string; ui: boolean; statusbar: boolean; verbose?: boolean; background?: boolean; foreground?: boolean; check?: boolean }) => {
+      const port = Number(options.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口无效');
+      if (options.foreground && (options.background || options.check)) throw new Error('启动模式冲突');
       const host = options.host;
       const ui = options.ui || true;
       const verbose = Boolean(options.verbose || process.env.CLAUDE_PROXY_VERBOSE === "1");
@@ -25,10 +31,18 @@ export const startCommand = (program: Command) => {
         process.env.CLAUDE_PROXY_VERBOSE = "1";
       }
 
+      if (!options.foreground) {
+        const started = await ensureBackground(host, port, verbose, options.statusbar && !options.check);
+        if (!options.check) {
+          if (started && options.statusbar && process.platform === "darwin") launchStatusBarApp(port);
+          console.log((started ? "后台服务已启动 " : "服务已在运行 ") + baseUrl);
+        }
+        return;
+      }
       const spinner = ora("启动代理服务器...").start();
 
       try {
-        const server = await startServer({ port, host, serveUI: ui, verbose });
+        await startServer({ port, host, serveUI: ui, verbose });
         const statusbarState =
           options.statusbar && process.platform === "darwin"
             ? launchStatusBarApp(port)
@@ -64,14 +78,7 @@ export const startCommand = (program: Command) => {
 
         console.log(chalk.dim("\n按 Ctrl+C 停止服务器"));
 
-        // 处理优雅关闭
-        process.on("SIGINT", () => {
-          console.log("\n\n正在关闭服务器...");
-          server.close(() => {
-            console.log(chalk.yellow("服务器已关闭"));
-            process.exit(0);
-          });
-        });
+
       } catch (error) {
         spinner.fail(chalk.red("启动失败"));
         console.error(error);

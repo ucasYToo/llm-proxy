@@ -16,8 +16,10 @@
 }
 
 .contentInner {
-  padding: 40px 64px 60px;
+  padding: 16px 20px 20px;
 }
+
+.shell:has(aside[data-collapsed="true"]) .content { margin-left: var(--sidebar-w-collapsed); }
 
 /* Dashboard 专用：纵向 flex 容器，高度锚定视口，让子元素自动填满 */
 .flexCol {

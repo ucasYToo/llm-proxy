@@ -38,7 +38,7 @@ node bin/cli.js channel status
 node bin/cli.js codex status
 ```
 
-`node bin/cli.js start --ui` 默认只输出启动摘要和异常请求；排查端点或请求日志时加 `--verbose`。
+`node bin/cli.js start --ui` 默认在后台启动，就绪后输出地址并返回。后台日志位于 `~/.claude-proxy/server.log`。在终端排查端点或请求日志时使用 `--foreground --verbose`。
 
 ## Architecture Map
 
@@ -74,9 +74,17 @@ Runtime state:
 - Codex currently supports hooks plus optional local trace inspection. Do not proxy Codex API traffic or route Codex through Remote Bridge unless a task explicitly expands that scope.
 - Feishu remote replies should not use topic replies; progress is one patched card and final output is normal text.
 - In CLI delivery mode, an explicit `remote_reply` is the final text for that turn; do not also forward the CLI result.
+- For SuperAgent, an empty allowlist permits the private open-ID lookup only. Never dispatch an unauthorized message to Claude. The package marks accepted private messages on receipt, using the bot that received them.
+- Route each bot to its configured handler once. SuperAgent lives in the npm dependency; the host owns authorization, workspace resolution and existing Feishu connections in `src/remote/superagent.ts`.
 - Feishu Remote Bridge may run multiple bots; preserve `sourceBotId` on threads/messages/cards so outbound text and card patches use the original bot, and keep each bot's `defaultCwd` independent.
 - Feishu remote file return is handled by the Dashboard-installed project skill under each bot's `defaultCwd`; keep its API token-protected and keep file paths constrained to the remote thread cwd.
 - Use the default `cli` Remote Bridge delivery mode unless a task explicitly targets Claude Code custom channels.
+
+- Keep SessionStart forwarding single-shot and preserve unrelated hooks in mixed groups. Serialize writes to Claude settings. Use an isolated home and Claude config directory for tests that install hooks or collection settings.
+- Claude file capture owns its dedicated directory. Commit log and cost changes before consuming files. File/proxy correlation uses upstream identifiers within a session. Keep missing durations out of averages.
+- Configure replyable Claude notifications in the Feishu notification panel. A local, single-use pairing command binds an application to a private chat. Route each selected notification through one transport and keep Codex webhooks independent.
+- Send completion notices as plain text and use Feishu’s native message reply. Feishu local resume requires the same bot, application, bound recipient and private chat on every delivery. Preserve the exact session and cwd when consuming a notification or a quoted final answer.
+- Exercise automatic updates using a temporary npm prefix and local package fixtures. Verify the health instance changes and the SQLite database survives the restart.
 
 ## Frontend Guidance
 

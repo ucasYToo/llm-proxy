@@ -239,7 +239,12 @@ export const readConfig = (): Config => {
       !parsed.remoteBridge.feishu ||
       !Array.isArray(parsed.remoteBridge.feishu.bots);
 
-    if (changed || remoteChanged) {
+    const upgradeResume = !merged.notifications?.feishu?.delivery && merged.remoteBridge?.feishu?.bots?.some(bot=>bot.enabled!==false && bot.handler!=="superagent" && bot.localResume?.enabled);
+    if(upgradeResume){
+      const feishu=merged.notifications?.feishu;
+      merged.notifications={...merged.notifications,feishu:{...feishu,enabled:true,delivery:"app",events:{...feishu?.events,stop:true}}};
+    }
+    if (changed || remoteChanged || upgradeResume) {
       writeConfig(merged);
     }
 
@@ -418,6 +423,7 @@ const validateNotifications = (value: unknown, pathPrefix: string): string | nul
     const rawChannel = value[channel];
     if (rawChannel === undefined) continue;
     if (!isRecord(rawChannel)) return `${pathPrefix}.${channel} must be an object`;
+    if(channel==="feishu" && rawChannel.delivery!==undefined && (pathPrefix!=="config.notifications" || !["webhook","app"].includes(String(rawChannel.delivery)))) return pathPrefix+".feishu.delivery 无效";
     const enabledError = validateBooleanFields(
       rawChannel,
       ["enabled"],
@@ -456,6 +462,10 @@ const validateProgressCard = (value: unknown, pathPrefix: string): string | null
 
 const validateRemoteBot = (value: unknown, pathPrefix: string): string | null => {
   if (!isRecord(value)) return `${pathPrefix} must be an object`;
+  if(value.notificationOnly!==undefined && typeof value.notificationOnly!=="boolean") return pathPrefix+".notificationOnly 无效";
+  if (value.handler !== undefined && value.handler !== "bridge" && value.handler !== "superagent") {
+    return `${pathPrefix}.handler must be bridge or superagent`;
+  }
   const stringError = validateStringFields(
     value,
     [
@@ -479,10 +489,18 @@ const validateRemoteBot = (value: unknown, pathPrefix: string): string | null =>
   ) {
     return `${pathPrefix}.allowedUserIds must be an array of strings`;
   }
+  if (value.localResume !== undefined) {
+    const r = value.localResume;
+    if (!isRecord(r) || typeof r.enabled !== "boolean" || typeof r.recipientOpenId !== "string" ||
+        (r.enabled && !/^ou_[a-zA-Z0-9_-]+$/.test(r.recipientOpenId)) ||
+        (r.defaultBot !== undefined && typeof r.defaultBot !== "boolean") ||
+        (r.projects !== undefined && (!Array.isArray(r.projects) || r.projects.some(p => typeof p !== "string" || !path.isAbsolute(p)))))
+      return pathPrefix + ".localResume 配置无效";
+  }
   return validateProgressCard(value.progressCard, `${pathPrefix}.progressCard`);
 };
 
-const validateRemoteBridge = (value: unknown): string | null => {
+export const validateRemoteBridge = (value: unknown): string | null => {
   if (value === undefined) return null;
   if (!isRecord(value)) return "config.remoteBridge must be an object";
   const stringError = validateStringFields(
@@ -565,12 +583,26 @@ const validateRemoteBridge = (value: unknown): string | null => {
       if (!Array.isArray(value.feishu.bots)) {
         return "config.remoteBridge.feishu.bots must be an array";
       }
+      const projects = new Set<string>();
+      let hasDefault = false;
       for (const [index, bot] of value.feishu.bots.entries()) {
         const botError = validateRemoteBot(
           bot,
           `config.remoteBridge.feishu.bots[${index}]`,
         );
         if (botError) return botError;
+        const resume=(bot as RemoteBridgeFeishuBotConfig).localResume;
+        if(resume?.enabled && bot.enabled!==false) {
+          if(bot.handler==="superagent") return "本地会话续接需要选择 Remote Bridge 处理器";
+          if(bot.allowedUserIds?.length && !bot.allowedUserIds.includes(resume.recipientOpenId)) return "续接接收人需要在机器人允许用户中";
+          if(resume.defaultBot && hasDefault) return "只能选择一个默认通知机器人";
+          hasDefault ||= !!resume.defaultBot;
+          for(const dir of resume.projects ?? []) {
+            const key=fs.existsSync(dir) ? fs.realpathSync(dir) : path.resolve(dir);
+            if(projects.has(key)) return "通知项目配置重复: "+dir;
+            projects.add(key);
+          }
+        }
       }
     }
   }
@@ -605,6 +637,7 @@ export const sanitizeConfigForExport = (config: Config): Config => {
     delete exported.notifications.dingtalk.secret;
   }
   if (exported.notifications?.feishu) {
+    delete exported.notifications.feishu.delivery;
     delete exported.notifications.feishu.webhookUrl;
     delete exported.notifications.feishu.secret;
   }
@@ -624,6 +657,7 @@ export const sanitizeConfigForExport = (config: Config): Config => {
     delete remoteFeishu.encryptKey;
     delete remoteFeishu.verificationToken;
     for (const bot of remoteFeishu.bots ?? []) {
+      delete bot.localResume;
       delete bot.appSecret;
       delete bot.encryptKey;
       delete bot.verificationToken;
@@ -886,14 +920,12 @@ function mergeImportedRemoteBridge(
   const importedFeishu = imported.feishu;
   const currentFeishu = current?.feishu;
   const currentBots = currentFeishu?.bots ?? [];
-  const bots = importedFeishu?.bots?.map((bot, index) => {
-    const candidate = bot.id
-      ? currentBots.find((candidate) => candidate.id === bot.id)
-      : currentBots[index];
-    const previous = candidate?.appId === bot.appId ? candidate : undefined;
+  const bots = importedFeishu?.bots?.map((bot) => {
+    const previous = bot.id && bot.appId ? currentBots.find(candidate => candidate.id === bot.id && candidate.appId === bot.appId) : undefined;
     return {
       ...previous,
       ...bot,
+      localResume: bot.id && previous?.id === bot.id ? previous.localResume : undefined,
       appSecret: importedSecret(bot.appSecret, previous?.appSecret),
       encryptKey: importedSecret(bot.encryptKey, previous?.encryptKey),
       verificationToken: importedSecret(bot.verificationToken, previous?.verificationToken),
@@ -959,6 +991,11 @@ function deepMergeNotifications(
     const curr = (current?.[channel] ?? {}) as DingTalkConfig & FeishuConfig;
     const merged_channel: Record<string, unknown> = { ...curr, ...imp };
 
+    // Pairing and the notification destination belong to this machine.
+    if(channel==="feishu") {
+      if(curr.delivery) merged_channel.delivery=curr.delivery;
+      else delete merged_channel.delivery;
+    }
     // Only overwrite credentials if the imported value is not empty or masked.
     if ("accessToken" in imp) {
       merged_channel.accessToken = importedSecret(imp.accessToken, curr.accessToken);

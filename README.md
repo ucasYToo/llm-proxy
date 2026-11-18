@@ -4,7 +4,7 @@
 
 它主要解决中文互联网环境里的几个实际问题：多上游模型代理、Claude Code hook 可视化、费用统计、飞书通知，以及从 Web/飞书远程继续或新建本机 Claude Code 对话。
 
-当前版本：**2.4.0**
+当前版本：**3.0.0**
 
 ## 适合谁
 
@@ -65,9 +65,33 @@ claude-proxy hook status
 claude-proxy channel status
 ```
 
-启动日志默认保持精简，只显示关键地址和异常请求；排查时可用 `claude-proxy start --ui --verbose` 查看端点列表和每请求访问日志。
+后台日志写入 `~/.claude-proxy/server.log`。排查问题时，启动服务可加 `--verbose` 记录每次请求，或用 `--foreground --verbose` 在当前终端查看详细日志。
+
+## 后台服务、会话自启动与更新
+
+`claude-proxy start` 默认在后台启动。服务就绪后命令返回，关闭终端后仍可使用 Dashboard。重复启动会复用同一端口上正在运行的服务。`--background` 可显式选择后台模式。需要由 systemd 或容器托管时，使用 `claude-proxy start --foreground`。
+
+执行 `claude-proxy hook install --port 1998` 后，新开的 Claude 会话会在 SessionStart 时启动本机服务并上报该事件。已有安装可用同一命令修复。安装器逐条保留用户自己的 hooks，并遵守 `CLAUDE_CONFIG_DIR`。在「配置 → 本机服务与采集」可以关闭自启动。
+
+侧边栏可以手动检查 npm 稳定版，同一配置面板可以关闭每日检查。macOS 和 Linux 上，通过 npm 全局安装并由本工具在后台启动的服务支持点击更新。等待远程任务结束后再更新。服务会校验新 CLI 和 SQLite、备份 Claude 数据库，再按原端口重启。升级出错时查看 `server.log` 中的恢复命令，重新安装旧版本，然后运行 `claude-proxy start --background`。升级前的 Claude 数据库快照位于 `~/.claude-proxy/logs.before-update-*.db`。
+
+## Claude 直连时采集请求
+
+使用支持 `index.jsonl` 的 Claude Code（v2.1.274 起），可以在模型直连时查看日志、token 和费用。到「配置 → 本机服务与采集」开启文件采集，再新开 Claude 会话。完整会话历史和工具结果会短暂写入专用目录，已完成入库的请求和响应文件会清理。索引保留在目录中。耗时需要单独启用本机 OTLP，并保留用户已有的遥测配置。没有观测到的耗时显示为「—」。[Claude Code 监控文档](https://code.claude.com/docs/en/monitoring-usage#api-response-body-event)
+
+```bash
+claude-proxy raw-bodies install
+claude-proxy raw-bodies install --timing --port 1998
+claude-proxy raw-bodies status
+claude-proxy raw-bodies uninstall --timing
+claude-proxy raw-bodies uninstall
+```
+
+文件来源可在日志页筛选。同一请求同时经过代理时，会按会话和上游标识合并日志及费用。默认采集目录为 `~/.claude-proxy/raw-api-bodies`。
 
 ## Dashboard
+
+Claude 和 Codex 概览各自显示最近四个项目，其余项目列在下方。点击日志详情标题栏的 ID 可复制完整值。侧边栏折叠状态会在刷新后保留。
 
 启动时带上 `--ui` 后，Dashboard 会由同一个代理进程提供。
 
@@ -125,6 +149,10 @@ claude-proxy codex hook uninstall
 
 链路图可以直接打开：[docs/remote-bridge-flow.html](docs/remote-bridge-flow.html)
 
+### 在飞书启用 SuperAgent
+
+在 Dashboard 的 Remote Bridge 中为机器人选择 **SuperAgent**，填写允许的工作目录并保存。用户私聊机器人即可收到自己的 open_id，管理员将该 ID 填入此机器人的「允许飞书用户」并保存。私聊可以派工、用 `/jobs` 查看任务、用 `/cancel 编号` 取消。进度卡和最终回答回到发起聊天。已授权私聊的原消息会在处理期间显示 `Typing` 表情，需要机器人具备消息表情写入权限。工作台位于 `/superagent/`，也可管理 Worker、定时任务、记忆和 Webhook。机器人默认使用普通 Bridge，每个机器人可独立选择处理器。
+
 ### 当前执行链路
 
 2.2.0 默认使用 CLI fallback：
@@ -158,7 +186,7 @@ CLI fallback 对每条入站消息只生成一份最终文本回复：如果 Cla
 
 ### 飞书远程 Skill
 
-飞书远程配置面板会按每个机器人自己的 `defaultCwd` 显示 `feishu-remote` skill 状态，并支持安装、更新和移除。这个 skill 安装在项目目录的 `.claude/skills/feishu-remote/` 下，用来让远程 Claude 在用户要求“把文件发回飞书”时调用本机受保护接口上传文件。
+「远程对话配置」面板会按每个机器人自己的 `defaultCwd` 显示 `feishu-remote` skill 状态，并支持安装、更新和移除。这个 skill 安装在项目目录的 `.claude/skills/feishu-remote/` 下，用来让远程 Claude 在用户要求“把文件发回飞书”时调用本机受保护接口上传文件。
 
 - 安装入口在 Dashboard，不需要用户手动运行 CLI。
 - 每个飞书机器人建议绑定独立 `defaultCwd`，skill 也安装在该机器人对应的项目目录。
@@ -222,6 +250,14 @@ CLI fallback 对每条入站消息只生成一份最终文本回复：如果 Cla
 - 执行中合并并节流更新同一张卡片，避免刷屏和触发飞书频控。
 - 卡片展示状态、项目、耗时、最近过程、工具摘要和错误。
 - 最终 Claude 回复用普通聊天文本发送，不再塞进卡片里，也不使用飞书话题回复。
+
+### 在飞书私聊续接本地 Claude 会话
+
+1. 在 Claude Dashboard 顶部打开「飞书 → 配置」，选择「可回复通知」。已有应用机器人可以直接选用。首次接入时在此填写飞书自建应用的 App ID 和 App Secret，应用需启用机器人和消息接收长连接。
+2. 点「绑定我的飞书」，把页面生成的口令私聊发给机器人。收到确认后即启用通知。绑定口令十分钟内有效，只使用一次。
+3. 保持飞书通知和 Stop 事件开启。在电脑上完成一轮 Claude 任务后，机器人会在私聊发一条普通文本通知。在这条消息的菜单里点「回复」，输入下一步指令，就能继续原项目里的同一个会话。勾选的 SubagentStop 和 Notification 也会发到同一私聊。原有群通知可在「群 Webhook」中保存切回。
+
+可回复通知使用本机已授权项目和安装的 Claude hooks。通过通知面板新建的机器人只接受绑定和引用通知的回复。
 
 ### 可选 MCP Channel
 
@@ -409,7 +445,7 @@ npm run build        # TypeScript + UI + macOS 状态栏（可用时）
 npm run build:statusbar
 ```
 
-2.4.0 发布前常用检查：
+发布前常用检查：
 
 ```bash
 npx tsc --noEmit

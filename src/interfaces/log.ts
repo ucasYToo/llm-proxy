@@ -9,6 +9,11 @@ export interface TokenUsage {
 export type LogStatus = "pending" | "streaming" | "completed" | "error";
 
 export interface LogEntry {
+  source?: "proxy" | "file";
+  querySource?: string | null;
+  upstreamRequestId?: string | null;
+  responseMessageId?: string | null;
+  captureModel?: string | null;
   id: string;
   timestamp: string;
   targetId: string;
@@ -36,7 +41,7 @@ export interface LogEntry {
     headers: import("../core/diff").DiffEntry[];
     body: import("../core/diff").DiffEntry[];
   };
-  durationMs: number;
+  durationMs: number | null;
   error?: string;
   /** 日志状态：pending-请求中, streaming-接收流中, completed-完成, error-错误 */
   status?: LogStatus;

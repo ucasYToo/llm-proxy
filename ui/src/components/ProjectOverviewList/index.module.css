@@ -1,0 +1,48 @@
+.list {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.list li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(6em, 1fr) minmax(5em, 2fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 9px;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  cursor: pointer;
+}
+.row:hover {
+  background: var(--bg-subtle);
+}
+.row span,
+.row small,
+.row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row small,
+.row time {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+@media (max-width: 768px) {
+  .row {
+    grid-template-columns: minmax(5em, 1fr) minmax(4em, 1fr);
+    gap: 3px 8px;
+  }
+}

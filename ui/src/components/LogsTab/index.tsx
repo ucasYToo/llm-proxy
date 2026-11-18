@@ -36,6 +36,7 @@ const LogsTab = ({ config }: LogsTabProps) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
+  const [source,setSource]=useState("");
   const [filterTarget, setFilterTarget] = useState("");
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -61,6 +62,7 @@ const LogsTab = ({ config }: LogsTabProps) => {
           limit,
           offset,
           targetId: filterTarget || undefined,
+          source: source || undefined,
           summary: false,
         });
         setLogs(data.entries);
@@ -70,7 +72,7 @@ const LogsTab = ({ config }: LogsTabProps) => {
         if (showLoading) setIsRefreshing(false);
       }
     },
-    [offset, filterTarget],
+    [offset, filterTarget,source],
   );
 
   useEffect(() => {
@@ -107,7 +109,7 @@ const LogsTab = ({ config }: LogsTabProps) => {
           return false;
         }
       }
-      if (durationFilter === "slow" && log.durationMs < 3000) return false;
+      if (durationFilter === "slow" && (log.durationMs ?? 0) < 3000) return false;
       if (selectedAgentChip === "main" && log.agentId) return false;
       if (selectedAgentChip === "subagent" && !log.agentId) return false;
       if (selectedAgentChip !== "all" && selectedAgentChip !== "main" && selectedAgentChip !== "subagent") {
@@ -282,6 +284,9 @@ const LogsTab = ({ config }: LogsTabProps) => {
           ))}
         </select>
 
+        <select aria-label="采集来源" value={source} onChange={e=>{setSource(e.target.value);setOffset(0);}}>
+          <option value="">全部来源</option><option value="proxy">代理</option><option value="file">文件读取</option>
+        </select>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -580,7 +585,7 @@ const LogsTab = ({ config }: LogsTabProps) => {
                         )}
                       </td>
                       <td style={{ color: "#6b7280", whiteSpace: "nowrap" }}>
-                        {log.durationMs}ms
+                        {log.durationMs != null && log.durationMs >= 0 ? log.durationMs + "ms" : "—"}
                       </td>
                       <td
                         style={{

@@ -21,7 +21,6 @@ import {
   getCodexTraceEvents,
   getCodexTraceEventsForSession,
   startCodexTraceCapture,
-  startCodexTraceMaintenance,
   stopCodexTraceCapture,
   syncCodexTraceIndex,
 } from "../lib/codex-rollout-traces";
@@ -46,7 +45,6 @@ const queryInteger = (
 };
 
 export const setupCodexRoutes = (app: Express): void => {
-  startCodexTraceMaintenance((status) => broadcast("codex-trace", status));
 
   app.get("/api/codex/status", (_req: Request, res: Response) => {
     res.json({
