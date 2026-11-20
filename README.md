@@ -151,6 +151,10 @@ claude-proxy codex hook uninstall
 
 ### 在飞书启用 SuperAgent
 
+在 `/superagent/` 的「飞书」页查看连接并测试已授权用户的私聊。机器人凭据和授权名单仍在 Remote Bridge 配置。「运行概览」和「后台 Worker」提供当前会话、任务进度与执行事件，「核心记忆」支持浏览文件和查看整理结果。
+
+启用 SuperAgent 后，允许的工作目录会自动生成 `CLAUDE.md`、`SOUL.md`、`memory/`、派工 Skill 与 Worker 说明。已有文件会保留。直接编辑目录内的默认记忆可供项目共用，工作台保存的个人偏好按用户隔离。
+
 在 Dashboard 的 Remote Bridge 中为机器人选择 **SuperAgent**，填写允许的工作目录并保存。用户私聊机器人即可收到自己的 open_id，管理员将该 ID 填入此机器人的「允许飞书用户」并保存。私聊可以派工、用 `/jobs` 查看任务、用 `/cancel 编号` 取消。进度卡和最终回答回到发起聊天。已授权私聊的原消息会在处理期间显示 `Typing` 表情，需要机器人具备消息表情写入权限。工作台位于 `/superagent/`，也可管理 Worker、定时任务、记忆和 Webhook。机器人默认使用普通 Bridge，每个机器人可独立选择处理器。
 
 ### 当前执行链路

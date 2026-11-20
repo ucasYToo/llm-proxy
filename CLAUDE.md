@@ -107,6 +107,10 @@ The Codex dashboard is intentionally separate from the Claude dashboard. Codex R
 
 ## Remote Bridge Notes
 
+The embedded console shares the host Feishu clients for connection status and explicit allowlisted test messages.
+
+Binding a SuperAgent bot prepares its workspace before the first message. The npm package owns the starter files and reads workspace defaults beneath personal memory overrides.
+
 A private message from an unlisted SuperAgent user receives their own app-scoped open ID and setup guidance. The operator grants access in the bot settings. The assistant package owns the per-message Typing reaction lifecycle.
 
 The optional `superagent` bot handler uses the bundled `claude-super-agent` npm package. Its adapter in `src/remote/superagent.ts` mounts `/superagent/` and resolves the bot, authorized scope and existing SDK client for each delivery. Test the vendored archive from both a standalone consumer and the compiled host when refreshing it.

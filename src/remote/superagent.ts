@@ -10,7 +10,11 @@ import { assertAllowedCwd } from "./service";
 import type { RemoteBridgeFeishuBotConfig } from "../interfaces";
 
 type BotConfig = RemoteBridgeFeishuBotConfig & { id: string; appId: string };
-type BotRuntime = { bot: BotConfig; client: Client };
+type BotRuntime = {
+  bot: BotConfig;
+  client: Client;
+  wsClient?: { getConnectionStatus?: () => unknown };
+};
 type BotLookup = (id: string) => BotRuntime | undefined;
 let pending: Promise<SuperAgent> | undefined;
 let lookup: BotLookup = () => undefined;
@@ -97,10 +101,13 @@ export function getSuperAgent() {
 
 export function bindSuperAgentClients(find: BotLookup) {
   lookup = find;
-  if (workspaces().length)
-    void getSuperAgent().catch((error) =>
-      console.error("SuperAgent:", error.message),
-    );
+  if (workspaces().length) {
+    void getSuperAgent()
+      .then((agent) => {
+        for (const workspace of workspaces()) agent.workspace(workspace.id);
+      })
+      .catch((error) => console.error("SuperAgent:", error.message));
+  }
 }
 
 export async function stopSuperAgent() {
@@ -125,15 +132,37 @@ export async function acceptSuperAgentMessage(
   await acceptFeishu(await getSuperAgent(), config, client, event);
 }
 
+function consoleConnections() {
+  const allowed = new Set(workspaces().map((w) => w.id));
+  return (readConfig().remoteBridge?.feishu?.bots || []).flatMap((bot) => {
+    const current = bot.id && lookup(bot.id);
+    if (
+      !current ||
+      current.bot.handler !== "superagent" ||
+      !current.bot.defaultCwd ||
+      !fs.existsSync(current.bot.defaultCwd)
+    )
+      return [];
+    const id = workspaceId(current.bot);
+    if (!allowed.has(id)) return [];
+    return [
+      {
+        id: current.bot.id,
+        workspaceId: id,
+        state: current.wsClient?.getConnectionStatus?.() || { state: "ready" },
+        allowedOpenIds: bot.allowedUserIds || [],
+      },
+    ];
+  });
+}
+
 export function mountSuperAgent(app: Express, authorize: RequestHandler) {
   let consoleRouter: RequestHandler | undefined;
   app.use("/superagent", async (req, res, next) => {
     if (!workspaces().length) {
-      res
-        .status(403)
-        .json({
-          error: "请先配置启用 SuperAgent 的飞书机器人和工作区",
-        });
+      res.status(403).json({
+        error: "请先配置启用 SuperAgent 的飞书机器人和工作区",
+      });
       return;
     }
     try {
@@ -144,6 +173,21 @@ export function mountSuperAgent(app: Express, authorize: RequestHandler) {
           agent: () => agent,
           workspaces: () => workspaces().map((workspace) => workspace.id),
           authorize,
+          hostSettingsUrl: "/",
+          connections: consoleConnections,
+          testBot: async (workspaceId, botId, openId) => {
+            const current = lookup(botId);
+            const authorized = consoleConnections().some(
+              (bot) =>
+                bot.id === botId &&
+                bot.workspaceId === workspaceId &&
+                bot.allowedOpenIds.includes(openId),
+            );
+            if (!authorized || !current)
+              throw Error("测试接收人未获此机器人的授权");
+            const { sendFeishuTest } = await import("claude-super-agent");
+            await sendFeishuTest(current.client, openId);
+          },
         });
       }
       consoleRouter!(req, res, next);

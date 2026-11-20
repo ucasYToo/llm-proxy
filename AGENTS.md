@@ -75,6 +75,8 @@ Runtime state:
 - Feishu remote replies should not use topic replies; progress is one patched card and final output is normal text.
 - In CLI delivery mode, an explicit `remote_reply` is the final text for that turn; do not also forward the CLI result.
 - For SuperAgent, an empty allowlist permits the private open-ID lookup only. Never dispatch an unauthorized message to Claude. The package marks accepted private messages on receipt, using the bot that received them.
+- Let the package initialize the allowed workspaces of enabled SuperAgent bots on binding and reload. Existing project files and personal memory must survive.
+- Resolve console test messages against the current enabled SuperAgent bot, its workspace and its authorized recipient before sending.
 - Route each bot to its configured handler once. SuperAgent lives in the npm dependency; the host owns authorization, workspace resolution and existing Feishu connections in `src/remote/superagent.ts`.
 - Feishu Remote Bridge may run multiple bots; preserve `sourceBotId` on threads/messages/cards so outbound text and card patches use the original bot, and keep each bot's `defaultCwd` independent.
 - Feishu remote file return is handled by the Dashboard-installed project skill under each bot's `defaultCwd`; keep its API token-protected and keep file paths constrained to the remote thread cwd.
